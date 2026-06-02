@@ -1,0 +1,66 @@
+import { describe, expect, it } from "vitest";
+import { mapCssRectToImageRect, normalizeResultBox, normalizeRect } from "./selection";
+
+describe("normalizeRect", () => {
+  it("returns positive dimensions when dragging from bottom-right to top-left", () => {
+    expect(normalizeRect({ x: 320, y: 240 }, { x: 120, y: 90 })).toEqual({
+      x: 120,
+      y: 90,
+      width: 200,
+      height: 150
+    });
+  });
+
+  it("keeps zero-width drags normalized without negative values", () => {
+    expect(normalizeRect({ x: 40, y: 80 }, { x: 40, y: 10 })).toEqual({
+      x: 40,
+      y: 10,
+      width: 0,
+      height: 70
+    });
+  });
+});
+
+describe("mapCssRectToImageRect", () => {
+  it("maps CSS coordinates to source image pixels for high DPI screenshots", () => {
+    expect(
+      mapCssRectToImageRect(
+        { x: 100, y: 50, width: 300, height: 150 },
+        { width: 1280, height: 720 },
+        { width: 2560, height: 1440 }
+      )
+    ).toEqual({ x: 200, y: 100, width: 600, height: 300 });
+  });
+
+  it("clamps selections that extend beyond the visible canvas", () => {
+    expect(
+      mapCssRectToImageRect(
+        { x: 900, y: 500, width: 400, height: 300 },
+        { width: 1000, height: 600 },
+        { width: 2000, height: 1200 }
+      )
+    ).toEqual({ x: 1800, y: 1000, width: 200, height: 200 });
+  });
+});
+
+describe("normalizeResultBox", () => {
+  it("keeps the result box inside a narrow viewport", () => {
+    const box = normalizeResultBox(
+      { x: 260, y: 220, width: 420, height: 180 },
+      { width: 433, height: 721 }
+    );
+
+    expect(box.x).toBe(16);
+    expect(box.width).toBeLessThanOrEqual(401);
+    expect(box.x + box.width).toBeLessThanOrEqual(417);
+  });
+
+  it("moves the box below the selection when the selected text is near the top", () => {
+    const box = normalizeResultBox(
+      { x: 120, y: 20, width: 260, height: 80 },
+      { width: 900, height: 700 }
+    );
+
+    expect(box.y).toBeGreaterThan(100);
+  });
+});

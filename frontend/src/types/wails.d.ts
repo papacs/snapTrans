@@ -1,0 +1,32 @@
+import type { AppConfig, CapturePayload, WorkflowErrorPayload } from "../services/backend";
+
+declare global {
+  interface Window {
+    go?: {
+      main?: {
+        App?: {
+          LoadConfig: () => Promise<AppConfig>;
+          SaveConfig: (config: AppConfig) => Promise<void>;
+          TriggerCapture: () => Promise<void>;
+          ProcessImage: (base64Crop: string) => Promise<void>;
+          HideWindow: () => Promise<void>;
+        };
+      };
+    };
+    runtime?: {
+      EventsOn: <T = unknown>(eventName: string, callback: (payload: T) => void) => (() => void) | void;
+      EventsOff?: (eventName: string) => void;
+      ClipboardSetText?: (text: string) => Promise<void>;
+    };
+  }
+}
+
+export interface BackendEvents {
+  "capture-start": CapturePayload;
+  "ocr-start": Record<string, never>;
+  "translation-start": Record<string, never>;
+  "translation-token": string;
+  "translation-done": Record<string, never>;
+  "workflow-error": WorkflowErrorPayload;
+}
+
