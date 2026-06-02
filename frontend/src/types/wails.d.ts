@@ -10,6 +10,8 @@ declare global {
           TriggerCapture: () => Promise<void>;
           ProcessImage: (base64Crop: string) => Promise<void>;
           HideWindow: () => Promise<void>;
+          QuitApp: () => Promise<void>;
+          ShowSettings: () => Promise<void>;
         };
       };
     };
@@ -28,5 +30,5 @@ export interface BackendEvents {
   "translation-token": string;
   "translation-done": Record<string, never>;
   "workflow-error": WorkflowErrorPayload;
+  "settings-open": Record<string, never>;
 }
-

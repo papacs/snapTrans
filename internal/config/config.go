@@ -11,12 +11,12 @@ import (
 )
 
 type Config struct {
-	ShortcutKey               string `json:"shortcutKey"`
-	DeepSeekAPIKey            string `json:"deepSeekAPIKey"`
-	DeepSeekBaseURL           string `json:"deepSeekBaseURL"`
-	DeepSeekModel             string `json:"deepSeekModel"`
-	RapidOCRPath              string `json:"rapidOCRPath"`
-	RapidOCRTimeoutSeconds    int    `json:"rapidOCRTimeoutSeconds"`
+	ShortcutKey            string `json:"shortcutKey"`
+	DeepSeekAPIKey         string `json:"deepSeekAPIKey"`
+	DeepSeekBaseURL        string `json:"deepSeekBaseURL"`
+	DeepSeekModel          string `json:"deepSeekModel"`
+	RapidOCRPath           string `json:"rapidOCRPath"`
+	RapidOCRTimeoutSeconds int    `json:"rapidOCRTimeoutSeconds"`
 }
 
 type Store struct {
@@ -27,7 +27,7 @@ type Store struct {
 func Default() Config {
 	return Config{
 		ShortcutKey:            "Alt+Q",
-		DeepSeekBaseURL:        "https://api.deepseek.com/v1",
+		DeepSeekBaseURL:        "https://api.deepseek.com",
 		DeepSeekModel:          "deepseek-chat",
 		RapidOCRPath:           "./rapidocr_json.exe",
 		RapidOCRTimeoutSeconds: 15,

@@ -10,13 +10,12 @@ This file records the practical details that should not be lost while the MVP is
 - Validate DPI mapping at 100%, 125%, 150%, and mixed-DPI multi-monitor setups.
 - Validate multi-monitor capture when monitors have negative coordinates.
 - Confirm `rapidocr_json.exe` CLI argument shape and exact JSON schema.
-- Add cancellation so closing/restoring a result stops OCR and translation work.
 - Confirm DeepSeek stream behavior, timeout handling, and empty OCR text handling with a real API key.
+- Review the default DeepSeek model before `deepseek-chat` deprecation on 2026-07-24.
 - Ensure API keys are never logged, emitted to frontend events, or committed.
 
 ## P1 - UX and Reliability
 
-- Add a small tray entry so users can open settings when the window is hidden.
 - Add clear error states inside the in-place result box for missing OCR binary, missing API key, OCR failure, and network failure.
 - Add retry from the result box without requiring a new screenshot.
 - Improve shortcut parser coverage and validation messages.
@@ -36,3 +35,9 @@ This file records the practical details that should not be lost while the MVP is
 ## Environment Status
 
 Go and Wails are installed on this machine. `go test ./...` and `wails build` have been verified locally.
+
+## Completed During MVP Hardening
+
+- Added Windows tray actions for Capture, Settings, and Quit.
+- Added right-click and `Esc` cancellation during capture selection.
+- Resolved relative RapidOCR paths from the working directory, the executable directory, and the project root when running from `build/bin`.

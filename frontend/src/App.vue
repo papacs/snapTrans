@@ -84,6 +84,7 @@ const unsubs: Array<() => void> = [];
 
 onMounted(async () => {
   window.addEventListener("resize", updateViewport);
+  window.addEventListener("keydown", onKeyDown);
   Object.assign(config, await loadConfig());
 
   unsubs.push(
@@ -106,12 +107,22 @@ onMounted(async () => {
     onBackendEvent<WorkflowErrorPayload>("workflow-error", (payload) => {
       errorMessage.value = payload.message;
       phase.value = "error";
+    }),
+    onBackendEvent("settings-open", () => {
+      capture.value = null;
+      resultRect.value = null;
+      selection.value = null;
+      translationText.value = "";
+      errorMessage.value = "";
+      phase.value = "idle";
+      settingsOpen.value = true;
     })
   );
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", updateViewport);
+  window.removeEventListener("keydown", onKeyDown);
   for (const unsub of unsubs) {
     unsub();
   }
@@ -120,6 +131,13 @@ onBeforeUnmount(() => {
 function updateViewport(): void {
   viewport.width = window.innerWidth;
   viewport.height = window.innerHeight;
+}
+
+function onKeyDown(event: KeyboardEvent): void {
+  if (event.key === "Escape" && isCaptureActive()) {
+    event.preventDefault();
+    void cancelCapture();
+  }
 }
 
 async function startCapture(payload: CapturePayload): Promise<void> {
@@ -237,6 +255,31 @@ async function submitSelection(rect: Rect): Promise<void> {
   }
 }
 
+function onContextMenu(event: MouseEvent): void {
+  if (!isCaptureActive()) {
+    return;
+  }
+
+  event.preventDefault();
+  void cancelCapture();
+}
+
+function isCaptureActive(): boolean {
+  return phase.value === "ready" || phase.value === "drawing";
+}
+
+async function cancelCapture(): Promise<void> {
+  dragStart.value = null;
+  selection.value = null;
+  capture.value = null;
+  resultRect.value = null;
+  translationText.value = "";
+  errorMessage.value = "";
+  copied.value = false;
+  phase.value = "idle";
+  await hideWindow();
+}
+
 async function copyResult(): Promise<void> {
   if (!translationText.value) {
     return;
@@ -323,15 +366,16 @@ async function saveSettings(): Promise<void> {
       @mousedown.left="onMouseDown"
       @mousemove="onMouseMove"
       @mouseup.left="onMouseUp"
+      @contextmenu="onContextMenu"
     >
       <canvas ref="canvasRef" class="h-full w-full object-fill" />
       <div
         v-if="phase === 'ready' || phase === 'drawing'"
-        class="pointer-events-none absolute inset-0 bg-black/40"
+        class="pointer-events-none absolute inset-0 bg-slate-950/10"
       />
       <div
         v-if="selection"
-        class="pointer-events-none absolute border border-white bg-white/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.34)]"
+        class="pointer-events-none absolute border border-white bg-white/5 shadow-[0_0_0_9999px_rgba(15,23,42,0.16)]"
         :style="selectionStyle"
       />
     </section>

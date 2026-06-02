@@ -21,7 +21,7 @@ type DeepSeek struct {
 
 func NewDeepSeek(options Options) *DeepSeek {
 	if strings.TrimSpace(options.BaseURL) == "" {
-		options.BaseURL = "https://api.deepseek.com/v1"
+		options.BaseURL = "https://api.deepseek.com"
 	}
 	if strings.TrimSpace(options.Model) == "" {
 		options.Model = "deepseek-chat"
@@ -45,7 +45,7 @@ func (d *DeepSeek) Translate(ctx context.Context, sourceText string, onToken fun
 		Model: d.options.Model,
 		Messages: []openai.ChatCompletionMessage{
 			{
-				Role: openai.ChatMessageRoleSystem,
+				Role:    openai.ChatMessageRoleSystem,
 				Content: "Translate the user's OCR text into concise Simplified Chinese. Preserve code, numbers, and formatting. Return only the translation.",
 			},
 			{
@@ -77,4 +77,3 @@ func (d *DeepSeek) Translate(ctx context.Context, sourceText string, onToken fun
 		}
 	}
 }
-

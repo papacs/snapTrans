@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"sync"
 	"time"
@@ -12,8 +13,12 @@ import (
 	"snaptrans/internal/ocr"
 	"snaptrans/internal/translator"
 
+	"github.com/getlantern/systray"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+//go:embed build/windows/icon.ico
+var trayIcon []byte
 
 type workflowError struct {
 	Stage   string `json:"stage"`
@@ -29,6 +34,7 @@ type App struct {
 	cfg        config.Config
 	shortcut   *hotkeys.Registration
 	processing context.CancelFunc
+	trayOnce   sync.Once
 }
 
 func NewApp() *App {
@@ -58,6 +64,8 @@ func (a *App) startup(ctx context.Context) {
 	if err := a.registerShortcut(cfg.ShortcutKey); err != nil {
 		a.emitError("config", err)
 	}
+
+	a.startTray()
 }
 
 func (a *App) shutdown(_ context.Context) {
@@ -72,6 +80,7 @@ func (a *App) shutdown(_ context.Context) {
 		a.processing()
 		a.processing = nil
 	}
+	systray.Quit()
 }
 
 func (a *App) LoadConfig() (config.Config, error) {
@@ -129,8 +138,32 @@ func (a *App) ProcessImage(base64Crop string) error {
 func (a *App) HideWindow() error {
 	a.cancelProcessing()
 	if a.ctx != nil {
+		runtime.WindowUnfullscreen(a.ctx)
 		runtime.WindowHide(a.ctx)
 	}
+	return nil
+}
+
+func (a *App) QuitApp() error {
+	a.cancelProcessing()
+	systray.Quit()
+	if a.ctx != nil {
+		runtime.Quit(a.ctx)
+	}
+	return nil
+}
+
+func (a *App) ShowSettings() error {
+	if a.ctx == nil {
+		return nil
+	}
+
+	runtime.WindowUnfullscreen(a.ctx)
+	runtime.WindowSetAlwaysOnTop(a.ctx, true)
+	runtime.WindowSetSize(a.ctx, 520, 420)
+	runtime.WindowCenter(a.ctx)
+	runtime.WindowShow(a.ctx)
+	runtime.EventsEmit(a.ctx, "settings-open", map[string]string{})
 	return nil
 }
 
@@ -139,9 +172,8 @@ func (a *App) captureAndEmit() {
 		return
 	}
 
-	runtime.WindowShow(a.ctx)
-	runtime.WindowFullscreen(a.ctx)
-	runtime.WindowSetAlwaysOnTop(a.ctx, true)
+	runtime.WindowHide(a.ctx)
+	time.Sleep(120 * time.Millisecond)
 
 	result, err := capture.AllDisplays(context.Background())
 	if err != nil {
@@ -149,7 +181,44 @@ func (a *App) captureAndEmit() {
 		return
 	}
 
+	runtime.WindowShow(a.ctx)
+	runtime.WindowFullscreen(a.ctx)
+	runtime.WindowSetAlwaysOnTop(a.ctx, true)
+
 	runtime.EventsEmit(a.ctx, "capture-start", result)
+}
+
+func (a *App) startTray() {
+	a.trayOnce.Do(func() {
+		go systray.Run(a.onTrayReady, func() {})
+	})
+}
+
+func (a *App) onTrayReady() {
+	if len(trayIcon) > 0 {
+		systray.SetIcon(trayIcon)
+	}
+	systray.SetTitle("snapTrans")
+	systray.SetTooltip("snapTrans screenshot translator")
+
+	captureItem := systray.AddMenuItem("Capture  Alt+Q", "Start screenshot translation")
+	settingsItem := systray.AddMenuItem("Settings", "Open settings")
+	systray.AddSeparator()
+	quitItem := systray.AddMenuItem("Quit", "Exit snapTrans")
+
+	go func() {
+		for {
+			select {
+			case <-captureItem.ClickedCh:
+				_ = a.TriggerCapture()
+			case <-settingsItem.ClickedCh:
+				_ = a.ShowSettings()
+			case <-quitItem.ClickedCh:
+				_ = a.QuitApp()
+				return
+			}
+		}
+	}()
 }
 
 func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop string) {
@@ -225,4 +294,3 @@ func (a *App) emitError(stage string, err error) {
 		Message: err.Error(),
 	})
 }
-

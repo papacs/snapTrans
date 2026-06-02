@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -31,6 +32,12 @@ func NewRapidOCR(path string, timeout time.Duration) *RapidOCR {
 func (r *RapidOCR) ExtractText(ctx context.Context, imageDataURL string) (string, error) {
 	if strings.TrimSpace(r.ExecutablePath) == "" {
 		return "", errors.New("RapidOCR executable path is required")
+	}
+	cwd, _ := os.Getwd()
+	executable, _ := os.Executable()
+	resolvedExecutable, err := ResolveExecutablePath(r.ExecutablePath, cwd, executable)
+	if err != nil {
+		return "", err
 	}
 
 	imageBytes, err := DecodeImageDataURL(imageDataURL)
@@ -56,7 +63,7 @@ func (r *RapidOCR) ExtractText(ctx context.Context, imageDataURL string) (string
 	runCtx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, r.ExecutablePath, "--image_dir", tempPath)
+	cmd := exec.CommandContext(runCtx, resolvedExecutable, "--image_dir", tempPath)
 	output, err := cmd.CombinedOutput()
 	if runCtx.Err() != nil {
 		return "", fmt.Errorf("RapidOCR timed out after %s", r.Timeout)
@@ -66,6 +73,45 @@ func (r *RapidOCR) ExtractText(ctx context.Context, imageDataURL string) (string
 	}
 
 	return ExtractTextFromJSON(output)
+}
+
+func ResolveExecutablePath(configuredPath string, workingDirectory string, executablePath string) (string, error) {
+	configuredPath = strings.Trim(strings.TrimSpace(configuredPath), `"'`)
+	if configuredPath == "" {
+		return "", errors.New("RapidOCR executable path is required")
+	}
+
+	candidates := make([]string, 0, 5)
+	addCandidate := func(base string) {
+		if base == "" {
+			return
+		}
+		candidates = appendUniquePath(candidates, filepath.Clean(filepath.Join(base, configuredPath)))
+	}
+
+	if filepath.IsAbs(configuredPath) {
+		candidates = appendUniquePath(candidates, filepath.Clean(configuredPath))
+	} else {
+		addCandidate(workingDirectory)
+		exeDir := filepath.Dir(executablePath)
+		addCandidate(exeDir)
+		if filepath.Base(exeDir) == "bin" && filepath.Base(filepath.Dir(exeDir)) == "build" {
+			addCandidate(filepath.Dir(filepath.Dir(exeDir)))
+		}
+	}
+
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf(
+		"RapidOCR executable not found for %q. Put rapidocr_json.exe next to snapTrans.exe, put it in the project root, or set an absolute path. Checked: %s",
+		configuredPath,
+		strings.Join(candidates, "; "),
+	)
 }
 
 func DecodeImageDataURL(input string) ([]byte, error) {
@@ -79,6 +125,15 @@ func DecodeImageDataURL(input string) ([]byte, error) {
 		return nil, fmt.Errorf("invalid base64 image: %w", err)
 	}
 	return decoded, nil
+}
+
+func appendUniquePath(paths []string, next string) []string {
+	for _, existing := range paths {
+		if strings.EqualFold(existing, next) {
+			return paths
+		}
+	}
+	return append(paths, next)
 }
 
 func ExtractTextFromJSON(raw []byte) (string, error) {
@@ -130,4 +185,3 @@ func appendText(parts *[]string, text string) {
 	}
 	*parts = append(*parts, text)
 }
-

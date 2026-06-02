@@ -28,6 +28,7 @@ No confirm button should appear between mouse release and translation start.
 - Prefer small focused modules over a large `app.go`.
 - Add or update tests for coordinate mapping, state transitions, OCR parsing, and config behavior.
 - Use `frontend/src/services/backend.ts` as the frontend boundary for Wails calls and browser fallback behavior.
+- Keep tray actions and global hotkey behavior aligned: Capture should enter selection mode, Settings should open a compact centered window, and Quit should terminate the app.
 
 ## Local Setup
 
@@ -36,7 +37,7 @@ No confirm button should appear between mouse release and translation start.
 3. Run `npm install` inside `frontend/`.
 4. Copy `.env.sample` to `.env`.
 5. Fill `DEEPSEEK_API_KEY`.
-6. Put `rapidocr_json.exe` at the project root or set `RAPIDOCR_EXE_PATH`.
+6. Put `rapidocr_json.exe` at the project root, next to `build/bin/snapTrans.exe`, or set `RAPIDOCR_EXE_PATH` to an absolute path.
 
 ## Verification
 
@@ -45,4 +46,3 @@ No confirm button should appear between mouse release and translation start.
 - Frontend build: `cd frontend && npm run build`
 - Backend tests after Go is installed: `go test ./...`
 - Desktop dev run after Wails is installed: `wails dev`
-

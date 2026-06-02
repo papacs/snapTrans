@@ -13,6 +13,7 @@ This repository contains the MVP skeleton:
 - Config loading from local `config.json` plus `.env` fallback.
 - Local RapidOCR command wrapper.
 - DeepSeek streaming translator boundary.
+- Global shortcut plus Windows tray menu for capture, settings, and quit.
 - Browser fallback for frontend-only development.
 - Engineering TODO list for the details that still need tightening.
 - Verified local Go/Wails build output at `build/bin/snapTrans.exe`.
@@ -78,7 +79,7 @@ Open the Vite URL and use the small capture button in the top-right corner.
 
 ```dotenv
 DEEPSEEK_API_KEY=
-DEEPSEEK_BASE_URL=https://api.deepseek.com/v3
+DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
 RAPIDOCR_EXE_PATH=./rapidocr_json.exe
 RAPIDOCR_TIMEOUT_SECONDS=15
@@ -91,9 +92,19 @@ The MVP default shortcut is `Alt+Q`. The settings modal can save a shortcut stri
 
 ## OCR Binary
 
-Place `rapidocr_json.exe` in the repository root during development, or set `RAPIDOCR_EXE_PATH` in `.env`.
+Place `rapidocr_json.exe` in the repository root during development, next to `build/bin/snapTrans.exe` after packaging, or set `RAPIDOCR_EXE_PATH` to an absolute path in `.env` or Settings.
+
+When the configured OCR path is relative, snapTrans checks these locations in order:
+
+- Current working directory.
+- The directory containing `snapTrans.exe`.
+- The project root when running from `build/bin`.
 
 The OCR wrapper expects JSON output and extracts text from common fields such as `text`, `rec_text`, and `content`.
+
+## Tray and Cancellation
+
+The app starts hidden and adds a Windows tray menu with Capture, Settings, and Quit actions. During a capture, press `Esc` or right-click to cancel and return to the hidden tray state.
 
 ## Architecture
 

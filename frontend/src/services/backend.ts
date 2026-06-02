@@ -27,7 +27,8 @@ type EventName =
   | "translation-start"
   | "translation-token"
   | "translation-done"
-  | "workflow-error";
+  | "workflow-error"
+  | "settings-open";
 
 type Listener<T> = (payload: T) => void;
 
@@ -36,7 +37,7 @@ const fallbackListeners = new Map<EventName, Set<Listener<unknown>>>();
 export const defaultConfig: AppConfig = {
   shortcutKey: "Alt+Q",
   deepSeekAPIKey: "",
-  deepSeekBaseURL: "https://api.deepseek.com/v1",
+  deepSeekBaseURL: "https://api.deepseek.com",
   deepSeekModel: "deepseek-chat",
   rapidOCRPath: "./rapidocr_json.exe",
   rapidOCRTimeoutSeconds: 15
