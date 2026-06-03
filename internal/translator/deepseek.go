@@ -41,28 +41,19 @@ func (d *DeepSeek) Translate(ctx context.Context, sourceText string, onToken fun
 	clientConfig.BaseURL = d.options.BaseURL
 	client := openai.NewClientWithConfig(clientConfig)
 
-	stream, err := client.CreateChatCompletionStream(ctx, openai.ChatCompletionRequest{
-		Model: d.options.Model,
-		Messages: []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleSystem,
-				Content: "Translate the user's OCR text into concise Simplified Chinese. Preserve code, numbers, and formatting. Return only the translation.",
-			},
-			{
-				Role:    openai.ChatMessageRoleUser,
-				Content: sourceText,
-			},
-		},
-		Stream: true,
-	})
+	stream, err := client.CreateChatCompletionStream(ctx, buildTranslationRequest(d.options.Model, sourceText))
 	if err != nil {
 		return err
 	}
 	defer stream.Close()
 
+	var translated strings.Builder
 	for {
 		response, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
+			if looksLikeMissingOCRRequest(translated.String()) {
+				return errors.New("translation model did not receive usable OCR text; please select a text area and try again")
+			}
 			return nil
 		}
 		if err != nil {
@@ -72,8 +63,57 @@ func (d *DeepSeek) Translate(ctx context.Context, sourceText string, onToken fun
 		for _, choice := range response.Choices {
 			token := choice.Delta.Content
 			if token != "" {
+				translated.WriteString(token)
 				onToken(token)
 			}
 		}
 	}
+}
+
+func buildTranslationRequest(model string, sourceText string) openai.ChatCompletionRequest {
+	return openai.ChatCompletionRequest{
+		Model: model,
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role: openai.ChatMessageRoleSystem,
+				Content: strings.Join([]string{
+					"You are a machine translation engine for OCR output.",
+					"Translate the delimited OCR_TEXT into concise Simplified Chinese.",
+					"Return only the translated text, with no explanations and no conversational replies.",
+					"Preserve filenames, commands, code, numbers, symbols, and formatting.",
+					"If OCR_TEXT is already Simplified Chinese or has no natural-language text to translate, return it unchanged.",
+					"Never ask the user to provide OCR text. Never say you are ready.",
+				}, " "),
+			},
+			{
+				Role: openai.ChatMessageRoleUser,
+				Content: "Translate this OCR_TEXT now.\n\nOCR_TEXT_BEGIN\n" +
+					strings.TrimSpace(sourceText) +
+					"\nOCR_TEXT_END",
+			},
+		},
+		Temperature: 0.1,
+		Stream:      true,
+	}
+}
+
+func looksLikeMissingOCRRequest(text string) bool {
+	normalized := strings.ToLower(strings.Join(strings.Fields(text), " "))
+	if normalized == "" {
+		return false
+	}
+
+	readinessPhrases := []string{
+		"please provide the ocr text",
+		"provide the ocr text",
+		"ocr text you would like translated",
+		"i am ready to assist",
+		"i'm ready to assist",
+	}
+	for _, phrase := range readinessPhrases {
+		if strings.Contains(normalized, phrase) {
+			return true
+		}
+	}
+	return false
 }
