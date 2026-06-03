@@ -18,6 +18,14 @@ export interface OCRBlock {
   height: number;
 }
 
+export interface TranslationPalette {
+  backgroundColor: string;
+  borderColor: string;
+  boxShadow: string;
+  color: string;
+  textShadow: string;
+}
+
 export interface Size {
   width: number;
   height: number;
@@ -125,8 +133,86 @@ export function fontSizeForOCRBlock(block: OCRBlock, selectionHeight: number): n
   return Math.max(11, Math.min(22, Math.round(blockHeight * 0.95)));
 }
 
+export function sampleCanvasLuminance(canvas: HTMLCanvasElement | null, cssRect: Rect): number | null {
+  if (!canvas || cssRect.width <= 0 || cssRect.height <= 0) {
+    return null;
+  }
+
+  const bounds = canvas.getBoundingClientRect();
+  const imageRect = mapCssRectToImageRect(
+    {
+      x: cssRect.x - bounds.left,
+      y: cssRect.y - bounds.top,
+      width: cssRect.width,
+      height: cssRect.height
+    },
+    { width: bounds.width, height: bounds.height },
+    { width: canvas.width, height: canvas.height }
+  );
+  if (imageRect.width <= 0 || imageRect.height <= 0) {
+    return null;
+  }
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return null;
+  }
+
+  try {
+    const sample = context.getImageData(
+      imageRect.x,
+      imageRect.y,
+      Math.max(1, imageRect.width),
+      Math.max(1, imageRect.height)
+    );
+    return luminanceFromImageData(sample.data);
+  } catch {
+    return null;
+  }
+}
+
+export function translationPaletteForLuminance(luminance: number | null): TranslationPalette {
+  const safeLuminance = typeof luminance === "number" && Number.isFinite(luminance) ? luminance : 0.35;
+  if (safeLuminance < 0.48) {
+    return {
+      backgroundColor: "rgba(15, 23, 42, 0.88)",
+      borderColor: "rgba(255, 255, 255, 0.22)",
+      boxShadow: "0 2px 10px rgba(0, 0, 0, 0.30)",
+      color: "#f8fafc",
+      textShadow: "0 1px 1px rgba(0, 0, 0, 0.45)"
+    };
+  }
+
+  return {
+    backgroundColor: "rgba(255, 255, 255, 0.90)",
+    borderColor: "rgba(15, 23, 42, 0.14)",
+    boxShadow: "0 2px 10px rgba(15, 23, 42, 0.16)",
+    color: "#0f172a",
+    textShadow: "none"
+  };
+}
+
 export function isUsableSelection(rect: Rect, minimumSize = 8): boolean {
   return rect.width >= minimumSize && rect.height >= minimumSize;
+}
+
+function luminanceFromImageData(data: Uint8ClampedArray): number | null {
+  let total = 0;
+  let count = 0;
+  for (let index = 0; index < data.length; index += 4) {
+    const alpha = data[index + 3] / 255;
+    if (alpha <= 0.05) {
+      continue;
+    }
+
+    const red = data[index] / 255;
+    const green = data[index + 1] / 255;
+    const blue = data[index + 2] / 255;
+    total += (0.2126 * red + 0.7152 * green + 0.0722 * blue) * alpha;
+    count += alpha;
+  }
+
+  return count > 0 ? total / count : null;
 }
 
 function clamp(value: number, min: number, max: number): number {

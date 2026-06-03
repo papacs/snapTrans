@@ -26,6 +26,8 @@ import {
   mapOCRBlockToSelection,
   normalizeResultBox,
   normalizeRect,
+  sampleCanvasLuminance,
+  translationPaletteForLuminance,
   type Point,
   type Rect
 } from "./utils/selection";
@@ -124,6 +126,14 @@ const inlineOCRBlocks = computed(() => {
     const mapped = mapOCRBlockToSelection(block, localSelection);
     const fontSize = fontSizeForOCRBlock(block, box.height);
     const text = translationLines.value[index] ?? (ocrBlocks.value.length === 1 ? translationText.value.trim() : "");
+    const palette = translationPaletteForLuminance(
+      sampleCanvasLuminance(canvasRef.value, {
+        x: box.x + mapped.x,
+        y: box.y + mapped.y,
+        width: mapped.width,
+        height: mapped.height
+      })
+    );
 
     return {
       key: `${index}-${block.text}-${mapped.x}-${mapped.y}`,
@@ -134,7 +144,8 @@ const inlineOCRBlocks = computed(() => {
         minWidth: `${mapped.width}px`,
         minHeight: `${mapped.height}px`,
         fontSize: `${fontSize}px`,
-        lineHeight: `${Math.round(fontSize * 1.18)}px`
+        lineHeight: `${Math.round(fontSize * 1.18)}px`,
+        ...palette
       }
     };
   });
@@ -505,7 +516,7 @@ async function saveSettings(): Promise<void> {
       class="absolute z-20 overflow-visible transition"
       :class="
         hasOCRBlockLayout
-          ? ''
+          ? 'rounded-md border-2 border-emerald-400 shadow-[0_0_0_1px_rgba(255,255,255,0.70),0_8px_28px_rgba(16,185,129,0.18)]'
           : 'rounded-md border border-white/70 bg-white/92 p-2 shadow-[0_10px_36px_rgba(15,23,42,0.26)] ring-1 ring-slate-900/5 backdrop-blur-[2px] dark:border-slate-700/70 dark:bg-zinc-950/92'
       "
       :style="resultStyle"
@@ -522,7 +533,7 @@ async function saveSettings(): Promise<void> {
           v-for="block in inlineOCRBlocks"
           v-show="block.text"
           :key="block.key"
-          class="absolute rounded bg-white/92 px-1.5 py-0.5 font-medium text-slate-950 shadow-[0_3px_14px_rgba(15,23,42,0.22)] backdrop-blur-[1px] dark:bg-zinc-950/92 dark:text-slate-50"
+          class="absolute rounded-sm border px-1.5 py-0.5 font-medium backdrop-blur-[1px]"
           :style="block.style"
           data-testid="ocr-block"
         >

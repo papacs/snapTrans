@@ -83,7 +83,10 @@ describe("App capture cancellation", () => {
     vi.stubGlobal("Image", MockImage);
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
       clearRect: vi.fn(),
-      drawImage: vi.fn()
+      drawImage: vi.fn(),
+      getImageData: vi.fn(() => ({
+        data: new Uint8ClampedArray([18, 24, 38, 255, 20, 26, 40, 255])
+      }))
     } as unknown as CanvasRenderingContext2D);
     vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,c2VsZWN0aW9u");
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
@@ -229,6 +232,8 @@ describe("App capture cancellation", () => {
     await flushPromises();
 
     const labels = wrapper.findAll("[data-testid='ocr-block']");
+    const resultPanel = wrapper.find("section.z-20");
+    expect(resultPanel.classes()).toContain("border-emerald-400");
     expect(labels).toHaveLength(3);
     expect(labels[0].text()).toBe("\u4e2d\u6027");
     expect(labels[1].text()).toBe("\u8d1f\u9762");
@@ -236,6 +241,8 @@ describe("App capture cancellation", () => {
     expect(labels[2].attributes("style")).toContain("left: 280px");
     expect(labels[2].attributes("style")).toContain("top: 10px");
     expect(labels[2].attributes("style")).toContain("font-size: 18px");
+    expect(labels[2].attributes("style")).toContain("color: rgb(248, 250, 252)");
+    expect(labels[2].attributes("style")).toContain("background-color: rgba(15, 23, 42");
   });
 
   it("closes the result panel when clicking outside it", async () => {

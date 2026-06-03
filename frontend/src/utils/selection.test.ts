@@ -5,7 +5,8 @@ import {
   mapOCRBlockToSelection,
   normalizeResultBox,
   normalizeRect,
-  ocrScaleForRect
+  ocrScaleForRect,
+  translationPaletteForLuminance
 } from "./selection";
 
 describe("normalizeRect", () => {
@@ -95,5 +96,21 @@ describe("mapOCRBlockToSelection", () => {
 
   it("sizes inline translations from the OCR block height", () => {
     expect(fontSizeForOCRBlock({ text: "Positive", x: 0, y: 0, width: 0.2, height: 0.36 }, 52)).toBe(18);
+  });
+});
+
+describe("translationPaletteForLuminance", () => {
+  it("uses light text on dark screenshot regions", () => {
+    const palette = translationPaletteForLuminance(0.12);
+
+    expect(palette.color).toBe("#f8fafc");
+    expect(palette.backgroundColor).toContain("15, 23, 42");
+  });
+
+  it("uses dark text on light screenshot regions", () => {
+    const palette = translationPaletteForLuminance(0.82);
+
+    expect(palette.color).toBe("#0f172a");
+    expect(palette.backgroundColor).toContain("255, 255, 255");
   });
 });
