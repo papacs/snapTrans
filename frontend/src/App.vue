@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Camera, Check, Copy, Settings, X } from "lucide-vue-next";
+import { Camera, Check, Copy, Image as ImageIcon, Settings, X } from "lucide-vue-next";
 import MarkdownIt from "markdown-it";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import {
+  copyImageDataUrl,
   copyText,
   defaultConfig,
   hasWailsBackend,
@@ -26,8 +27,8 @@ import {
   mapOCRBlockToSelection,
   normalizeResultBox,
   normalizeRect,
-  sampleCanvasLuminance,
-  translationPaletteForLuminance,
+  sampleCanvasColor,
+  translationPaletteForColor,
   type Point,
   type Rect
 } from "./utils/selection";
@@ -47,6 +48,7 @@ const translationText = ref("");
 const errorMessage = ref("");
 const settingsOpen = ref(false);
 const copied = ref(false);
+const copiedImage = ref(false);
 const isDesktop = hasWailsBackend();
 const markdown = new MarkdownIt({ breaks: true, linkify: false });
 const config = reactive<AppConfig>({ ...defaultConfig });
@@ -107,7 +109,7 @@ const resultActionsStyle = computed(() => {
     box.y + box.height + 52 > viewport.height - 8
       ? { bottom: "calc(100% + 8px)" }
       : { top: "calc(100% + 8px)" };
-  const horizontal = box.x + 116 > viewport.width - 8 ? { right: "0px" } : { left: "0px" };
+  const horizontal = box.x + 160 > viewport.width - 8 ? { right: "0px" } : { left: "0px" };
 
   return { ...vertical, ...horizontal };
 });
@@ -126,8 +128,8 @@ const inlineOCRBlocks = computed(() => {
     const mapped = mapOCRBlockToSelection(block, localSelection);
     const fontSize = fontSizeForOCRBlock(block, box.height);
     const text = translationLines.value[index] ?? (ocrBlocks.value.length === 1 ? translationText.value.trim() : "");
-    const palette = translationPaletteForLuminance(
-      sampleCanvasLuminance(canvasRef.value, {
+    const palette = translationPaletteForColor(
+      sampleCanvasColor(canvasRef.value, {
         x: box.x + mapped.x,
         y: box.y + mapped.y,
         width: mapped.width,
@@ -141,8 +143,8 @@ const inlineOCRBlocks = computed(() => {
       style: {
         left: `${mapped.x}px`,
         top: `${mapped.y}px`,
-        minWidth: `${mapped.width}px`,
-        minHeight: `${mapped.height}px`,
+        width: `${mapped.width}px`,
+        height: `${mapped.height}px`,
         fontSize: `${fontSize}px`,
         lineHeight: `${Math.round(fontSize * 1.18)}px`,
         ...palette
@@ -203,6 +205,8 @@ onMounted(async () => {
       ocrBlocks.value = [];
       translationText.value = "";
       errorMessage.value = "";
+      copied.value = false;
+      copiedImage.value = false;
       phase.value = "idle";
       settingsOpen.value = true;
     })
@@ -238,6 +242,7 @@ async function startCapture(payload: CapturePayload): Promise<void> {
   translationText.value = "";
   errorMessage.value = "";
   copied.value = false;
+  copiedImage.value = false;
   phase.value = "loading";
 
   await nextTick();
@@ -338,6 +343,7 @@ async function submitSelection(rect: Rect): Promise<void> {
   translationText.value = "";
   errorMessage.value = "";
   copied.value = false;
+  copiedImage.value = false;
   phase.value = "processing";
 
   try {
@@ -393,6 +399,7 @@ async function cancelCapture(): Promise<void> {
   translationText.value = "";
   errorMessage.value = "";
   copied.value = false;
+  copiedImage.value = false;
   phase.value = "idle";
   await hideWindow();
 }
@@ -409,6 +416,92 @@ async function copyResult(): Promise<void> {
   }, 1100);
 }
 
+async function copyTranslatedImage(): Promise<void> {
+  const dataUrl = renderTranslatedSelectionImage();
+  if (!dataUrl) {
+    return;
+  }
+
+  await copyImageDataUrl(dataUrl);
+  copiedImage.value = true;
+  window.setTimeout(() => {
+    copiedImage.value = false;
+  }, 1100);
+}
+
+function renderTranslatedSelectionImage(): string | null {
+  const sourceCanvas = canvasRef.value;
+  const rect = resultRect.value;
+  if (!sourceCanvas || !rect) {
+    return null;
+  }
+
+  const bounds = sourceCanvas.getBoundingClientRect();
+  const imageRect = mapCssRectToImageRect(
+    rect,
+    { width: bounds.width, height: bounds.height },
+    { width: sourceCanvas.width, height: sourceCanvas.height }
+  );
+  if (imageRect.width <= 0 || imageRect.height <= 0) {
+    return null;
+  }
+
+  const target = document.createElement("canvas");
+  target.width = imageRect.width;
+  target.height = imageRect.height;
+  const context = target.getContext("2d");
+  if (!context) {
+    return null;
+  }
+
+  context.drawImage(
+    sourceCanvas,
+    imageRect.x,
+    imageRect.y,
+    imageRect.width,
+    imageRect.height,
+    0,
+    0,
+    target.width,
+    target.height
+  );
+
+  const scaleX = target.width / rect.width;
+  const scaleY = target.height / rect.height;
+  const localSelection = { x: 0, y: 0, width: rect.width, height: rect.height };
+  ocrBlocks.value.forEach((block, index) => {
+    const text = translationLines.value[index] ?? (ocrBlocks.value.length === 1 ? translationText.value.trim() : "");
+    if (!text) {
+      return;
+    }
+
+    const mapped = mapOCRBlockToSelection(block, localSelection);
+    const palette = translationPaletteForColor(
+      sampleCanvasColor(sourceCanvas, {
+        x: rect.x + mapped.x,
+        y: rect.y + mapped.y,
+        width: mapped.width,
+        height: mapped.height
+      })
+    );
+    const x = Math.round(mapped.x * scaleX);
+    const y = Math.round(mapped.y * scaleY);
+    const width = Math.max(1, Math.round(mapped.width * scaleX));
+    const height = Math.max(1, Math.round(mapped.height * scaleY));
+    const fontSize = Math.max(8, Math.round(fontSizeForOCRBlock(block, rect.height) * scaleY));
+
+    context.fillStyle = palette.backgroundColor;
+    context.fillRect(x, y, width, height);
+    context.fillStyle = palette.color;
+    context.font = `600 ${fontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(text, x + width / 2, y + height / 2, Math.max(1, width - 2));
+  });
+
+  return target.toDataURL("image/png");
+}
+
 async function restore(): Promise<void> {
   phase.value = "idle";
   capture.value = null;
@@ -418,6 +511,7 @@ async function restore(): Promise<void> {
   translationText.value = "";
   errorMessage.value = "";
   copied.value = false;
+  copiedImage.value = false;
   await hideWindow();
 }
 
@@ -533,7 +627,7 @@ async function saveSettings(): Promise<void> {
           v-for="block in inlineOCRBlocks"
           v-show="block.text"
           :key="block.key"
-          class="absolute rounded-sm border px-1.5 py-0.5 font-medium backdrop-blur-[1px]"
+          class="absolute flex items-center justify-center overflow-hidden rounded-[2px] font-semibold"
           :style="block.style"
           data-testid="ocr-block"
         >
@@ -574,13 +668,24 @@ async function saveSettings(): Promise<void> {
         <button
           class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
           type="button"
-          title="Copy"
-          aria-label="Copy"
+          title="Copy translated text"
+          aria-label="Copy translated text"
           :disabled="!translationText"
           @click="copyResult"
         >
           <Check v-if="copied" class="h-4 w-4" aria-hidden="true" />
           <Copy v-else class="h-4 w-4" aria-hidden="true" />
+        </button>
+        <button
+          class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100 dark:hover:bg-zinc-800"
+          type="button"
+          title="Copy translated screenshot"
+          aria-label="Copy translated screenshot"
+          :disabled="!translationText"
+          @click="copyTranslatedImage"
+        >
+          <Check v-if="copiedImage" class="h-4 w-4" aria-hidden="true" />
+          <ImageIcon v-else class="h-4 w-4" aria-hidden="true" />
         </button>
         <button
           class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-800 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100 dark:hover:bg-zinc-800"

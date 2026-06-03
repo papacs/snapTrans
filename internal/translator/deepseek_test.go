@@ -44,6 +44,19 @@ func TestBuildTranslationRequestPreservesLineOrderForOCRBlocks(t *testing.T) {
 	require.Contains(t, request.Messages[1].Content, "Neutral\nNegative\nPositive")
 }
 
+func TestTryFastTranslationHandlesCommonChartLabels(t *testing.T) {
+	translated, ok := TryFastTranslation("Neutral\nNegative\nPositive")
+
+	require.True(t, ok)
+	require.Equal(t, "\u4e2d\u6027\n\u8d1f\u9762\n\u6b63\u9762", translated)
+}
+
+func TestTryFastTranslationDeclinesMixedUnknownText(t *testing.T) {
+	_, ok := TryFastTranslation("DeepSeek V4 Pro\nPositive")
+
+	require.False(t, ok)
+}
+
 func TestLooksLikeMissingOCRRequestDetectsAssistantChatter(t *testing.T) {
 	require.True(t, looksLikeMissingOCRRequest("I am ready to assist you. Please provide the OCR text you would like translated into Simplified Chinese."))
 	require.False(t, looksLikeMissingOCRRequest("snapTrans.exe"))

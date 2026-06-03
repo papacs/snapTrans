@@ -252,6 +252,11 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 		Blocks: result.Blocks,
 	})
 	runtime.EventsEmit(a.ctx, "translation-start", map[string]string{})
+	if translated, ok := translator.TryFastTranslation(result.Text); ok {
+		runtime.EventsEmit(a.ctx, "translation-token", translated)
+		runtime.EventsEmit(a.ctx, "translation-done", map[string]string{})
+		return
+	}
 
 	client := translator.NewDeepSeek(translator.Options{
 		APIKey:  cfg.DeepSeekAPIKey,

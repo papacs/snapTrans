@@ -141,6 +141,16 @@ export async function copyText(text: string): Promise<void> {
   await navigator.clipboard.writeText(text);
 }
 
+export async function copyImageDataUrl(dataUrl: string): Promise<void> {
+  const blob = await (await fetch(dataUrl)).blob();
+  if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+    await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
+    return;
+  }
+
+  await copyText(dataUrl);
+}
+
 function emitFallback<T>(eventName: EventName, payload: T): void {
   const listeners = fallbackListeners.get(eventName);
   if (!listeners) {
@@ -205,7 +215,7 @@ function createFallbackCapture(): CapturePayload {
 
 async function streamFallbackTranslation(): Promise<void> {
   emitFallback("ocr-start", {});
-  await delay(250);
+  await delay(80);
   emitFallback("ocr-result", {
     text: "Neutral\nNegative\nPositive",
     blocks: [
@@ -220,7 +230,7 @@ async function streamFallbackTranslation(): Promise<void> {
 
   for (const token of tokens) {
     emitFallback("translation-token", token);
-    await delay(90);
+    await delay(35);
   }
 
   emitFallback("translation-done", {});

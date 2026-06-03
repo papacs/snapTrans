@@ -24,6 +24,7 @@ const backendMocks = vi.hoisted(() => {
     defaultConfig,
     listeners,
     emit,
+    copyImageDataUrl: vi.fn(async () => {}),
     hideWindow: vi.fn(async () => {}),
     isDesktop: false,
     loadConfig: vi.fn(async () => ({ ...defaultConfig })),
@@ -43,6 +44,7 @@ const backendMocks = vi.hoisted(() => {
 });
 
 vi.mock("./services/backend", () => ({
+  copyImageDataUrl: backendMocks.copyImageDataUrl,
   copyText: vi.fn(async () => {}),
   defaultConfig: backendMocks.defaultConfig,
   hasWailsBackend: () => backendMocks.isDesktop,
@@ -75,6 +77,7 @@ describe("App capture cancellation", () => {
   beforeEach(() => {
     backendMocks.listeners.clear();
     backendMocks.hideWindow.mockClear();
+    backendMocks.copyImageDataUrl.mockClear();
     backendMocks.isDesktop = false;
     backendMocks.processImage.mockClear();
     backendMocks.showCaptureWindow.mockClear();
@@ -84,9 +87,14 @@ describe("App capture cancellation", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
       clearRect: vi.fn(),
       drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      fillText: vi.fn(),
       getImageData: vi.fn(() => ({
         data: new Uint8ClampedArray([18, 24, 38, 255, 20, 26, 40, 255])
-      }))
+      })),
+      measureText: vi.fn((text: string) => ({ width: text.length * 16 })),
+      restore: vi.fn(),
+      save: vi.fn()
     } as unknown as CanvasRenderingContext2D);
     vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,c2VsZWN0aW9u");
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
@@ -240,9 +248,37 @@ describe("App capture cancellation", () => {
     expect(labels[2].text()).toBe("\u6b63\u9762");
     expect(labels[2].attributes("style")).toContain("left: 280px");
     expect(labels[2].attributes("style")).toContain("top: 10px");
+    expect(labels[2].attributes("style")).toContain("width: 81px");
+    expect(labels[2].attributes("style")).toContain("height: 19px");
     expect(labels[2].attributes("style")).toContain("font-size: 18px");
     expect(labels[2].attributes("style")).toContain("color: rgb(248, 250, 252)");
-    expect(labels[2].attributes("style")).toContain("background-color: rgba(15, 23, 42");
+    expect(labels[2].attributes("style")).toContain("background-color: rgba(19, 25, 39");
+    expect(wrapper.find("button[aria-label='Copy translated screenshot']").exists()).toBe(true);
+  });
+
+  it("copies a translated screenshot from the selected region", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 148, clientY: 26 });
+    await captureLayer.trigger("mousemove", { clientX: 600, clientY: 78 });
+    await captureLayer.trigger("mouseup", { clientX: 600, clientY: 78 });
+    await flushPromises();
+
+    backendMocks.emit("ocr-result", {
+      blocks: [{ text: "Positive", x: 0.62, y: 0.2, width: 0.18, height: 0.36 }]
+    });
+    backendMocks.emit("translation-token", "\u6b63\u9762");
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Copy translated screenshot']").trigger("click");
+    await flushPromises();
+
+    expect(backendMocks.copyImageDataUrl).toHaveBeenCalledWith("data:image/png;base64,c2VsZWN0aW9u");
   });
 
   it("closes the result panel when clicking outside it", async () => {

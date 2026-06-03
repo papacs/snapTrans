@@ -22,6 +22,7 @@ This file records the practical details that should not be lost while the MVP is
 - Persist window/runtime state defensively so stale translation tokens cannot update a new selection.
 - Add markdown sanitization review for rendered translation content.
 - Add telemetry-free crash/error logging to a local file.
+- Investigate a persistent OCR worker/server mode to avoid RapidOCR process cold-start latency after every selection.
 
 ## P2 - Packaging and Open Source Polish
 

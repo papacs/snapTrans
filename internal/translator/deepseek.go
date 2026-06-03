@@ -70,6 +70,26 @@ func (d *DeepSeek) Translate(ctx context.Context, sourceText string, onToken fun
 	}
 }
 
+func TryFastTranslation(sourceText string) (string, bool) {
+	lines := strings.Split(strings.ReplaceAll(sourceText, "\r", ""), "\n")
+	translated := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		value, ok := fastTranslations[strings.ToLower(trimmed)]
+		if !ok {
+			return "", false
+		}
+		translated = append(translated, value)
+	}
+	if len(translated) == 0 {
+		return "", false
+	}
+	return strings.Join(translated, "\n"), true
+}
+
 func buildTranslationRequest(model string, sourceText string) openai.ChatCompletionRequest {
 	return openai.ChatCompletionRequest{
 		Model: model,
@@ -100,6 +120,17 @@ func buildTranslationRequest(model string, sourceText string) openai.ChatComplet
 		Temperature: 0.1,
 		Stream:      true,
 	}
+}
+
+var fastTranslations = map[string]string{
+	"cancel":   "\u53d6\u6d88",
+	"close":    "\u5173\u95ed",
+	"copy":     "\u590d\u5236",
+	"negative": "\u8d1f\u9762",
+	"neutral":  "\u4e2d\u6027",
+	"positive": "\u6b63\u9762",
+	"save":     "\u4fdd\u5b58",
+	"test":     "\u6d4b\u8bd5",
 }
 
 func looksLikeMissingOCRRequest(text string) bool {

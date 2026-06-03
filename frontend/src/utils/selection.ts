@@ -20,10 +20,16 @@ export interface OCRBlock {
 
 export interface TranslationPalette {
   backgroundColor: string;
-  borderColor: string;
   boxShadow: string;
   color: string;
   textShadow: string;
+}
+
+export interface SampledColor {
+  red: number;
+  green: number;
+  blue: number;
+  luminance: number;
 }
 
 export interface Size {
@@ -134,6 +140,10 @@ export function fontSizeForOCRBlock(block: OCRBlock, selectionHeight: number): n
 }
 
 export function sampleCanvasLuminance(canvas: HTMLCanvasElement | null, cssRect: Rect): number | null {
+  return sampleCanvasColor(canvas, cssRect)?.luminance ?? null;
+}
+
+export function sampleCanvasColor(canvas: HTMLCanvasElement | null, cssRect: Rect): SampledColor | null {
   if (!canvas || cssRect.width <= 0 || cssRect.height <= 0) {
     return null;
   }
@@ -165,7 +175,7 @@ export function sampleCanvasLuminance(canvas: HTMLCanvasElement | null, cssRect:
       Math.max(1, imageRect.width),
       Math.max(1, imageRect.height)
     );
-    return luminanceFromImageData(sample.data);
+    return colorFromImageData(sample.data);
   } catch {
     return null;
   }
@@ -173,20 +183,35 @@ export function sampleCanvasLuminance(canvas: HTMLCanvasElement | null, cssRect:
 
 export function translationPaletteForLuminance(luminance: number | null): TranslationPalette {
   const safeLuminance = typeof luminance === "number" && Number.isFinite(luminance) ? luminance : 0.35;
+  const value = Math.round(safeLuminance * 255);
+  return translationPaletteForColor({
+    red: value,
+    green: value,
+    blue: value,
+    luminance: safeLuminance
+  });
+}
+
+export function translationPaletteForColor(color: SampledColor | null): TranslationPalette {
+  const sampled = color ?? { red: 37, green: 42, blue: 55, luminance: 0.22 };
+  const red = clamp(Math.round(sampled.red), 0, 255);
+  const green = clamp(Math.round(sampled.green), 0, 255);
+  const blue = clamp(Math.round(sampled.blue), 0, 255);
+  const safeLuminance =
+    typeof sampled.luminance === "number" && Number.isFinite(sampled.luminance) ? sampled.luminance : 0.35;
+
   if (safeLuminance < 0.48) {
     return {
-      backgroundColor: "rgba(15, 23, 42, 0.88)",
-      borderColor: "rgba(255, 255, 255, 0.22)",
-      boxShadow: "0 2px 10px rgba(0, 0, 0, 0.30)",
+      backgroundColor: `rgba(${red}, ${green}, ${blue}, 0.96)`,
+      boxShadow: "0 1px 6px rgba(0, 0, 0, 0.28)",
       color: "#f8fafc",
       textShadow: "0 1px 1px rgba(0, 0, 0, 0.45)"
     };
   }
 
   return {
-    backgroundColor: "rgba(255, 255, 255, 0.90)",
-    borderColor: "rgba(15, 23, 42, 0.14)",
-    boxShadow: "0 2px 10px rgba(15, 23, 42, 0.16)",
+    backgroundColor: `rgba(${red}, ${green}, ${blue}, 0.96)`,
+    boxShadow: "0 1px 6px rgba(15, 23, 42, 0.14)",
     color: "#0f172a",
     textShadow: "none"
   };
@@ -196,7 +221,10 @@ export function isUsableSelection(rect: Rect, minimumSize = 8): boolean {
   return rect.width >= minimumSize && rect.height >= minimumSize;
 }
 
-function luminanceFromImageData(data: Uint8ClampedArray): number | null {
+function colorFromImageData(data: Uint8ClampedArray): SampledColor | null {
+  let redTotal = 0;
+  let greenTotal = 0;
+  let blueTotal = 0;
   let total = 0;
   let count = 0;
   for (let index = 0; index < data.length; index += 4) {
@@ -208,11 +236,23 @@ function luminanceFromImageData(data: Uint8ClampedArray): number | null {
     const red = data[index] / 255;
     const green = data[index + 1] / 255;
     const blue = data[index + 2] / 255;
+    redTotal += data[index] * alpha;
+    greenTotal += data[index + 1] * alpha;
+    blueTotal += data[index + 2] * alpha;
     total += (0.2126 * red + 0.7152 * green + 0.0722 * blue) * alpha;
     count += alpha;
   }
 
-  return count > 0 ? total / count : null;
+  if (count <= 0) {
+    return null;
+  }
+
+  return {
+    red: redTotal / count,
+    green: greenTotal / count,
+    blue: blueTotal / count,
+    luminance: total / count
+  };
 }
 
 function clamp(value: number, min: number, max: number): number {

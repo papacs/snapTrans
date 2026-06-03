@@ -6,6 +6,7 @@ import {
   normalizeResultBox,
   normalizeRect,
   ocrScaleForRect,
+  translationPaletteForColor,
   translationPaletteForLuminance
 } from "./selection";
 
@@ -104,13 +105,22 @@ describe("translationPaletteForLuminance", () => {
     const palette = translationPaletteForLuminance(0.12);
 
     expect(palette.color).toBe("#f8fafc");
-    expect(palette.backgroundColor).toContain("15, 23, 42");
+    expect(palette.backgroundColor).toBe("rgba(31, 31, 31, 0.96)");
   });
 
   it("uses dark text on light screenshot regions", () => {
     const palette = translationPaletteForLuminance(0.82);
 
     expect(palette.color).toBe("#0f172a");
-    expect(palette.backgroundColor).toContain("255, 255, 255");
+    expect(palette.backgroundColor).toBe("rgba(209, 209, 209, 0.96)");
+  });
+});
+
+describe("translationPaletteForColor", () => {
+  it("uses the sampled original background color for dark regions", () => {
+    const palette = translationPaletteForColor({ red: 19, green: 25, blue: 39, luminance: 0.1 });
+
+    expect(palette.backgroundColor).toBe("rgba(19, 25, 39, 0.96)");
+    expect(palette.color).toBe("#f8fafc");
   });
 });
