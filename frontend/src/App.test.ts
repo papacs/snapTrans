@@ -258,6 +258,49 @@ describe("App capture cancellation", () => {
     expect(wrapper.find("button[aria-label='Copy translated screenshot']").exists()).toBe(true);
   });
 
+  it("renders only trusted translated OCR replacements and drops leaked delimiters", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 120, clientY: 40 });
+    await captureLayer.trigger("mousemove", { clientX: 720, clientY: 360 });
+    await captureLayer.trigger("mouseup", { clientX: 720, clientY: 360 });
+    await flushPromises();
+
+    backendMocks.emit("ocr-result", {
+      blocks: [
+        { text: "Top 10 Model Popularity", x: 0.35, y: 0.08, width: 0.3, height: 0.08 },
+        { text: "30", x: 0.92, y: 0.88, width: 0.04, height: 0.06 },
+        { text: "Neutral", x: 0.55, y: 0.9, width: 0.1, height: 0.06 },
+        { text: "Negative", x: 0.68, y: 0.9, width: 0.12, height: 0.06 },
+        { text: "Positive", x: 0.82, y: 0.9, width: 0.11, height: 0.06 }
+      ]
+    });
+    backendMocks.emit(
+      "translation-token",
+      "OCR_TEXT_BEGIN\n[1] \u5341\u5927\u70ed\u95e8\u6a21\u578b\n[2] 30\n[3] \u4e2d\u6027\n[4] \u8d1f\u9762\n[5] \u6b63\u9762\nOCR_TEXT_END"
+    );
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    const labels = wrapper.findAll("[data-testid='ocr-block']");
+    expect(labels.map((label) => label.text())).toEqual([
+      "\u5341\u5927\u70ed\u95e8\u6a21\u578b",
+      "\u4e2d\u6027",
+      "\u8d1f\u9762",
+      "\u6b63\u9762"
+    ]);
+    expect(wrapper.text()).not.toContain("OCR_TEXT_BEGIN");
+    expect(wrapper.text()).not.toContain("OCR_TEXT_END");
+    expect(labels.some((label) => label.text() === "30")).toBe(false);
+    expect(labels[0].attributes("style")).toContain("white-space: normal");
+    expect(labels[0].attributes("style")).toContain("overflow-wrap: anywhere");
+    expect(labels[0].attributes("style")).toContain("box-shadow: none");
+  });
+
   it("copies a translated screenshot from the selected region", async () => {
     const wrapper = mount(App);
     await flushPromises();

@@ -3,6 +3,7 @@ package translator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -91,6 +92,7 @@ func TryFastTranslation(sourceText string) (string, bool) {
 }
 
 func buildTranslationRequest(model string, sourceText string) openai.ChatCompletionRequest {
+	numberedLines := numberedOCRLines(sourceText)
 	return openai.ChatCompletionRequest{
 		Model: model,
 		Messages: []openai.ChatCompletionMessage{
@@ -98,28 +100,41 @@ func buildTranslationRequest(model string, sourceText string) openai.ChatComplet
 				Role: openai.ChatMessageRoleSystem,
 				Content: strings.Join([]string{
 					"You are a machine translation engine for OCR output.",
-					"Translate the delimited OCR_TEXT into concise Simplified Chinese.",
+					"Translate each numbered OCR line into concise Simplified Chinese.",
 					"Return only the translated text, with no explanations and no conversational replies.",
+					"Preserve each [n] prefix exactly and return exactly one output line for every input line.",
+					"Do not add, omit, merge, reorder, or renumber lines.",
+					"Never output delimiter names such as OCR_TEXT_BEGIN or OCR_TEXT_END.",
 					"Do not leave English natural-language text unchanged.",
 					"Translate short English words, labels, buttons, and menu items even when they are a single word.",
-					"When OCR_TEXT has multiple lines, Return the same number of lines in the same order whenever possible. Do not merge lines or add bullets.",
 					"For brand, app, product, and service names, keep the original name and add a concise Chinese meaning in parentheses when a direct Chinese name is not natural.",
 					"Examples: test -> \u6d4b\u8bd5; Google Play -> Google Play (\u8c37\u6b4c\u5e94\u7528\u5546\u5e97).",
 					"Preserve filenames, commands, code, URLs, version numbers, symbols, and formatting.",
-					"If OCR_TEXT is already Simplified Chinese or has no natural-language text to translate, return it unchanged.",
+					"If an input line is already Simplified Chinese or has no natural-language text to translate, return it unchanged after the same [n] prefix.",
 					"Never ask the user to provide OCR text. Never say you are ready.",
 				}, " "),
 			},
 			{
 				Role: openai.ChatMessageRoleUser,
-				Content: "Translate this OCR_TEXT now.\n\nOCR_TEXT_BEGIN\n" +
-					strings.TrimSpace(sourceText) +
-					"\nOCR_TEXT_END",
+				Content: "Translate these numbered OCR lines now. Keep every [n] prefix.\n\n" + numberedLines,
 			},
 		},
 		Temperature: 0.1,
 		Stream:      true,
 	}
+}
+
+func numberedOCRLines(sourceText string) string {
+	lines := strings.Split(strings.ReplaceAll(sourceText, "\r", ""), "\n")
+	numbered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		numbered = append(numbered, fmt.Sprintf("[%d] %s", len(numbered)+1, trimmed))
+	}
+	return strings.Join(numbered, "\n")
 }
 
 var fastTranslations = map[string]string{

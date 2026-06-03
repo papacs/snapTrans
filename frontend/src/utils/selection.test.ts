@@ -7,8 +7,10 @@ import {
   normalizeResultBox,
   normalizeRect,
   ocrScaleForRect,
+  sampleCanvasColor,
   translationPaletteForColor,
-  translationPaletteForLuminance
+  translationPaletteForLuminance,
+  wrapTranslationText
 } from "./selection";
 
 describe("normalizeRect", () => {
@@ -139,5 +141,41 @@ describe("translationPaletteForColor", () => {
     expect(palette.backgroundColor).toBe("rgba(19, 25, 39, 0.98)");
     expect(palette.color).toBe("#f8fafc");
     expect(palette.boxShadow).toBe("none");
+  });
+});
+
+describe("sampleCanvasColor", () => {
+  it("uses the dominant background color instead of averaging bright text pixels into gray", () => {
+    const canvas = {
+      width: 4,
+      height: 1,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 4, height: 1 }),
+      getContext: () => ({
+        getImageData: () => ({
+          data: new Uint8ClampedArray([
+            20, 24, 32, 255,
+            22, 26, 34, 255,
+            24, 28, 36, 255,
+            250, 250, 250, 255
+          ])
+        })
+      })
+    } as unknown as HTMLCanvasElement;
+
+    const sampled = sampleCanvasColor(canvas, { x: 0, y: 0, width: 4, height: 1 });
+
+    expect(sampled?.red).toBeLessThan(30);
+    expect(sampled?.green).toBeLessThan(34);
+    expect(sampled?.blue).toBeLessThan(42);
+  });
+});
+
+describe("wrapTranslationText", () => {
+  it("keeps short labels on one line", () => {
+    expect(wrapTranslationText("\u6b63\u9762", 16, 81)).toEqual(["\u6b63\u9762"]);
+  });
+
+  it("wraps long translations so they can be drawn completely inside narrow regions", () => {
+    expect(wrapTranslationText("\u70ed\u95e8\u6a21\u578b\u7684\u603b\u63d0\u53ca\u6b21\u6570", 12, 72).length).toBeGreaterThan(1);
   });
 });

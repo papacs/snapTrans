@@ -150,6 +150,32 @@ export function fontSizeForTranslationBlock(text: string, rect: Rect): number {
   return Math.max(10, Math.round(size));
 }
 
+export function wrapTranslationText(text: string, fontSize: number, width: number): string[] {
+  const unitsPerLine = Math.max(1, width / Math.max(1, fontSize * 0.62));
+  const lines: string[] = [];
+  let current = "";
+  let currentUnits = 0;
+
+  for (const char of Array.from(text.trim())) {
+    const unit = characterUnit(char);
+    if (current && currentUnits + unit > unitsPerLine) {
+      lines.push(current);
+      current = char.trimStart();
+      currentUnits = characterUnit(current);
+      continue;
+    }
+
+    current += char;
+    currentUnits += unit;
+  }
+
+  if (current) {
+    lines.push(current);
+  }
+
+  return lines.length > 0 ? lines : [text];
+}
+
 export function sampleCanvasLuminance(canvas: HTMLCanvasElement | null, cssRect: Rect): number | null {
   return sampleCanvasColor(canvas, cssRect)?.luminance ?? null;
 }
@@ -233,11 +259,10 @@ export function isUsableSelection(rect: Rect, minimumSize = 8): boolean {
 }
 
 function colorFromImageData(data: Uint8ClampedArray): SampledColor | null {
-  let redTotal = 0;
-  let greenTotal = 0;
-  let blueTotal = 0;
-  let total = 0;
-  let count = 0;
+  const reds: number[] = [];
+  const greens: number[] = [];
+  const blues: number[] = [];
+  const luminances: number[] = [];
   for (let index = 0; index < data.length; index += 4) {
     const alpha = data[index + 3] / 255;
     if (alpha <= 0.05) {
@@ -247,23 +272,44 @@ function colorFromImageData(data: Uint8ClampedArray): SampledColor | null {
     const red = data[index] / 255;
     const green = data[index + 1] / 255;
     const blue = data[index + 2] / 255;
-    redTotal += data[index] * alpha;
-    greenTotal += data[index + 1] * alpha;
-    blueTotal += data[index + 2] * alpha;
-    total += (0.2126 * red + 0.7152 * green + 0.0722 * blue) * alpha;
-    count += alpha;
+    reds.push(data[index]);
+    greens.push(data[index + 1]);
+    blues.push(data[index + 2]);
+    luminances.push(0.2126 * red + 0.7152 * green + 0.0722 * blue);
   }
 
-  if (count <= 0) {
+  if (reds.length === 0) {
     return null;
   }
 
   return {
-    red: redTotal / count,
-    green: greenTotal / count,
-    blue: blueTotal / count,
-    luminance: total / count
+    red: median(reds),
+    green: median(greens),
+    blue: median(blues),
+    luminance: median(luminances)
   };
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) {
+    return sorted[middle];
+  }
+  return (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function characterUnit(char: string): number {
+  if (/\s/.test(char)) {
+    return 0.35;
+  }
+  if (/[\p{Script=Han}]/u.test(char)) {
+    return 1;
+  }
+  if (/[A-Za-z0-9]/.test(char)) {
+    return 0.62;
+  }
+  return 0.5;
 }
 
 function clamp(value: number, min: number, max: number): number {

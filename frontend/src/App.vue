@@ -29,9 +29,11 @@ import {
   normalizeRect,
   sampleCanvasColor,
   translationPaletteForColor,
+  wrapTranslationText,
   type Point,
   type Rect
 } from "./utils/selection";
+import { parseTranslationOutput, translationForOCRBlock } from "./utils/translation";
 
 type Phase = "idle" | "loading" | "ready" | "drawing" | "processing" | "streaming" | "done" | "error";
 
@@ -53,20 +55,16 @@ const isDesktop = hasWailsBackend();
 const markdown = new MarkdownIt({ breaks: true, linkify: false });
 const config = reactive<AppConfig>({ ...defaultConfig });
 
+const parsedTranslation = computed(() => parseTranslationOutput(translationText.value));
+
+const cleanTranslationText = computed(() => parsedTranslation.value.lines.join("\n").trim());
+
 const renderedTranslation = computed(() => {
-  if (translationText.value.trim().length === 0) {
+  if (cleanTranslationText.value.length === 0) {
     return "";
   }
-  return markdown.render(translationText.value);
+  return markdown.render(cleanTranslationText.value);
 });
-
-const translationLines = computed(() =>
-  translationText.value
-    .replace(/\r/g, "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-);
 
 const resultStyle = computed(() => {
   const rect = resultRect.value;
@@ -114,8 +112,6 @@ const resultActionsStyle = computed(() => {
   return { ...vertical, ...horizontal };
 });
 
-const hasOCRBlockLayout = computed(() => ocrBlocks.value.length > 0);
-
 const inlineOCRBlocks = computed(() => {
   const rect = resultRect.value;
   if (!rect) {
@@ -124,9 +120,13 @@ const inlineOCRBlocks = computed(() => {
 
   const box = normalizeResultBox(rect, viewport);
   const localSelection = { x: 0, y: 0, width: box.width, height: box.height };
-  return ocrBlocks.value.map((block, index) => {
+  return ocrBlocks.value.flatMap((block, index) => {
     const mapped = mapOCRBlockToSelection(block, localSelection);
-    const text = translationLines.value[index] ?? (ocrBlocks.value.length === 1 ? translationText.value.trim() : "");
+    const text = translationForOCRBlock(index, block, parsedTranslation.value, ocrBlocks.value.length);
+    if (!text) {
+      return [];
+    }
+
     const fontSize = fontSizeForTranslationBlock(text || block.text, mapped);
     const palette = translationPaletteForColor(
       sampleCanvasColor(canvasRef.value, {
@@ -148,11 +148,20 @@ const inlineOCRBlocks = computed(() => {
         fontSize: `${fontSize}px`,
         lineHeight: `${Math.round(fontSize * 1.12)}px`,
         fontWeight: "500",
+        overflow: "visible" as const,
+        overflowWrap: "anywhere" as const,
+        textAlign: "center" as const,
+        whiteSpace: "normal" as const,
+        wordBreak: "break-word" as const,
         ...palette
       }
     };
   });
 });
+
+const hasOCRBlockLayout = computed(
+  () => ocrBlocks.value.length > 0 && (phase.value === "streaming" || phase.value === "processing" || inlineOCRBlocks.value.length > 0)
+);
 
 const selectionStyle = computed(() => {
   const rect = selection.value;
@@ -406,11 +415,11 @@ async function cancelCapture(): Promise<void> {
 }
 
 async function copyResult(): Promise<void> {
-  if (!translationText.value) {
+  if (!cleanTranslationText.value) {
     return;
   }
 
-  await copyText(translationText.value);
+  await copyText(cleanTranslationText.value);
   copied.value = true;
   window.setTimeout(() => {
     copied.value = false;
@@ -470,8 +479,9 @@ function renderTranslatedSelectionImage(): string | null {
   const scaleX = target.width / rect.width;
   const scaleY = target.height / rect.height;
   const localSelection = { x: 0, y: 0, width: rect.width, height: rect.height };
+  const parsed = parsedTranslation.value;
   ocrBlocks.value.forEach((block, index) => {
-    const text = translationLines.value[index] ?? (ocrBlocks.value.length === 1 ? translationText.value.trim() : "");
+    const text = translationForOCRBlock(index, block, parsed, ocrBlocks.value.length);
     if (!text) {
       return;
     }
@@ -490,14 +500,22 @@ function renderTranslatedSelectionImage(): string | null {
     const width = Math.max(1, Math.round(mapped.width * scaleX));
     const height = Math.max(1, Math.round(mapped.height * scaleY));
     const fontSize = Math.max(8, Math.round(fontSizeForTranslationBlock(text, mapped) * scaleY));
+    const lineHeight = Math.round(fontSize * 1.12);
+    const lines = wrapTranslationText(text, fontSize, Math.max(1, width - 2));
+    const textHeight = lines.length * lineHeight;
+    const paintHeight = Math.max(height, textHeight);
+    const paintY = Math.round(y - Math.max(0, paintHeight - height) / 2);
 
     context.fillStyle = palette.backgroundColor;
-    context.fillRect(x, y, width, height);
+    context.fillRect(x, paintY, width, paintHeight);
     context.fillStyle = palette.color;
     context.font = `500 ${fontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.fillText(text, x + width / 2, y + height / 2, Math.max(1, width - 2));
+    lines.forEach((line, lineIndex) => {
+      const lineY = paintY + paintHeight / 2 - textHeight / 2 + lineHeight * (lineIndex + 0.5);
+      context.fillText(line, x + width / 2, lineY, Math.max(1, width - 2));
+    });
   });
 
   return target.toDataURL("image/png");
@@ -626,9 +644,8 @@ async function saveSettings(): Promise<void> {
         </div>
         <div
           v-for="block in inlineOCRBlocks"
-          v-show="block.text"
           :key="block.key"
-          class="absolute flex items-center justify-center overflow-hidden rounded-[2px] font-medium"
+          class="absolute flex items-center justify-center text-center font-medium"
           :style="block.style"
           data-testid="ocr-block"
         >
@@ -671,7 +688,7 @@ async function saveSettings(): Promise<void> {
           type="button"
           title="Copy translated text"
           aria-label="Copy translated text"
-          :disabled="!translationText"
+          :disabled="!cleanTranslationText"
           @click="copyResult"
         >
           <Check v-if="copied" class="h-4 w-4" aria-hidden="true" />
@@ -682,7 +699,7 @@ async function saveSettings(): Promise<void> {
           type="button"
           title="Copy translated screenshot"
           aria-label="Copy translated screenshot"
-          :disabled="!translationText"
+          :disabled="!cleanTranslationText"
           @click="copyTranslatedImage"
         >
           <Check v-if="copiedImage" class="h-4 w-4" aria-hidden="true" />
