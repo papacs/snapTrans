@@ -167,4 +167,52 @@ describe("App capture cancellation", () => {
 
     expect(wrapper.text()).toContain("Translating...");
   });
+
+  it("closes the result panel when clicking outside it", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 20, clientY: 20 });
+    await captureLayer.trigger("mousemove", { clientX: 180, clientY: 80 });
+    await captureLayer.trigger("mouseup", { clientX: 180, clientY: 80 });
+    await flushPromises();
+
+    backendMocks.emit("translation-token", "测试");
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("测试");
+
+    await wrapper.find("main").trigger("mousedown", { button: 0 });
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain("测试");
+    expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the result panel with right click", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 20, clientY: 20 });
+    await captureLayer.trigger("mousemove", { clientX: 180, clientY: 80 });
+    await captureLayer.trigger("mouseup", { clientX: 180, clientY: 80 });
+    await flushPromises();
+
+    backendMocks.emit("translation-token", "测试");
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    await wrapper.find("main").trigger("contextmenu");
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain("测试");
+    expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
 });

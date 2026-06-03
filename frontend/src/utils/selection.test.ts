@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapCssRectToImageRect, normalizeResultBox, normalizeRect } from "./selection";
+import { mapCssRectToImageRect, normalizeResultBox, normalizeRect, ocrScaleForRect } from "./selection";
 
 describe("normalizeRect", () => {
   it("returns positive dimensions when dragging from bottom-right to top-left", () => {
@@ -62,5 +62,15 @@ describe("normalizeResultBox", () => {
     );
 
     expect(box.y).toBeGreaterThan(100);
+  });
+});
+
+describe("ocrScaleForRect", () => {
+  it("upscales small text crops before OCR", () => {
+    expect(ocrScaleForRect({ x: 0, y: 0, width: 60, height: 18 })).toBeGreaterThan(1);
+  });
+
+  it("keeps large crops at native scale", () => {
+    expect(ocrScaleForRect({ x: 0, y: 0, width: 640, height: 240 })).toBe(1);
   });
 });

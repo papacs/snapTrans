@@ -25,8 +25,16 @@ func TestBuildTranslationRequestRequiresChineseMeaningForEnglishProductNames(t *
 	request := buildTranslationRequest("deepseek-chat", "Google Play")
 
 	require.Contains(t, request.Messages[0].Content, "Do not leave English natural-language text unchanged")
-	require.Contains(t, request.Messages[0].Content, "Google Play -> Google Play（谷歌应用商店）")
+	require.Contains(t, request.Messages[0].Content, "Google Play -> Google Play (\u8c37\u6b4c\u5e94\u7528\u5546\u5e97)")
 	require.Contains(t, request.Messages[1].Content, "Google Play")
+}
+
+func TestBuildTranslationRequestRequiresShortEnglishWordsToTranslate(t *testing.T) {
+	request := buildTranslationRequest("deepseek-chat", "test")
+
+	require.Contains(t, request.Messages[0].Content, "Translate short English words")
+	require.Contains(t, request.Messages[0].Content, "test -> \u6d4b\u8bd5")
+	require.Contains(t, request.Messages[1].Content, "test")
 }
 
 func TestLooksLikeMissingOCRRequestDetectsAssistantChatter(t *testing.T) {

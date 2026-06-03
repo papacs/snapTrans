@@ -73,14 +73,17 @@ export function normalizeResultBox(selection: Rect, viewport: Size): Rect {
 }
 
 export function cropCanvasToDataUrl(canvas: HTMLCanvasElement, imageRect: Rect): string {
+  const scale = ocrScaleForRect(imageRect);
   const target = document.createElement("canvas");
-  target.width = Math.max(1, Math.round(imageRect.width));
-  target.height = Math.max(1, Math.round(imageRect.height));
+  target.width = Math.max(1, Math.round(imageRect.width * scale));
+  target.height = Math.max(1, Math.round(imageRect.height * scale));
 
   const context = target.getContext("2d");
   if (!context) {
     throw new Error("Canvas 2D context is unavailable");
   }
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
 
   context.drawImage(
     canvas,
@@ -95,6 +98,17 @@ export function cropCanvasToDataUrl(canvas: HTMLCanvasElement, imageRect: Rect):
   );
 
   return target.toDataURL("image/png");
+}
+
+export function ocrScaleForRect(imageRect: Rect): number {
+  const shortSide = Math.min(imageRect.width, imageRect.height);
+  if (shortSide <= 0) {
+    return 1;
+  }
+
+  const minimumShortSide = 96;
+  const maximumScale = 5;
+  return Math.max(1, Math.min(maximumScale, Math.ceil(minimumShortSide / shortSide)));
 }
 
 export function isUsableSelection(rect: Rect, minimumSize = 8): boolean {

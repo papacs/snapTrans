@@ -29,6 +29,7 @@ import {
 type Phase = "idle" | "ready" | "drawing" | "processing" | "streaming" | "done" | "error";
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
+const resultPanelRef = ref<HTMLElement | null>(null);
 const phase = ref<Phase>("idle");
 const capture = ref<CapturePayload | null>(null);
 const dragStart = ref<Point | null>(null);
@@ -264,6 +265,28 @@ function onContextMenu(event: MouseEvent): void {
   void cancelCapture();
 }
 
+function onMainMouseDown(event: MouseEvent): void {
+  if (event.button !== 0 || !resultRect.value || settingsOpen.value || isCaptureActive()) {
+    return;
+  }
+
+  const target = event.target;
+  if (target instanceof Node && resultPanelRef.value?.contains(target)) {
+    return;
+  }
+
+  void restore();
+}
+
+function onMainContextMenu(event: MouseEvent): void {
+  if (!resultRect.value || settingsOpen.value || isCaptureActive()) {
+    return;
+  }
+
+  event.preventDefault();
+  void restore();
+}
+
 function isCaptureActive(): boolean {
   return phase.value === "ready" || phase.value === "drawing";
 }
@@ -317,7 +340,11 @@ async function saveSettings(): Promise<void> {
 </script>
 
 <template>
-  <main class="relative h-full w-full overflow-hidden bg-transparent text-slate-950 dark:text-slate-50">
+  <main
+    class="relative h-full w-full overflow-hidden bg-transparent text-slate-950 dark:text-slate-50"
+    @mousedown="onMainMouseDown"
+    @contextmenu="onMainContextMenu"
+  >
     <section
       v-if="!isDesktop && phase === 'idle'"
       class="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_20%_20%,rgba(16,185,129,0.20),transparent_30%),radial-gradient(circle_at_80%_30%,rgba(37,99,235,0.18),transparent_34%),linear-gradient(135deg,#f8fafc,#eef2ff_45%,#ecfdf5)] p-5"
@@ -378,17 +405,18 @@ async function saveSettings(): Promise<void> {
       <canvas ref="canvasRef" class="h-full w-full object-fill" />
       <div
         v-if="phase === 'ready' || phase === 'drawing'"
-        class="pointer-events-none absolute inset-0 bg-slate-950/10"
+        class="pointer-events-none absolute inset-0 bg-slate-950/20"
       />
       <div
         v-if="selection"
-        class="pointer-events-none absolute border border-white bg-white/5 shadow-[0_0_0_9999px_rgba(15,23,42,0.16)]"
+        class="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-200/10 shadow-[0_0_0_9999px_rgba(2,6,23,0.26)] outline outline-1 outline-white/90"
         :style="selectionStyle"
       />
     </section>
 
     <section
       v-if="resultRect"
+      ref="resultPanelRef"
       class="absolute z-20 max-h-[calc(100vh-32px)] overflow-hidden rounded-lg border border-white/50 bg-white/95 p-3 shadow-floating backdrop-blur-lg transition dark:border-slate-700/70 dark:bg-zinc-950/95 sm:p-4"
       :style="resultStyle"
     >
