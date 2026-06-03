@@ -48,21 +48,13 @@ export function mapCssRectToImageRect(rect: Rect, cssSize: Size, imageSize: Size
 }
 
 export function normalizeResultBox(selection: Rect, viewport: Size): Rect {
-  const padding = viewport.width < 520 ? 16 : 24;
-  const availableWidth = Math.max(220, viewport.width - padding * 2);
-  const preferredWidth = Math.max(selection.width, viewport.width < 520 ? 320 : 360);
-  const width = Math.min(preferredWidth, availableWidth);
-
-  const availableHeight = Math.max(180, viewport.height - padding * 2);
-  const preferredHeight = Math.min(Math.max(selection.height, 172), 460);
-  const height = Math.min(preferredHeight, availableHeight);
-
+  const padding = 8;
+  const availableWidth = Math.max(48, viewport.width - padding * 2);
+  const availableHeight = Math.max(32, viewport.height - padding * 2);
+  const width = Math.min(Math.max(selection.width, 48), availableWidth);
+  const height = Math.min(Math.max(selection.height, 32), availableHeight);
   const left = clamp(selection.x, padding, viewport.width - width - padding);
-  const below = selection.y + selection.height + 12;
-  const above = selection.y - height - 12;
-  const hasRoomBelow = below + height <= viewport.height - padding;
-  const y = hasRoomBelow ? below : above;
-  const top = clamp(y, padding, viewport.height - height - padding);
+  const top = clamp(selection.y, padding, viewport.height - height - padding);
 
   return {
     x: Math.round(left),

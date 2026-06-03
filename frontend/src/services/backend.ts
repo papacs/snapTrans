@@ -97,6 +97,12 @@ export async function triggerCapture(): Promise<void> {
   emitFallback("capture-start", createFallbackCapture());
 }
 
+export async function showCaptureWindow(): Promise<void> {
+  if (hasWailsBackend()) {
+    await window.go!.main!.App!.ShowCaptureWindow();
+  }
+}
+
 export async function processImage(base64Crop: string): Promise<void> {
   if (hasWailsBackend()) {
     await window.go!.main!.App!.ProcessImage(base64Crop);

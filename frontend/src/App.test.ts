@@ -28,6 +28,7 @@ const backendMocks = vi.hoisted(() => {
     isDesktop: false,
     loadConfig: vi.fn(async () => ({ ...defaultConfig })),
     processImage: vi.fn(async () => {}),
+    showCaptureWindow: vi.fn(async () => {}),
     triggerCapture: vi.fn(async () => {
       emit("capture-start", {
         image: "data:image/png;base64,ZmFrZQ==",
@@ -55,6 +56,7 @@ vi.mock("./services/backend", () => ({
   },
   processImage: backendMocks.processImage,
   saveConfig: vi.fn(async () => {}),
+  showCaptureWindow: backendMocks.showCaptureWindow,
   triggerCapture: backendMocks.triggerCapture
 }));
 
@@ -75,6 +77,7 @@ describe("App capture cancellation", () => {
     backendMocks.hideWindow.mockClear();
     backendMocks.isDesktop = false;
     backendMocks.processImage.mockClear();
+    backendMocks.showCaptureWindow.mockClear();
     backendMocks.triggerCapture.mockClear();
     backendMocks.loadConfig.mockClear();
     vi.stubGlobal("Image", MockImage);
@@ -166,6 +169,40 @@ describe("App capture cancellation", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("Translating...");
+  });
+
+  it("does not show a full-screen mask before the user starts drawing", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find("section.cursor-crosshair").exists()).toBe(true);
+    expect(wrapper.html()).not.toContain("bg-slate-950/20");
+  });
+
+  it("anchors the result panel to the selected region", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 120, clientY: 140 });
+    await captureLayer.trigger("mousemove", { clientX: 380, clientY: 220 });
+    await captureLayer.trigger("mouseup", { clientX: 380, clientY: 220 });
+    await flushPromises();
+
+    backendMocks.emit("translation-token", "\u6d4b\u8bd5");
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    const resultPanel = wrapper.find("section.z-20");
+    expect(resultPanel.attributes("style")).toContain("left: 120px");
+    expect(resultPanel.attributes("style")).toContain("top: 140px");
+    expect(resultPanel.attributes("style")).toContain("width: 260px");
+    expect(resultPanel.attributes("style")).toContain("min-height: 80px");
   });
 
   it("closes the result panel when clicking outside it", async () => {

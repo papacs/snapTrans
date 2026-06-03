@@ -44,24 +44,25 @@ describe("mapCssRectToImageRect", () => {
 });
 
 describe("normalizeResultBox", () => {
-  it("keeps the result box inside a narrow viewport", () => {
+  it("keeps the result box anchored to the selected region", () => {
     const box = normalizeResultBox(
-      { x: 260, y: 220, width: 420, height: 180 },
-      { width: 433, height: 721 }
-    );
-
-    expect(box.x).toBe(16);
-    expect(box.width).toBeLessThanOrEqual(401);
-    expect(box.x + box.width).toBeLessThanOrEqual(417);
-  });
-
-  it("moves the box below the selection when the selected text is near the top", () => {
-    const box = normalizeResultBox(
-      { x: 120, y: 20, width: 260, height: 80 },
+      { x: 120, y: 220, width: 260, height: 80 },
       { width: 900, height: 700 }
     );
 
-    expect(box.y).toBeGreaterThan(100);
+    expect(box).toEqual({ x: 120, y: 220, width: 260, height: 80 });
+  });
+
+  it("only clamps the result box when the selected region would leave the viewport", () => {
+    const box = normalizeResultBox(
+      { x: 380, y: 690, width: 90, height: 45 },
+      { width: 433, height: 721 }
+    );
+
+    expect(box.x).toBeLessThanOrEqual(337);
+    expect(box.y).toBeLessThanOrEqual(668);
+    expect(box.width).toBeGreaterThanOrEqual(90);
+    expect(box.height).toBeGreaterThanOrEqual(45);
   });
 });
 

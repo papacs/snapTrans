@@ -11,6 +11,7 @@ import {
   onBackendEvent,
   processImage,
   saveConfig,
+  showCaptureWindow,
   triggerCapture,
   type AppConfig,
   type CapturePayload,
@@ -26,7 +27,7 @@ import {
   type Rect
 } from "./utils/selection";
 
-type Phase = "idle" | "ready" | "drawing" | "processing" | "streaming" | "done" | "error";
+type Phase = "idle" | "loading" | "ready" | "drawing" | "processing" | "streaming" | "done" | "error";
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const resultPanelRef = ref<HTMLElement | null>(null);
@@ -63,8 +64,38 @@ const resultStyle = computed(() => {
     left: `${box.x}px`,
     top: `${box.y}px`,
     width: `${box.width}px`,
+    height: `${box.height}px`,
     minHeight: `${box.height}px`
   };
+});
+
+const resultTextStyle = computed(() => {
+  const rect = resultRect.value;
+  if (!rect) {
+    return {};
+  }
+
+  const fontSize = Math.max(14, Math.min(22, Math.round(rect.height * 0.36)));
+  return {
+    fontSize: `${fontSize}px`,
+    lineHeight: `${Math.round(fontSize * 1.45)}px`
+  };
+});
+
+const resultActionsStyle = computed(() => {
+  const rect = resultRect.value;
+  if (!rect) {
+    return {};
+  }
+
+  const box = normalizeResultBox(rect, viewport);
+  const vertical =
+    box.y + box.height + 52 > viewport.height - 8
+      ? { bottom: "calc(100% + 8px)" }
+      : { top: "calc(100% + 8px)" };
+  const horizontal = box.x + 116 > viewport.width - 8 ? { right: "0px" } : { left: "0px" };
+
+  return { ...vertical, ...horizontal };
 });
 
 const selectionStyle = computed(() => {
@@ -149,10 +180,13 @@ async function startCapture(payload: CapturePayload): Promise<void> {
   translationText.value = "";
   errorMessage.value = "";
   copied.value = false;
-  phase.value = "ready";
+  phase.value = "loading";
 
   await nextTick();
   await drawCapture(payload);
+  phase.value = "ready";
+  await nextTick();
+  await showCaptureWindow();
 }
 
 async function drawCapture(payload: CapturePayload): Promise<void> {
@@ -288,7 +322,7 @@ function onMainContextMenu(event: MouseEvent): void {
 }
 
 function isCaptureActive(): boolean {
-  return phase.value === "ready" || phase.value === "drawing";
+  return phase.value === "loading" || phase.value === "ready" || phase.value === "drawing";
 }
 
 async function cancelCapture(): Promise<void> {
@@ -385,6 +419,7 @@ async function saveSettings(): Promise<void> {
     </button>
 
     <button
+      v-if="phase === 'idle' && !settingsOpen"
       class="absolute right-4 top-16 z-30 inline-flex h-10 w-10 items-center justify-center rounded-md border border-white/40 bg-white/80 text-slate-900 shadow-floating backdrop-blur transition hover:bg-white dark:border-slate-600/70 dark:bg-slate-900/80 dark:text-slate-100"
       type="button"
       title="Settings"
@@ -396,7 +431,11 @@ async function saveSettings(): Promise<void> {
 
     <section
       v-if="capture"
-      class="absolute inset-0 z-10 cursor-crosshair select-none"
+      class="absolute inset-0 z-10 select-none transition-opacity duration-75"
+      :class="[
+        phase === 'ready' || phase === 'drawing' ? 'cursor-crosshair' : 'cursor-default',
+        phase === 'loading' ? 'pointer-events-none opacity-0' : 'opacity-100'
+      ]"
       @mousedown.left="onMouseDown"
       @mousemove="onMouseMove"
       @mouseup.left="onMouseUp"
@@ -404,12 +443,8 @@ async function saveSettings(): Promise<void> {
     >
       <canvas ref="canvasRef" class="h-full w-full object-fill" />
       <div
-        v-if="phase === 'ready' || phase === 'drawing'"
-        class="pointer-events-none absolute inset-0 bg-slate-950/20"
-      />
-      <div
         v-if="selection"
-        class="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-200/10 shadow-[0_0_0_9999px_rgba(2,6,23,0.26)] outline outline-1 outline-white/90"
+        class="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-200/5 shadow-[0_0_0_9999px_rgba(2,6,23,0.18)] outline outline-1 outline-white/90"
         :style="selectionStyle"
       />
     </section>
@@ -417,50 +452,56 @@ async function saveSettings(): Promise<void> {
     <section
       v-if="resultRect"
       ref="resultPanelRef"
-      class="absolute z-20 max-h-[calc(100vh-32px)] overflow-hidden rounded-lg border border-white/50 bg-white/95 p-3 shadow-floating backdrop-blur-lg transition dark:border-slate-700/70 dark:bg-zinc-950/95 sm:p-4"
+      class="absolute z-20 overflow-visible rounded-md border border-white/70 bg-white/92 p-2 shadow-[0_10px_36px_rgba(15,23,42,0.26)] ring-1 ring-slate-900/5 backdrop-blur-[2px] transition dark:border-slate-700/70 dark:bg-zinc-950/92"
       :style="resultStyle"
     >
-      <div v-if="phase === 'processing'" class="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+      <div v-if="phase === 'processing'" class="flex h-full items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
         <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
         <span>OCR...</span>
       </div>
 
       <div
         v-else-if="phase === 'streaming' && !translationText"
-        class="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200"
+        class="flex h-full items-center gap-3 text-sm text-slate-700 dark:text-slate-200"
       >
         <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
         <span>Translating...</span>
       </div>
 
-      <div v-else-if="phase === 'error'" class="text-sm leading-6 text-rose-700 dark:text-rose-300">
+      <div v-else-if="phase === 'error'" class="h-full overflow-auto text-sm leading-6 text-rose-700 dark:text-rose-300">
         {{ errorMessage }}
       </div>
 
       <div
         v-else
-        class="markdown-body max-h-[min(330px,calc(100vh-150px))] overflow-auto text-[15px] leading-7 text-slate-900 dark:text-slate-100"
+        class="markdown-body h-full overflow-auto pr-1 text-slate-950 dark:text-slate-100"
+        :style="resultTextStyle"
         v-html="renderedTranslation"
       />
 
-      <div class="mt-4 flex items-center justify-end gap-2 border-t border-slate-200/70 pt-3 dark:border-slate-800">
+      <div
+        class="absolute flex h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-2 shadow-[0_10px_32px_rgba(15,23,42,0.22)] backdrop-blur dark:border-slate-700/70 dark:bg-zinc-950/95"
+        :style="resultActionsStyle"
+      >
         <button
-          class="inline-flex h-9 items-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
+          class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
           type="button"
+          title="Copy"
+          aria-label="Copy"
           :disabled="!translationText"
           @click="copyResult"
         >
           <Check v-if="copied" class="h-4 w-4" aria-hidden="true" />
           <Copy v-else class="h-4 w-4" aria-hidden="true" />
-          Copy
         </button>
         <button
-          class="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100 dark:hover:bg-zinc-800"
+          class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-800 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100 dark:hover:bg-zinc-800"
           type="button"
+          title="Close"
+          aria-label="Close"
           @click="restore"
         >
           <X class="h-4 w-4" aria-hidden="true" />
-          Close
         </button>
       </div>
     </section>

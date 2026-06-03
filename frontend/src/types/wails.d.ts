@@ -8,6 +8,7 @@ declare global {
           LoadConfig: () => Promise<AppConfig>;
           SaveConfig: (config: AppConfig) => Promise<void>;
           TriggerCapture: () => Promise<void>;
+          ShowCaptureWindow: () => Promise<void>;
           ProcessImage: (base64Crop: string) => Promise<void>;
           HideWindow: () => Promise<void>;
           QuitApp: () => Promise<void>;

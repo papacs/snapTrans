@@ -121,6 +121,17 @@ func (a *App) TriggerCapture() error {
 	return nil
 }
 
+func (a *App) ShowCaptureWindow() error {
+	if a.ctx == nil {
+		return nil
+	}
+
+	runtime.WindowShow(a.ctx)
+	runtime.WindowFullscreen(a.ctx)
+	runtime.WindowSetAlwaysOnTop(a.ctx, true)
+	return nil
+}
+
 func (a *App) ProcessImage(base64Crop string) error {
 	a.mu.Lock()
 	cfg := a.cfg.WithDefaults()
@@ -180,10 +191,6 @@ func (a *App) captureAndEmit() {
 		a.emitError("capture", err)
 		return
 	}
-
-	runtime.WindowShow(a.ctx)
-	runtime.WindowFullscreen(a.ctx)
-	runtime.WindowSetAlwaysOnTop(a.ctx, true)
 
 	runtime.EventsEmit(a.ctx, "capture-start", result)
 }
