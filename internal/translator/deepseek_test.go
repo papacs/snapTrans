@@ -21,6 +21,14 @@ func TestBuildTranslationRequestWrapsOCRTextAndForbidsReadinessReplies(t *testin
 	require.Contains(t, request.Messages[1].Content, "OCR_TEXT_END")
 }
 
+func TestBuildTranslationRequestRequiresChineseMeaningForEnglishProductNames(t *testing.T) {
+	request := buildTranslationRequest("deepseek-chat", "Google Play")
+
+	require.Contains(t, request.Messages[0].Content, "Do not leave English natural-language text unchanged")
+	require.Contains(t, request.Messages[0].Content, "Google Play -> Google Play（谷歌应用商店）")
+	require.Contains(t, request.Messages[1].Content, "Google Play")
+}
+
 func TestLooksLikeMissingOCRRequestDetectsAssistantChatter(t *testing.T) {
 	require.True(t, looksLikeMissingOCRRequest("I am ready to assist you. Please provide the OCR text you would like translated into Simplified Chinese."))
 	require.False(t, looksLikeMissingOCRRequest("snapTrans.exe"))

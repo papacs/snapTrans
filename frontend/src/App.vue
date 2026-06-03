@@ -397,6 +397,14 @@ async function saveSettings(): Promise<void> {
         <span>OCR...</span>
       </div>
 
+      <div
+        v-else-if="phase === 'streaming' && !translationText"
+        class="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200"
+      >
+        <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+        <span>Translating...</span>
+      </div>
+
       <div v-else-if="phase === 'error'" class="text-sm leading-6 text-rose-700 dark:text-rose-300">
         {{ errorMessage }}
       </div>

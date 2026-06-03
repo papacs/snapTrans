@@ -27,6 +27,7 @@ const backendMocks = vi.hoisted(() => {
     hideWindow: vi.fn(async () => {}),
     isDesktop: false,
     loadConfig: vi.fn(async () => ({ ...defaultConfig })),
+    processImage: vi.fn(async () => {}),
     triggerCapture: vi.fn(async () => {
       emit("capture-start", {
         image: "data:image/png;base64,ZmFrZQ==",
@@ -52,7 +53,7 @@ vi.mock("./services/backend", () => ({
     backendMocks.listeners.set(eventName, listeners);
     return () => listeners.delete(callback);
   },
-  processImage: vi.fn(async () => {}),
+  processImage: backendMocks.processImage,
   saveConfig: vi.fn(async () => {}),
   triggerCapture: backendMocks.triggerCapture
 }));
@@ -73,6 +74,7 @@ describe("App capture cancellation", () => {
     backendMocks.listeners.clear();
     backendMocks.hideWindow.mockClear();
     backendMocks.isDesktop = false;
+    backendMocks.processImage.mockClear();
     backendMocks.triggerCapture.mockClear();
     backendMocks.loadConfig.mockClear();
     vi.stubGlobal("Image", MockImage);
@@ -80,6 +82,18 @@ describe("App capture cancellation", () => {
       clearRect: vi.fn(),
       drawImage: vi.fn()
     } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,c2VsZWN0aW9u");
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 600,
+      width: 800,
+      height: 600,
+      toJSON: () => ({})
+    } as DOMRect);
   });
 
   afterEach(() => {
@@ -134,5 +148,23 @@ describe("App capture cancellation", () => {
 
     expect(wrapper.find("form").exists()).toBe(false);
     expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a translating placeholder while waiting for the first streamed token", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 20, clientY: 20 });
+    await captureLayer.trigger("mousemove", { clientX: 180, clientY: 80 });
+    await captureLayer.trigger("mouseup", { clientX: 180, clientY: 80 });
+    await flushPromises();
+
+    backendMocks.emit("translation-start", {});
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Translating...");
   });
 });
