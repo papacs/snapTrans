@@ -22,6 +22,8 @@ This file records the practical details that should not be lost while the MVP is
 - Persist window/runtime state defensively so stale translation tokens cannot update a new selection.
 - Add markdown sanitization review for rendered translation content.
 - Add telemetry-free crash/error logging to a local file.
+- Improve inline replacement quality by sampling per-block background more precisely and supporting multi-line OCR block layout without oversized labels.
+- Profile end-to-end latency from mouse release to first translated character, including capture crop, RapidOCR startup, OCR runtime, DeepSeek first token, and frontend paint.
 - Investigate a persistent OCR worker/server mode to avoid RapidOCR process cold-start latency after every selection.
 
 ## P2 - Packaging and Open Source Polish

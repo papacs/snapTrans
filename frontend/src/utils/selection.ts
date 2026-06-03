@@ -139,6 +139,17 @@ export function fontSizeForOCRBlock(block: OCRBlock, selectionHeight: number): n
   return Math.max(11, Math.min(22, Math.round(blockHeight * 0.95)));
 }
 
+export function fontSizeForTranslationBlock(text: string, rect: Rect): number {
+  const trimmed = text.trim();
+  const charCount = Math.max(1, Array.from(trimmed).length);
+  const lengthDamping = charCount > 6 ? 0.82 : 1;
+  const heightLimit = rect.height * 0.84 * lengthDamping;
+  const widthLimit = rect.width / Math.max(2, charCount * 1.15);
+  const size = Math.min(heightLimit, widthLimit, 20);
+
+  return Math.max(10, Math.round(size));
+}
+
 export function sampleCanvasLuminance(canvas: HTMLCanvasElement | null, cssRect: Rect): number | null {
   return sampleCanvasColor(canvas, cssRect)?.luminance ?? null;
 }
@@ -202,16 +213,16 @@ export function translationPaletteForColor(color: SampledColor | null): Translat
 
   if (safeLuminance < 0.48) {
     return {
-      backgroundColor: `rgba(${red}, ${green}, ${blue}, 0.96)`,
-      boxShadow: "0 1px 6px rgba(0, 0, 0, 0.28)",
+      backgroundColor: `rgba(${red}, ${green}, ${blue}, 0.98)`,
+      boxShadow: "none",
       color: "#f8fafc",
       textShadow: "0 1px 1px rgba(0, 0, 0, 0.45)"
     };
   }
 
   return {
-    backgroundColor: `rgba(${red}, ${green}, ${blue}, 0.96)`,
-    boxShadow: "0 1px 6px rgba(15, 23, 42, 0.14)",
+    backgroundColor: `rgba(${red}, ${green}, ${blue}, 0.98)`,
+    boxShadow: "none",
     color: "#0f172a",
     textShadow: "none"
   };

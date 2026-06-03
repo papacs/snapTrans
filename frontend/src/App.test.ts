@@ -250,9 +250,11 @@ describe("App capture cancellation", () => {
     expect(labels[2].attributes("style")).toContain("top: 10px");
     expect(labels[2].attributes("style")).toContain("width: 81px");
     expect(labels[2].attributes("style")).toContain("height: 19px");
-    expect(labels[2].attributes("style")).toContain("font-size: 18px");
+    expect(labels[2].attributes("style")).toContain("font-size: 16px");
+    expect(labels[2].attributes("style")).toContain("font-weight: 500");
     expect(labels[2].attributes("style")).toContain("color: rgb(248, 250, 252)");
     expect(labels[2].attributes("style")).toContain("background-color: rgba(19, 25, 39");
+    expect(labels[2].attributes("style")).toContain("box-shadow: none");
     expect(wrapper.find("button[aria-label='Copy translated screenshot']").exists()).toBe(true);
   });
 

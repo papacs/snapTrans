@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   fontSizeForOCRBlock,
+  fontSizeForTranslationBlock,
   mapCssRectToImageRect,
   mapOCRBlockToSelection,
   normalizeResultBox,
@@ -98,6 +99,21 @@ describe("mapOCRBlockToSelection", () => {
   it("sizes inline translations from the OCR block height", () => {
     expect(fontSizeForOCRBlock({ text: "Positive", x: 0, y: 0, width: 0.2, height: 0.36 }, 52)).toBe(18);
   });
+
+  it("keeps short legend translations readable", () => {
+    expect(fontSizeForTranslationBlock("\u6b63\u9762", { x: 0, y: 0, width: 81, height: 19 })).toBe(16);
+  });
+
+  it("reduces long title translations to fit their original text box", () => {
+    expect(
+      fontSizeForTranslationBlock("\u70ed\u95e8\u6a21\u578b\u7684\u603b\u63d0\u53ca\u6b21\u6570\u4e0e\u7528\u6237\u60c5\u611f\u5206\u6790", {
+        x: 0,
+        y: 0,
+        width: 420,
+        height: 24
+      })
+    ).toBeLessThanOrEqual(17);
+  });
 });
 
 describe("translationPaletteForLuminance", () => {
@@ -105,14 +121,14 @@ describe("translationPaletteForLuminance", () => {
     const palette = translationPaletteForLuminance(0.12);
 
     expect(palette.color).toBe("#f8fafc");
-    expect(palette.backgroundColor).toBe("rgba(31, 31, 31, 0.96)");
+    expect(palette.backgroundColor).toBe("rgba(31, 31, 31, 0.98)");
   });
 
   it("uses dark text on light screenshot regions", () => {
     const palette = translationPaletteForLuminance(0.82);
 
     expect(palette.color).toBe("#0f172a");
-    expect(palette.backgroundColor).toBe("rgba(209, 209, 209, 0.96)");
+    expect(palette.backgroundColor).toBe("rgba(209, 209, 209, 0.98)");
   });
 });
 
@@ -120,7 +136,8 @@ describe("translationPaletteForColor", () => {
   it("uses the sampled original background color for dark regions", () => {
     const palette = translationPaletteForColor({ red: 19, green: 25, blue: 39, luminance: 0.1 });
 
-    expect(palette.backgroundColor).toBe("rgba(19, 25, 39, 0.96)");
+    expect(palette.backgroundColor).toBe("rgba(19, 25, 39, 0.98)");
     expect(palette.color).toBe("#f8fafc");
+    expect(palette.boxShadow).toBe("none");
   });
 });

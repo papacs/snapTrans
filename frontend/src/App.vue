@@ -21,7 +21,7 @@ import {
 } from "./services/backend";
 import {
   cropCanvasToDataUrl,
-  fontSizeForOCRBlock,
+  fontSizeForTranslationBlock,
   isUsableSelection,
   mapCssRectToImageRect,
   mapOCRBlockToSelection,
@@ -126,8 +126,8 @@ const inlineOCRBlocks = computed(() => {
   const localSelection = { x: 0, y: 0, width: box.width, height: box.height };
   return ocrBlocks.value.map((block, index) => {
     const mapped = mapOCRBlockToSelection(block, localSelection);
-    const fontSize = fontSizeForOCRBlock(block, box.height);
     const text = translationLines.value[index] ?? (ocrBlocks.value.length === 1 ? translationText.value.trim() : "");
+    const fontSize = fontSizeForTranslationBlock(text || block.text, mapped);
     const palette = translationPaletteForColor(
       sampleCanvasColor(canvasRef.value, {
         x: box.x + mapped.x,
@@ -146,7 +146,8 @@ const inlineOCRBlocks = computed(() => {
         width: `${mapped.width}px`,
         height: `${mapped.height}px`,
         fontSize: `${fontSize}px`,
-        lineHeight: `${Math.round(fontSize * 1.18)}px`,
+        lineHeight: `${Math.round(fontSize * 1.12)}px`,
+        fontWeight: "500",
         ...palette
       }
     };
@@ -488,12 +489,12 @@ function renderTranslatedSelectionImage(): string | null {
     const y = Math.round(mapped.y * scaleY);
     const width = Math.max(1, Math.round(mapped.width * scaleX));
     const height = Math.max(1, Math.round(mapped.height * scaleY));
-    const fontSize = Math.max(8, Math.round(fontSizeForOCRBlock(block, rect.height) * scaleY));
+    const fontSize = Math.max(8, Math.round(fontSizeForTranslationBlock(text, mapped) * scaleY));
 
     context.fillStyle = palette.backgroundColor;
     context.fillRect(x, y, width, height);
     context.fillStyle = palette.color;
-    context.font = `600 ${fontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+    context.font = `500 ${fontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.fillText(text, x + width / 2, y + height / 2, Math.max(1, width - 2));
@@ -627,7 +628,7 @@ async function saveSettings(): Promise<void> {
           v-for="block in inlineOCRBlocks"
           v-show="block.text"
           :key="block.key"
-          class="absolute flex items-center justify-center overflow-hidden rounded-[2px] font-semibold"
+          class="absolute flex items-center justify-center overflow-hidden rounded-[2px] font-medium"
           :style="block.style"
           data-testid="ocr-block"
         >
