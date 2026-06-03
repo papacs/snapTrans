@@ -1,4 +1,4 @@
-import type { AppConfig, CapturePayload, WorkflowErrorPayload } from "../services/backend";
+import type { AppConfig, CapturePayload, OCRResultPayload, WorkflowErrorPayload } from "../services/backend";
 
 declare global {
   interface Window {
@@ -27,6 +27,7 @@ declare global {
 export interface BackendEvents {
   "capture-start": CapturePayload;
   "ocr-start": Record<string, never>;
+  "ocr-result": OCRResultPayload;
   "translation-start": Record<string, never>;
   "translation-token": string;
   "translation-done": Record<string, never>;

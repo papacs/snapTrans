@@ -15,12 +15,15 @@ import {
   triggerCapture,
   type AppConfig,
   type CapturePayload,
+  type OCRResultPayload,
   type WorkflowErrorPayload
 } from "./services/backend";
 import {
   cropCanvasToDataUrl,
+  fontSizeForOCRBlock,
   isUsableSelection,
   mapCssRectToImageRect,
+  mapOCRBlockToSelection,
   normalizeResultBox,
   normalizeRect,
   type Point,
@@ -36,6 +39,7 @@ const capture = ref<CapturePayload | null>(null);
 const dragStart = ref<Point | null>(null);
 const selection = ref<Rect | null>(null);
 const resultRect = ref<Rect | null>(null);
+const ocrBlocks = ref<OCRResultPayload["blocks"]>([]);
 const viewport = reactive({ width: window.innerWidth, height: window.innerHeight });
 const translationText = ref("");
 const errorMessage = ref("");
@@ -51,6 +55,14 @@ const renderedTranslation = computed(() => {
   }
   return markdown.render(translationText.value);
 });
+
+const translationLines = computed(() =>
+  translationText.value
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+);
 
 const resultStyle = computed(() => {
   const rect = resultRect.value;
@@ -98,6 +110,36 @@ const resultActionsStyle = computed(() => {
   return { ...vertical, ...horizontal };
 });
 
+const hasOCRBlockLayout = computed(() => ocrBlocks.value.length > 0);
+
+const inlineOCRBlocks = computed(() => {
+  const rect = resultRect.value;
+  if (!rect) {
+    return [];
+  }
+
+  const box = normalizeResultBox(rect, viewport);
+  const localSelection = { x: 0, y: 0, width: box.width, height: box.height };
+  return ocrBlocks.value.map((block, index) => {
+    const mapped = mapOCRBlockToSelection(block, localSelection);
+    const fontSize = fontSizeForOCRBlock(block, box.height);
+    const text = translationLines.value[index] ?? (ocrBlocks.value.length === 1 ? translationText.value.trim() : "");
+
+    return {
+      key: `${index}-${block.text}-${mapped.x}-${mapped.y}`,
+      text,
+      style: {
+        left: `${mapped.x}px`,
+        top: `${mapped.y}px`,
+        minWidth: `${mapped.width}px`,
+        minHeight: `${mapped.height}px`,
+        fontSize: `${fontSize}px`,
+        lineHeight: `${Math.round(fontSize * 1.18)}px`
+      }
+    };
+  });
+});
+
 const selectionStyle = computed(() => {
   const rect = selection.value;
   if (!rect) {
@@ -126,6 +168,9 @@ onMounted(async () => {
     onBackendEvent("ocr-start", () => {
       phase.value = "processing";
     }),
+    onBackendEvent<OCRResultPayload>("ocr-result", (payload) => {
+      ocrBlocks.value = payload.blocks ?? [];
+    }),
     onBackendEvent("translation-start", () => {
       phase.value = "streaming";
     }),
@@ -144,6 +189,7 @@ onMounted(async () => {
       capture.value = null;
       resultRect.value = null;
       selection.value = null;
+      ocrBlocks.value = [];
       translationText.value = "";
       errorMessage.value = "";
       phase.value = "idle";
@@ -177,6 +223,7 @@ async function startCapture(payload: CapturePayload): Promise<void> {
   dragStart.value = null;
   selection.value = null;
   resultRect.value = null;
+  ocrBlocks.value = [];
   translationText.value = "";
   errorMessage.value = "";
   copied.value = false;
@@ -276,6 +323,7 @@ async function submitSelection(rect: Rect): Promise<void> {
 
   resultRect.value = rect;
   selection.value = null;
+  ocrBlocks.value = [];
   translationText.value = "";
   errorMessage.value = "";
   copied.value = false;
@@ -330,6 +378,7 @@ async function cancelCapture(): Promise<void> {
   selection.value = null;
   capture.value = null;
   resultRect.value = null;
+  ocrBlocks.value = [];
   translationText.value = "";
   errorMessage.value = "";
   copied.value = false;
@@ -354,6 +403,7 @@ async function restore(): Promise<void> {
   capture.value = null;
   selection.value = null;
   resultRect.value = null;
+  ocrBlocks.value = [];
   translationText.value = "";
   errorMessage.value = "";
   copied.value = false;
@@ -452,32 +502,59 @@ async function saveSettings(): Promise<void> {
     <section
       v-if="resultRect"
       ref="resultPanelRef"
-      class="absolute z-20 overflow-visible rounded-md border border-white/70 bg-white/92 p-2 shadow-[0_10px_36px_rgba(15,23,42,0.26)] ring-1 ring-slate-900/5 backdrop-blur-[2px] transition dark:border-slate-700/70 dark:bg-zinc-950/92"
+      class="absolute z-20 overflow-visible transition"
+      :class="
+        hasOCRBlockLayout
+          ? ''
+          : 'rounded-md border border-white/70 bg-white/92 p-2 shadow-[0_10px_36px_rgba(15,23,42,0.26)] ring-1 ring-slate-900/5 backdrop-blur-[2px] dark:border-slate-700/70 dark:bg-zinc-950/92'
+      "
       :style="resultStyle"
     >
-      <div v-if="phase === 'processing'" class="flex h-full items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
-        <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
-        <span>OCR...</span>
-      </div>
+      <template v-if="hasOCRBlockLayout && phase !== 'error'">
+        <div
+          v-if="phase === 'streaming' && !translationText"
+          class="absolute left-0 top-0 inline-flex h-7 items-center gap-2 rounded bg-white/90 px-2 text-xs text-slate-700 shadow-sm backdrop-blur dark:bg-zinc-950/90 dark:text-slate-200"
+        >
+          <span class="h-3 w-3 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+          <span>Translating...</span>
+        </div>
+        <div
+          v-for="block in inlineOCRBlocks"
+          v-show="block.text"
+          :key="block.key"
+          class="absolute rounded bg-white/92 px-1.5 py-0.5 font-medium text-slate-950 shadow-[0_3px_14px_rgba(15,23,42,0.22)] backdrop-blur-[1px] dark:bg-zinc-950/92 dark:text-slate-50"
+          :style="block.style"
+          data-testid="ocr-block"
+        >
+          {{ block.text }}
+        </div>
+      </template>
 
-      <div
-        v-else-if="phase === 'streaming' && !translationText"
-        class="flex h-full items-center gap-3 text-sm text-slate-700 dark:text-slate-200"
-      >
-        <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
-        <span>Translating...</span>
-      </div>
+      <template v-else>
+        <div v-if="phase === 'processing'" class="flex h-full items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+          <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+          <span>OCR...</span>
+        </div>
 
-      <div v-else-if="phase === 'error'" class="h-full overflow-auto text-sm leading-6 text-rose-700 dark:text-rose-300">
-        {{ errorMessage }}
-      </div>
+        <div
+          v-else-if="phase === 'streaming' && !translationText"
+          class="flex h-full items-center gap-3 text-sm text-slate-700 dark:text-slate-200"
+        >
+          <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+          <span>Translating...</span>
+        </div>
 
-      <div
-        v-else
-        class="markdown-body h-full overflow-auto pr-1 text-slate-950 dark:text-slate-100"
-        :style="resultTextStyle"
-        v-html="renderedTranslation"
-      />
+        <div v-else-if="phase === 'error'" class="h-full overflow-auto text-sm leading-6 text-rose-700 dark:text-rose-300">
+          {{ errorMessage }}
+        </div>
+
+        <div
+          v-else
+          class="markdown-body h-full overflow-auto pr-1 text-slate-950 dark:text-slate-100"
+          :style="resultTextStyle"
+          v-html="renderedTranslation"
+        />
+      </template>
 
       <div
         class="absolute flex h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-2 shadow-[0_10px_32px_rgba(15,23,42,0.22)] backdrop-blur dark:border-slate-700/70 dark:bg-zinc-950/95"

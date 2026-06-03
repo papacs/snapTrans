@@ -44,6 +44,26 @@ func TestExtractTextFromJSONSkipsRapidOCRBannerLines(t *testing.T) {
 	require.Equal(t, "Hello", text)
 }
 
+func TestExtractResultFromJSONReturnsNormalizedBlocks(t *testing.T) {
+	raw := []byte(`{"code":100,"data":[
+		{"box":[[20,10],[80,10],[80,30],[20,30]],"score":0.99,"text":"Neutral"},
+		{"box":[[120,10],[190,10],[190,30],[120,30]],"score":0.98,"text":"Positive"}
+	]}`)
+
+	result, err := ExtractResultFromJSON(raw, 200, 100)
+
+	require.NoError(t, err)
+	require.Equal(t, "Neutral\nPositive", result.Text)
+	require.Len(t, result.Blocks, 2)
+	require.Equal(t, "Neutral", result.Blocks[0].Text)
+	require.InDelta(t, 0.10, result.Blocks[0].X, 0.001)
+	require.InDelta(t, 0.10, result.Blocks[0].Y, 0.001)
+	require.InDelta(t, 0.30, result.Blocks[0].Width, 0.001)
+	require.InDelta(t, 0.20, result.Blocks[0].Height, 0.001)
+	require.Equal(t, "Positive", result.Blocks[1].Text)
+	require.InDelta(t, 0.60, result.Blocks[1].X, 0.001)
+}
+
 func TestResolveExecutablePathFindsRelativePathFromWorkingDirectory(t *testing.T) {
 	temp := t.TempDir()
 	exe := filepath.Join(temp, "rapidocr_json.exe")

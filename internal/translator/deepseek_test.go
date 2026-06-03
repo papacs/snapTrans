@@ -37,6 +37,13 @@ func TestBuildTranslationRequestRequiresShortEnglishWordsToTranslate(t *testing.
 	require.Contains(t, request.Messages[1].Content, "test")
 }
 
+func TestBuildTranslationRequestPreservesLineOrderForOCRBlocks(t *testing.T) {
+	request := buildTranslationRequest("deepseek-chat", "Neutral\nNegative\nPositive")
+
+	require.Contains(t, request.Messages[0].Content, "Return the same number of lines in the same order")
+	require.Contains(t, request.Messages[1].Content, "Neutral\nNegative\nPositive")
+}
+
 func TestLooksLikeMissingOCRRequestDetectsAssistantChatter(t *testing.T) {
 	require.True(t, looksLikeMissingOCRRequest("I am ready to assist you. Please provide the OCR text you would like translated into Simplified Chinese."))
 	require.False(t, looksLikeMissingOCRRequest("snapTrans.exe"))

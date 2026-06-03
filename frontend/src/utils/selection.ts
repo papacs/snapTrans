@@ -10,6 +10,14 @@ export interface Rect {
   height: number;
 }
 
+export interface OCRBlock {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface Size {
   width: number;
   height: number;
@@ -101,6 +109,20 @@ export function ocrScaleForRect(imageRect: Rect): number {
   const minimumShortSide = 96;
   const maximumScale = 5;
   return Math.max(1, Math.min(maximumScale, Math.ceil(minimumShortSide / shortSide)));
+}
+
+export function mapOCRBlockToSelection(block: OCRBlock, selection: Rect): Rect {
+  return {
+    x: Math.round(selection.x + block.x * selection.width),
+    y: Math.round(selection.y + block.y * selection.height),
+    width: Math.max(1, Math.round(block.width * selection.width)),
+    height: Math.max(1, Math.round(block.height * selection.height))
+  };
+}
+
+export function fontSizeForOCRBlock(block: OCRBlock, selectionHeight: number): number {
+  const blockHeight = Math.max(1, block.height * selectionHeight);
+  return Math.max(11, Math.min(22, Math.round(blockHeight * 0.95)));
 }
 
 export function isUsableSelection(rect: Rect, minimumSize = 8): boolean {

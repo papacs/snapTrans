@@ -21,9 +21,23 @@ export interface WorkflowErrorPayload {
   message: string;
 }
 
+export interface OCRBlockPayload {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface OCRResultPayload {
+  text: string;
+  blocks: OCRBlockPayload[];
+}
+
 type EventName =
   | "capture-start"
   | "ocr-start"
+  | "ocr-result"
   | "translation-start"
   | "translation-token"
   | "translation-done"
@@ -192,28 +206,17 @@ function createFallbackCapture(): CapturePayload {
 async function streamFallbackTranslation(): Promise<void> {
   emitFallback("ocr-start", {});
   await delay(250);
+  emitFallback("ocr-result", {
+    text: "Neutral\nNegative\nPositive",
+    blocks: [
+      { text: "Neutral", x: 0.16, y: 0.2, width: 0.15, height: 0.36 },
+      { text: "Negative", x: 0.39, y: 0.2, width: 0.17, height: 0.36 },
+      { text: "Positive", x: 0.62, y: 0.2, width: 0.18, height: 0.36 }
+    ]
+  } satisfies OCRResultPayload);
   emitFallback("translation-start", {});
 
-  const tokens = [
-    "即时",
-    "截图",
-    "翻译",
-    "已经",
-    "进入",
-    "流式",
-    "输出",
-    "。",
-    "\n\n",
-    "这里",
-    "会",
-    "显示",
-    " DeepSeek ",
-    "返回",
-    "的",
-    "翻译",
-    "结果",
-    "。"
-  ];
+  const tokens = ["\u4e2d\u6027", "\n", "\u8d1f\u9762", "\n", "\u6b63\u9762"];
 
   for (const token of tokens) {
     emitFallback("translation-token", token);

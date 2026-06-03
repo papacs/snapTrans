@@ -205,6 +205,39 @@ describe("App capture cancellation", () => {
     expect(resultPanel.attributes("style")).toContain("min-height: 80px");
   });
 
+  it("renders translated OCR blocks at their original positions", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 148, clientY: 26 });
+    await captureLayer.trigger("mousemove", { clientX: 600, clientY: 78 });
+    await captureLayer.trigger("mouseup", { clientX: 600, clientY: 78 });
+    await flushPromises();
+
+    backendMocks.emit("ocr-result", {
+      blocks: [
+        { text: "Neutral", x: 0.16, y: 0.2, width: 0.15, height: 0.36 },
+        { text: "Negative", x: 0.39, y: 0.2, width: 0.17, height: 0.36 },
+        { text: "Positive", x: 0.62, y: 0.2, width: 0.18, height: 0.36 }
+      ]
+    });
+    backendMocks.emit("translation-token", "\u4e2d\u6027\n\u8d1f\u9762\n\u6b63\u9762");
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    const labels = wrapper.findAll("[data-testid='ocr-block']");
+    expect(labels).toHaveLength(3);
+    expect(labels[0].text()).toBe("\u4e2d\u6027");
+    expect(labels[1].text()).toBe("\u8d1f\u9762");
+    expect(labels[2].text()).toBe("\u6b63\u9762");
+    expect(labels[2].attributes("style")).toContain("left: 280px");
+    expect(labels[2].attributes("style")).toContain("top: 10px");
+    expect(labels[2].attributes("style")).toContain("font-size: 18px");
+  });
+
   it("closes the result panel when clicking outside it", async () => {
     const wrapper = mount(App);
     await flushPromises();

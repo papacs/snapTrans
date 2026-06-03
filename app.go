@@ -25,6 +25,11 @@ type workflowError struct {
 	Message string `json:"message"`
 }
 
+type ocrResultPayload struct {
+	Text   string      `json:"text"`
+	Blocks []ocr.Block `json:"blocks"`
+}
+
 type App struct {
 	ctx context.Context
 
@@ -232,16 +237,20 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 	runtime.EventsEmit(a.ctx, "ocr-start", map[string]string{})
 
 	ocrClient := ocr.NewRapidOCR(cfg.RapidOCRPath, time.Duration(cfg.RapidOCRTimeoutSeconds)*time.Second)
-	text, err := ocrClient.ExtractText(ctx, base64Crop)
+	result, err := ocrClient.ExtractResult(ctx, base64Crop)
 	if err != nil {
 		a.emitError("ocr", err)
 		return
 	}
-	if text == "" {
+	if result.Text == "" {
 		a.emitError("ocr", errors.New("OCR returned no text"))
 		return
 	}
 
+	runtime.EventsEmit(a.ctx, "ocr-result", ocrResultPayload{
+		Text:   result.Text,
+		Blocks: result.Blocks,
+	})
 	runtime.EventsEmit(a.ctx, "translation-start", map[string]string{})
 
 	client := translator.NewDeepSeek(translator.Options{
@@ -249,7 +258,7 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 		BaseURL: cfg.DeepSeekBaseURL,
 		Model:   cfg.DeepSeekModel,
 	})
-	err = client.Translate(ctx, text, func(token string) {
+	err = client.Translate(ctx, result.Text, func(token string) {
 		runtime.EventsEmit(a.ctx, "translation-token", token)
 	})
 	if err != nil {

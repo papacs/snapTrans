@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { mapCssRectToImageRect, normalizeResultBox, normalizeRect, ocrScaleForRect } from "./selection";
+import {
+  fontSizeForOCRBlock,
+  mapCssRectToImageRect,
+  mapOCRBlockToSelection,
+  normalizeResultBox,
+  normalizeRect,
+  ocrScaleForRect
+} from "./selection";
 
 describe("normalizeRect", () => {
   it("returns positive dimensions when dragging from bottom-right to top-left", () => {
@@ -73,5 +80,20 @@ describe("ocrScaleForRect", () => {
 
   it("keeps large crops at native scale", () => {
     expect(ocrScaleForRect({ x: 0, y: 0, width: 640, height: 240 })).toBe(1);
+  });
+});
+
+describe("mapOCRBlockToSelection", () => {
+  it("maps normalized OCR block coordinates back into the selected CSS region", () => {
+    expect(
+      mapOCRBlockToSelection(
+        { text: "Positive", x: 0.62, y: 0.2, width: 0.18, height: 0.36 },
+        { x: 148, y: 26, width: 452, height: 52 }
+      )
+    ).toEqual({ x: 428, y: 36, width: 81, height: 19 });
+  });
+
+  it("sizes inline translations from the OCR block height", () => {
+    expect(fontSizeForOCRBlock({ text: "Positive", x: 0, y: 0, width: 0.2, height: 0.36 }, 52)).toBe(18);
   });
 });

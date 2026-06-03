@@ -82,6 +82,7 @@ func buildTranslationRequest(model string, sourceText string) openai.ChatComplet
 					"Return only the translated text, with no explanations and no conversational replies.",
 					"Do not leave English natural-language text unchanged.",
 					"Translate short English words, labels, buttons, and menu items even when they are a single word.",
+					"When OCR_TEXT has multiple lines, Return the same number of lines in the same order whenever possible. Do not merge lines or add bullets.",
 					"For brand, app, product, and service names, keep the original name and add a concise Chinese meaning in parentheses when a direct Chinese name is not natural.",
 					"Examples: test -> \u6d4b\u8bd5; Google Play -> Google Play (\u8c37\u6b4c\u5e94\u7528\u5546\u5e97).",
 					"Preserve filenames, commands, code, URLs, version numbers, symbols, and formatting.",
