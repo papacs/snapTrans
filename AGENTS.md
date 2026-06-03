@@ -37,7 +37,7 @@ No confirm button should appear between mouse release and translation start.
 3. Run `npm install` inside `frontend/`.
 4. Copy `.env.sample` to `.env`.
 5. Fill `DEEPSEEK_API_KEY`.
-6. Put `rapidocr_json.exe` at the project root, next to `build/bin/snapTrans.exe`, or set `RAPIDOCR_EXE_PATH` to an absolute path.
+6. Unzip `RapidOCR-json_v0.2.0` next to `build/bin/snapTrans.exe`, or set `RAPIDOCR_EXE_PATH` to the RapidOCR folder or executable path.
 
 ## Verification
 

@@ -303,9 +303,16 @@ async function restore(): Promise<void> {
   await hideWindow();
 }
 
+async function closeSettings(): Promise<void> {
+  settingsOpen.value = false;
+  if (isDesktop) {
+    await hideWindow();
+  }
+}
+
 async function saveSettings(): Promise<void> {
   await saveConfig({ ...config });
-  settingsOpen.value = false;
+  await closeSettings();
 }
 </script>
 
@@ -425,7 +432,7 @@ async function saveSettings(): Promise<void> {
     <section
       v-if="settingsOpen"
       class="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
-      @mousedown.self="settingsOpen = false"
+      @mousedown.self="closeSettings"
     >
       <form
         class="w-full max-w-md rounded-lg border border-white/40 bg-white p-5 shadow-floating dark:border-slate-700 dark:bg-zinc-950"
@@ -438,7 +445,7 @@ async function saveSettings(): Promise<void> {
             type="button"
             title="Close"
             aria-label="Close"
-            @click="settingsOpen = false"
+            @click="closeSettings"
           >
             <X class="h-4 w-4" aria-hidden="true" />
           </button>
@@ -476,7 +483,7 @@ async function saveSettings(): Promise<void> {
           <button
             class="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100 dark:hover:bg-zinc-800"
             type="button"
-            @click="settingsOpen = false"
+            @click="closeSettings"
           >
             Cancel
           </button>

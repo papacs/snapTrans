@@ -39,7 +39,7 @@ export const defaultConfig: AppConfig = {
   deepSeekAPIKey: "",
   deepSeekBaseURL: "https://api.deepseek.com",
   deepSeekModel: "deepseek-chat",
-  rapidOCRPath: "./rapidocr_json.exe",
+  rapidOCRPath: "./RapidOCR-json_v0.2.0",
   rapidOCRTimeoutSeconds: 15
 };
 

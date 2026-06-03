@@ -63,7 +63,7 @@ func (r *RapidOCR) ExtractText(ctx context.Context, imageDataURL string) (string
 	runCtx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, resolvedExecutable, "--image_dir", tempPath)
+	cmd := NewRapidOCRCommand(runCtx, resolvedExecutable, tempPath)
 	output, err := cmd.CombinedOutput()
 	if runCtx.Err() != nil {
 		return "", fmt.Errorf("RapidOCR timed out after %s", r.Timeout)
@@ -73,6 +73,12 @@ func (r *RapidOCR) ExtractText(ctx context.Context, imageDataURL string) (string
 	}
 
 	return ExtractTextFromJSON(output)
+}
+
+func NewRapidOCRCommand(ctx context.Context, resolvedExecutable string, imagePath string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, resolvedExecutable, "--image="+imagePath)
+	cmd.Dir = filepath.Dir(resolvedExecutable)
+	return cmd
 }
 
 func ResolveExecutablePath(configuredPath string, workingDirectory string, executablePath string) (string, error) {
@@ -101,14 +107,14 @@ func ResolveExecutablePath(configuredPath string, workingDirectory string, execu
 	}
 
 	for _, candidate := range candidates {
-		info, err := os.Stat(candidate)
-		if err == nil && !info.IsDir() {
-			return candidate, nil
+		resolved, ok := resolveExecutableCandidate(candidate)
+		if ok {
+			return resolved, nil
 		}
 	}
 
 	return "", fmt.Errorf(
-		"RapidOCR executable not found for %q. Put rapidocr_json.exe next to snapTrans.exe, put it in the project root, or set an absolute path. Checked: %s",
+		"RapidOCR executable not found for %q. Put RapidOCR-json.exe next to snapTrans.exe, put it in the project root, set the RapidOCR-json_v0.2.0 folder, or set an absolute executable path. Checked: %s",
 		configuredPath,
 		strings.Join(candidates, "; "),
 	)
@@ -134,6 +140,25 @@ func appendUniquePath(paths []string, next string) []string {
 		}
 	}
 	return append(paths, next)
+}
+
+func resolveExecutableCandidate(candidate string) (string, bool) {
+	info, err := os.Stat(candidate)
+	if err != nil {
+		return "", false
+	}
+	if !info.IsDir() {
+		return candidate, true
+	}
+
+	for _, executableName := range []string{"RapidOCR-json.exe", "rapidocr_json.exe", "rapidocr-json.exe"} {
+		nested := filepath.Join(candidate, executableName)
+		info, err := os.Stat(nested)
+		if err == nil && !info.IsDir() {
+			return nested, true
+		}
+	}
+	return "", false
 }
 
 func ExtractTextFromJSON(raw []byte) (string, error) {

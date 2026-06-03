@@ -81,7 +81,7 @@ Open the Vite URL and use the small capture button in the top-right corner.
 DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
-RAPIDOCR_EXE_PATH=./rapidocr_json.exe
+RAPIDOCR_EXE_PATH=./RapidOCR-json_v0.2.0
 RAPIDOCR_TIMEOUT_SECONDS=15
 SNAPTRANS_SHORTCUT=Alt+Q
 ```
@@ -92,7 +92,24 @@ The MVP default shortcut is `Alt+Q`. The settings modal can save a shortcut stri
 
 ## OCR Binary
 
-Place `rapidocr_json.exe` in the repository root during development, next to `build/bin/snapTrans.exe` after packaging, or set `RAPIDOCR_EXE_PATH` to an absolute path in `.env` or Settings.
+Unzip the RapidOCR release so `RapidOCR-json.exe` and the `models` folder stay together. The recommended Windows package layout is:
+
+```text
+build/bin/
+  snapTrans.exe
+  RapidOCR-json_v0.2.0/
+    RapidOCR-json.exe
+    models/
+```
+
+Then set `RapidOCR Path` to either the folder or the executable:
+
+```text
+E:/workspace/snapTrans/build/bin/RapidOCR-json_v0.2.0
+E:/workspace/snapTrans/build/bin/RapidOCR-json_v0.2.0/RapidOCR-json.exe
+```
+
+Relative paths are also supported, so `./RapidOCR-json_v0.2.0` works when the folder is next to `snapTrans.exe`.
 
 When the configured OCR path is relative, snapTrans checks these locations in order:
 
@@ -100,7 +117,7 @@ When the configured OCR path is relative, snapTrans checks these locations in or
 - The directory containing `snapTrans.exe`.
 - The project root when running from `build/bin`.
 
-The OCR wrapper expects JSON output and extracts text from common fields such as `text`, `rec_text`, and `content`.
+The OCR wrapper runs `RapidOCR-json.exe --image=<temp_png>` from the RapidOCR executable directory, so the bundled `models` folder can be found. It expects JSON output and extracts text from common fields such as `text`, `rec_text`, and `content`.
 
 ## Tray and Cancellation
 

@@ -1,6 +1,7 @@
 package ocr
 
 import (
+	"context"
 	"encoding/base64"
 	"os"
 	"path/filepath"
@@ -69,6 +70,30 @@ func TestResolveExecutablePathFindsProjectRootFromBuildBin(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, rapidOCR, resolved)
+}
+
+func TestResolveExecutablePathFindsExecutableInsideConfiguredDirectory(t *testing.T) {
+	temp := t.TempDir()
+	rapidOCRDir := filepath.Join(temp, "RapidOCR-json_v0.2.0")
+	require.NoError(t, os.MkdirAll(rapidOCRDir, 0o755))
+	rapidOCR := filepath.Join(rapidOCRDir, "RapidOCR-json.exe")
+	require.NoError(t, os.WriteFile(rapidOCR, []byte("bin"), 0o755))
+
+	resolved, err := ResolveExecutablePath(rapidOCRDir, filepath.Join(temp, "other"), filepath.Join(temp, "snapTrans.exe"))
+
+	require.NoError(t, err)
+	require.Equal(t, rapidOCR, resolved)
+}
+
+func TestNewRapidOCRCommandUsesImageArgumentAndExecutableDirectory(t *testing.T) {
+	executable := filepath.Join("C:", "tools", "RapidOCR-json_v0.2.0", "RapidOCR-json.exe")
+	imagePath := filepath.Join("C:", "Users", "dell", "AppData", "Local", "Temp", "snaptrans.png")
+
+	cmd := NewRapidOCRCommand(context.Background(), executable, imagePath)
+
+	require.Equal(t, filepath.Dir(executable), cmd.Dir)
+	require.Equal(t, executable, cmd.Path)
+	require.Equal(t, []string{executable, "--image=" + imagePath}, cmd.Args)
 }
 
 func TestResolveExecutablePathReportsCheckedLocations(t *testing.T) {

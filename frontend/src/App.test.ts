@@ -10,7 +10,7 @@ const backendMocks = vi.hoisted(() => {
     deepSeekAPIKey: "",
     deepSeekBaseURL: "https://api.deepseek.com",
     deepSeekModel: "deepseek-chat",
-    rapidOCRPath: "./rapidocr_json.exe",
+    rapidOCRPath: "./RapidOCR-json_v0.2.0",
     rapidOCRTimeoutSeconds: 15
   };
 
@@ -25,6 +25,7 @@ const backendMocks = vi.hoisted(() => {
     listeners,
     emit,
     hideWindow: vi.fn(async () => {}),
+    isDesktop: false,
     loadConfig: vi.fn(async () => ({ ...defaultConfig })),
     triggerCapture: vi.fn(async () => {
       emit("capture-start", {
@@ -42,7 +43,7 @@ const backendMocks = vi.hoisted(() => {
 vi.mock("./services/backend", () => ({
   copyText: vi.fn(async () => {}),
   defaultConfig: backendMocks.defaultConfig,
-  hasWailsBackend: () => false,
+  hasWailsBackend: () => backendMocks.isDesktop,
   hideWindow: backendMocks.hideWindow,
   loadConfig: backendMocks.loadConfig,
   onBackendEvent: (eventName: string, callback: (payload: unknown) => void) => {
@@ -71,6 +72,7 @@ describe("App capture cancellation", () => {
   beforeEach(() => {
     backendMocks.listeners.clear();
     backendMocks.hideWindow.mockClear();
+    backendMocks.isDesktop = false;
     backendMocks.triggerCapture.mockClear();
     backendMocks.loadConfig.mockClear();
     vi.stubGlobal("Image", MockImage);
@@ -114,6 +116,23 @@ describe("App capture cancellation", () => {
     await flushPromises();
 
     expect(wrapper.find("section.cursor-crosshair").exists()).toBe(false);
+    expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the desktop settings window when closed from the title action", async () => {
+    backendMocks.isDesktop = true;
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find("form").exists()).toBe(true);
+
+    await wrapper.find("button[aria-label='Close']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find("form").exists()).toBe(false);
     expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
   });
 });

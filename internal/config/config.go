@@ -29,7 +29,7 @@ func Default() Config {
 		ShortcutKey:            "Alt+Q",
 		DeepSeekBaseURL:        "https://api.deepseek.com",
 		DeepSeekModel:          "deepseek-chat",
-		RapidOCRPath:           "./rapidocr_json.exe",
+		RapidOCRPath:           "./RapidOCR-json_v0.2.0",
 		RapidOCRTimeoutSeconds: 15,
 	}
 }
