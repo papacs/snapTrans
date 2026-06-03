@@ -34,6 +34,16 @@ func TestExtractTextFromJSONReadsCommonRapidOCRShapes(t *testing.T) {
 	require.Equal(t, "Hello\nWorld\nNested text", text)
 }
 
+func TestExtractTextFromJSONSkipsRapidOCRBannerLines(t *testing.T) {
+	raw := []byte("RapidOCR-json v1.1.0\r\nOCR init completed.\r\n" +
+		`{"code":100,"data":[{"box":[[31,40],[157,44],[156,93],[29,89]],"score":0.99,"text":"Hello"}]}`)
+
+	text, err := ExtractTextFromJSON(raw)
+
+	require.NoError(t, err)
+	require.Equal(t, "Hello", text)
+}
+
 func TestResolveExecutablePathFindsRelativePathFromWorkingDirectory(t *testing.T) {
 	temp := t.TempDir()
 	exe := filepath.Join(temp, "rapidocr_json.exe")

@@ -163,13 +163,28 @@ func resolveExecutableCandidate(candidate string) (string, bool) {
 
 func ExtractTextFromJSON(raw []byte) (string, error) {
 	var decoded any
-	if err := json.Unmarshal(raw, &decoded); err != nil {
+	if err := decodeFirstJSONValue(raw, &decoded); err != nil {
 		return "", fmt.Errorf("invalid OCR JSON: %w", err)
 	}
 
 	parts := make([]string, 0)
 	collectText(decoded, &parts)
 	return strings.TrimSpace(strings.Join(parts, "\n")), nil
+}
+
+func decodeFirstJSONValue(raw []byte, target *any) error {
+	for index, char := range raw {
+		if char != '{' && char != '[' {
+			continue
+		}
+
+		decoder := json.NewDecoder(strings.NewReader(string(raw[index:])))
+		if err := decoder.Decode(target); err == nil {
+			return nil
+		}
+	}
+
+	return errors.New("no JSON object or array found in OCR output")
 }
 
 func collectText(value any, parts *[]string) {
