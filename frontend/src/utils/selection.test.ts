@@ -8,6 +8,7 @@ import {
   normalizeRect,
   ocrScaleForRect,
   sampleCanvasColor,
+  sampleCanvasForegroundColor,
   translationPaletteForColor,
   translationPaletteForLuminance,
   wrapTranslationText
@@ -167,6 +168,35 @@ describe("sampleCanvasColor", () => {
     expect(sampled?.red).toBeLessThan(30);
     expect(sampled?.green).toBeLessThan(34);
     expect(sampled?.blue).toBeLessThan(42);
+  });
+
+  it("samples bright source text color separately from the dominant dark background", () => {
+    const canvas = {
+      width: 8,
+      height: 1,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 8, height: 1 }),
+      getContext: () => ({
+        getImageData: () => ({
+          data: new Uint8ClampedArray([
+            28, 29, 36, 255,
+            30, 31, 38, 255,
+            29, 30, 37, 255,
+            31, 32, 39, 255,
+            255, 83, 22, 255,
+            250, 91, 30, 255,
+            30, 31, 38, 255,
+            29, 30, 37, 255
+          ])
+        })
+      })
+    } as unknown as HTMLCanvasElement;
+
+    const foreground = sampleCanvasForegroundColor(canvas, { x: 0, y: 0, width: 8, height: 1 });
+
+    expect(foreground?.red).toBeGreaterThan(240);
+    expect(foreground?.green).toBeGreaterThan(75);
+    expect(foreground?.green).toBeLessThan(100);
+    expect(foreground?.blue).toBeLessThan(40);
   });
 });
 

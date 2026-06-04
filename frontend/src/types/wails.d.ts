@@ -1,4 +1,10 @@
-import type { AppConfig, CapturePayload, OCRResultPayload, WorkflowErrorPayload } from "../services/backend";
+import type {
+  AppConfig,
+  CapturePayload,
+  OCRResultPayload,
+  TranslationDirection,
+  WorkflowErrorPayload
+} from "../services/backend";
 
 declare global {
   interface Window {
@@ -9,7 +15,7 @@ declare global {
           SaveConfig: (config: AppConfig) => Promise<void>;
           TriggerCapture: () => Promise<void>;
           ShowCaptureWindow: () => Promise<void>;
-          ProcessImage: (base64Crop: string) => Promise<void>;
+          ProcessImage: (base64Crop: string, direction: TranslationDirection) => Promise<void>;
           HideWindow: () => Promise<void>;
           QuitApp: () => Promise<void>;
           ShowSettings: () => Promise<void>;

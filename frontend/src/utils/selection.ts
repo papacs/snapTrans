@@ -134,6 +134,24 @@ export function mapOCRBlockToSelection(block: OCRBlock, selection: Rect): Rect {
   };
 }
 
+export function shouldUseFlowTranslationLayout(blocks: OCRBlock[]): boolean {
+  if (blocks.length === 0) {
+    return false;
+  }
+
+  const textBlocks = blocks.filter((block) => hasNaturalLanguage(block.text));
+  if (textBlocks.length === 0) {
+    return false;
+  }
+
+  const longBlocks = textBlocks.filter((block) => normalizedTextLength(block.text) >= 32);
+  const wideTextBlocks = textBlocks.filter(
+    (block) => block.width >= 0.42 && normalizedTextLength(block.text) >= 18
+  );
+
+  return wideTextBlocks.length >= 1 || longBlocks.length >= 2 || (textBlocks.length >= 6 && longBlocks.length >= 1);
+}
+
 export function fontSizeForOCRBlock(block: OCRBlock, selectionHeight: number): number {
   const blockHeight = Math.max(1, block.height * selectionHeight);
   return Math.max(11, Math.min(22, Math.round(blockHeight * 0.95)));
@@ -181,6 +199,48 @@ export function sampleCanvasLuminance(canvas: HTMLCanvasElement | null, cssRect:
 }
 
 export function sampleCanvasColor(canvas: HTMLCanvasElement | null, cssRect: Rect): SampledColor | null {
+  const sample = sampleCanvasImageData(canvas, cssRect);
+  return sample ? colorFromImageData(sample.data) : null;
+}
+
+export function sampleCanvasForegroundColor(canvas: HTMLCanvasElement | null, cssRect: Rect): SampledColor | null {
+  const sample = sampleCanvasImageData(canvas, cssRect);
+  if (!sample) {
+    return null;
+  }
+
+  const background = colorFromImageData(sample.data);
+  if (!background) {
+    return null;
+  }
+
+  let best: SampledColor | null = null;
+  let bestDistance = 0;
+  for (let index = 0; index < sample.data.length; index += 4) {
+    const alpha = sample.data[index + 3] / 255;
+    if (alpha <= 0.05) {
+      continue;
+    }
+
+    const red = sample.data[index];
+    const green = sample.data[index + 1];
+    const blue = sample.data[index + 2];
+    const luminance = luminanceForColor(red, green, blue);
+    const distance = colorDistance({ red, green, blue }, background);
+    if (distance < 55 && Math.abs(luminance - background.luminance) < 0.18) {
+      continue;
+    }
+
+    if (distance > bestDistance) {
+      bestDistance = distance;
+      best = { red, green, blue, luminance };
+    }
+  }
+
+  return best;
+}
+
+function sampleCanvasImageData(canvas: HTMLCanvasElement | null, cssRect: Rect): ImageData | null {
   if (!canvas || cssRect.width <= 0 || cssRect.height <= 0) {
     return null;
   }
@@ -206,13 +266,12 @@ export function sampleCanvasColor(canvas: HTMLCanvasElement | null, cssRect: Rec
   }
 
   try {
-    const sample = context.getImageData(
+    return context.getImageData(
       imageRect.x,
       imageRect.y,
       Math.max(1, imageRect.width),
       Math.max(1, imageRect.height)
     );
-    return colorFromImageData(sample.data);
   } catch {
     return null;
   }
@@ -290,6 +349,20 @@ function colorFromImageData(data: Uint8ClampedArray): SampledColor | null {
   };
 }
 
+function luminanceForColor(red: number, green: number, blue: number): number {
+  return 0.2126 * (red / 255) + 0.7152 * (green / 255) + 0.0722 * (blue / 255);
+}
+
+function colorDistance(
+  left: Pick<SampledColor, "red" | "green" | "blue">,
+  right: Pick<SampledColor, "red" | "green" | "blue">
+): number {
+  const red = left.red - right.red;
+  const green = left.green - right.green;
+  const blue = left.blue - right.blue;
+  return Math.sqrt(red * red + green * green + blue * blue);
+}
+
 function median(values: number[]): number {
   const sorted = [...values].sort((left, right) => left - right);
   const middle = Math.floor(sorted.length / 2);
@@ -310,6 +383,14 @@ function characterUnit(char: string): number {
     return 0.62;
   }
   return 0.5;
+}
+
+function normalizedTextLength(text: string): number {
+  return Array.from(text.trim().replace(/\s+/g, " ")).length;
+}
+
+function hasNaturalLanguage(text: string): boolean {
+  return /[\p{Script=Han}A-Za-z]/u.test(text);
 }
 
 function clamp(value: number, min: number, max: number): number {

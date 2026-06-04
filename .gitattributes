@@ -1,0 +1,4 @@
+*.exe -text
+*.onnx -text
+*.7z -text
+build/bin/RapidOCR-json_v0.2.0/** -text -whitespace

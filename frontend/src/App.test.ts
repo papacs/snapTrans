@@ -73,6 +73,11 @@ class MockImage {
   }
 }
 
+function stylePx(style: string | undefined, property: string): number {
+  const match = new RegExp(`${property}:\\s*(-?\\d+(?:\\.\\d+)?)px`).exec(style ?? "");
+  return match ? Number.parseFloat(match[1]) : Number.NaN;
+}
+
 describe("App capture cancellation", () => {
   beforeEach(() => {
     backendMocks.listeners.clear();
@@ -84,14 +89,29 @@ describe("App capture cancellation", () => {
     backendMocks.triggerCapture.mockClear();
     backendMocks.loadConfig.mockClear();
     vi.stubGlobal("Image", MockImage);
+    const getImageData = vi.fn((x: number, _y: number, width: number) => {
+      const textColor =
+        x > 150 && width > 500
+          ? [255, 83, 22, 255, 250, 91, 30, 255]
+          : [248, 250, 252, 255, 242, 245, 250, 255];
+
+      return {
+        data: new Uint8ClampedArray([
+          18, 24, 38, 255,
+          20, 26, 40, 255,
+          19, 25, 39, 255,
+          18, 24, 38, 255,
+          19, 25, 39, 255,
+          ...textColor
+        ])
+      };
+    });
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
       clearRect: vi.fn(),
       drawImage: vi.fn(),
       fillRect: vi.fn(),
       fillText: vi.fn(),
-      getImageData: vi.fn(() => ({
-        data: new Uint8ClampedArray([18, 24, 38, 255, 20, 26, 40, 255])
-      })),
+      getImageData,
       measureText: vi.fn((text: string) => ({ width: text.length * 16 })),
       restore: vi.fn(),
       save: vi.fn()
@@ -301,6 +321,378 @@ describe("App capture cancellation", () => {
     expect(labels[0].attributes("style")).toContain("box-shadow: none");
   });
 
+  it("renders prose OCR translations from each original text line position", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 14, clientY: 132 });
+    await captureLayer.trigger("mousemove", { clientX: 1068, clientY: 486 });
+    await captureLayer.trigger("mouseup", { clientX: 1068, clientY: 486 });
+    await flushPromises();
+
+    backendMocks.emit("ocr-result", {
+      blocks: [
+        {
+          text: "State of the Art of Coding Models",
+          x: 0.24,
+          y: 0,
+          width: 0.52,
+          height: 0.12
+        },
+        {
+          text: "The space of AI-assisted coding is evolving rapidly.",
+          x: 0,
+          y: 0.15,
+          width: 0.86,
+          height: 0.08
+        },
+        {
+          text: "Each day, the pipeline",
+          x: 0,
+          y: 0.34,
+          width: 0.32,
+          height: 0.09
+        }
+      ]
+    });
+    backendMocks.emit(
+      "translation-token",
+      "[1] \u7f16\u7801\u6a21\u578b\u6280\u672f\u73b0\u72b6\n[2] AI \u8f85\u52a9\u7f16\u7801\u7684\u9886\u57df\u6b63\u5728\u8fc5\u901f\u6f14\u53d8\u3002\n[3] \u6bcf\u5929\uff0c\u8fd9\u6761\u6d41\u7a0b"
+    );
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    const lines = wrapper.findAll("[data-testid='translation-line']");
+    expect(lines).toHaveLength(3);
+    expect(wrapper.findAll("[data-testid='ocr-block']")).toHaveLength(0);
+    expect(wrapper.find("[data-testid='translation-flow']").exists()).toBe(false);
+    expect(lines[0].text()).toBe("\u7f16\u7801\u6a21\u578b\u6280\u672f\u73b0\u72b6");
+    expect(lines[0].attributes("style")).toContain("left: 242px");
+    expect(lines[0].attributes("style")).toContain("top: 0px");
+    expect(lines[0].attributes("style")).toContain("font-size: 26px");
+    expect(lines[0].attributes("style")).toContain("color: rgb(255, 83, 22)");
+    expect(lines[1].attributes("style")).toContain("left: 0px");
+    expect(lines[1].attributes("style")).toContain("top: 53px");
+    expect(lines[1].attributes("style")).toContain("font-size: 24px");
+    expect(lines[1].attributes("style")).toContain("text-align: left");
+  });
+
+  it("keeps target-language Chinese rows while translating nearby English rows in place", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 14, clientY: 132 });
+    await captureLayer.trigger("mousemove", { clientX: 1068, clientY: 486 });
+    await captureLayer.trigger("mouseup", { clientX: 1068, clientY: 486 });
+    await flushPromises();
+
+    backendMocks.emit("ocr-result", {
+      blocks: [
+        {
+          text: "\u5982\u679c\u8fd8\u6ca1\u6709\u5b89\u88c5 Wails\uff0c\u4e5f\u53ef\u4ee5\u7528\u6a21\u62df\u622a\u56fe\u548c\u6d41\u5f0f\u54cd\u5e94\u9884\u89c8\u524d\u7aef\uff1a",
+          x: 0,
+          y: 0.15,
+          width: 0.72,
+          height: 0.08
+        },
+        {
+          text: "If Wails is not installed yet, the frontend can still be previewed with a simulated capture.",
+          x: 0,
+          y: 0.4,
+          width: 0.86,
+          height: 0.08
+        }
+      ]
+    });
+    backendMocks.emit(
+      "translation-token",
+      "[1] \u5982\u679c\u8fd8\u6ca1\u6709\u5b89\u88c5 Wails\uff0c\u4e5f\u53ef\u4ee5\u7528\u6a21\u62df\u622a\u56fe\u548c\u6d41\u5f0f\u54cd\u5e94\u9884\u89c8\u524d\u7aef\uff1a\n[2] \u5982\u679c\u5c1a\u672a\u5b89\u88c5 Wails\uff0c\u524d\u7aef\u4ecd\u53ef\u901a\u8fc7\u6a21\u62df\u622a\u56fe\u8fdb\u884c\u9884\u89c8\u3002"
+    );
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    const lines = wrapper.findAll("[data-testid='translation-line']");
+    expect(lines).toHaveLength(2);
+    expect(lines[0].text()).toContain("\u5982\u679c\u8fd8\u6ca1\u6709\u5b89\u88c5 Wails");
+    expect(lines[1].text()).toContain("\u524d\u7aef\u4ecd\u53ef\u901a\u8fc7\u6a21\u62df\u622a\u56fe");
+    expect(wrapper.findAll("[data-testid='translation-cover']")).toHaveLength(0);
+  });
+
+  it("uses hanging indentation for translated numbered list lines", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 14, clientY: 132 });
+    await captureLayer.trigger("mousemove", { clientX: 1068, clientY: 486 });
+    await captureLayer.trigger("mouseup", { clientX: 1068, clientY: 486 });
+    await flushPromises();
+
+    backendMocks.emit("ocr-result", {
+      blocks: [
+        {
+          text: "2. Prompts an LLM to select those posts whose titles are about LLMs or coding in general.",
+          x: 0.02,
+          y: 0.28,
+          width: 0.9,
+          height: 0.08
+        }
+      ]
+    });
+    backendMocks.emit("translation-token", "[1] 2. \u63d0\u793a\u4e00\u4e2a\u5927\u8bed\u8a00\u6a21\u578b\u7b5b\u9009\u51fa\u6807\u9898\u6d89\u53ca LLM \u6216\u7f16\u7801\u7684\u5e16\u5b50\uff0c\u56e0\u4e3a\u6211\u4eec\u8ba4\u4e3a\u8fd9\u4e9b\u5e16\u5b50\u4e2d\u4f1a\u6709\u66f4\u591a\u76f8\u5173\u8ba8\u8bba\u3002");
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    const line = wrapper.find("[data-testid='translation-line']");
+    expect(line.exists()).toBe(true);
+    expect(line.attributes("style")).toContain("padding: 1px 2px 1px 43px");
+    expect(line.attributes("style")).toContain("text-indent: -43px");
+  });
+
+  it("reserves vertical space when long anchored prose translations wrap", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 14, clientY: 132 });
+    await captureLayer.trigger("mousemove", { clientX: 1068, clientY: 486 });
+    await captureLayer.trigger("mouseup", { clientX: 1068, clientY: 486 });
+    await flushPromises();
+
+    backendMocks.emit("ocr-result", {
+      blocks: [
+        {
+          text: "The space of AI-assisted coding is evolving rapidly with the latest developments.",
+          x: 0.58,
+          y: 0.15,
+          width: 0.42,
+          height: 0.08
+        },
+        {
+          text: "Each day, the pipeline",
+          x: 0,
+          y: 0.19,
+          width: 0.32,
+          height: 0.08
+        }
+      ]
+    });
+    backendMocks.emit(
+      "translation-token",
+      "[1] AI \u8f85\u52a9\u7f16\u7801\u9886\u57df\u6b63\u5728\u5feb\u901f\u53d1\u5c55\uff0c\u672c\u6587\u901a\u8fc7\u6355\u6349 Hacker News \u8bc4\u8bba\u4e2d\u7f16\u7801\u6a21\u578b\u7684\u6d41\u884c\u5ea6\u548c\u7528\u6237\u60c5\u7eea\uff0c\u8bd5\u56fe\u8ddf\u4e0a\u6700\u65b0\u8fdb\u5c55\u3002\n[2] \u6bcf\u65e5\u6d41\u7a0b\uff1a"
+    );
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    const lines = wrapper.findAll("[data-testid='translation-line']");
+    expect(lines).toHaveLength(2);
+
+    const firstStyle = lines[0].attributes("style");
+    const secondStyle = lines[1].attributes("style");
+    const firstTop = stylePx(firstStyle, "top");
+    const firstHeight = stylePx(firstStyle, "min-height");
+    const firstLineHeight = stylePx(firstStyle, "line-height");
+    const secondTop = stylePx(secondStyle, "top");
+
+    expect(firstHeight).toBeGreaterThan(firstLineHeight + 2);
+    expect(secondTop).toBeGreaterThanOrEqual(firstTop + firstHeight + 2);
+  });
+
+  it("shrinks dense numbered prose rows before they overflow the anchored width", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 14, clientY: 132 });
+    await captureLayer.trigger("mousemove", { clientX: 1068, clientY: 486 });
+    await captureLayer.trigger("mouseup", { clientX: 1068, clientY: 486 });
+    await flushPromises();
+
+    backendMocks.emit("ocr-result", {
+      blocks: [
+        {
+          text: "2. Prompts an LLM to select those posts whose titles are about LLMs or coding in general.",
+          x: 0.02,
+          y: 0.32,
+          width: 0.9,
+          height: 0.08
+        },
+        {
+          text: "3. For each post, sends the title and comments to Gemini and asks it to identify models.",
+          x: 0.04,
+          y: 0.42,
+          width: 0.9,
+          height: 0.08
+        },
+        {
+          text: "I wanted the ability to audit the process and the results.",
+          x: 0,
+          y: 0.52,
+          width: 0.86,
+          height: 0.08
+        }
+      ]
+    });
+    backendMocks.emit(
+      "translation-token",
+      "[1] 2. \u63d0\u793a\u4e00\u4e2a LLM\uff08\u5927\u8bed\u8a00\u6a21\u578b\uff09\u7b5b\u9009\u51fa\u6807\u9898\u6d89\u53ca LLM \u6216\u7f16\u7801\u7684\u5e16\u5b50\uff08\u6700\u591a50\u7bc7\uff09\uff0c\u56e0\u4e3a\u6211\u4eec\u8ba4\u4e3a\u8fd9\u4e9b\u5e16\u5b50\u4e2d\u7684\u8ba8\u8bba\u66f4\u5177\u76f8\u5173\u6027\uff08\u4e2a\u4eba\u5047\u8bbe\uff09\u3002\n[2] 3. \u5bf9\u6bcf\u7bc7\u5e16\u5b50\uff0c\u5c06\u6807\u9898\u548c\u8bc4\u8bba\u53d1\u9001\u81f3 Gemini\uff0c\u8981\u6c42\u5176\u4ece OpenRouter \u6a21\u578b\u5217\u8868\u4e2d\u8bc6\u522b\u6a21\u578b\uff0c\u5e76\u8bc4\u4f30\u6bcf\u6761\u8bc4\u8bba\u4e2d\u5bf9\u6bcf\u4e2a\u63d0\u53ca\u6a21\u578b\u7684\u60c5\u611f\u503e\u5411\u3002\n[3] \u6211\u5e0c\u671b\u80fd\u591f\u5ba1\u8ba1\u6d41\u7a0b\u548c\u7ed3\u679c\u3002"
+    );
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    const lines = wrapper.findAll("[data-testid='translation-line']");
+    expect(lines).toHaveLength(3);
+
+    const firstStyle = lines[0].attributes("style");
+    const secondStyle = lines[1].attributes("style");
+    expect(stylePx(firstStyle, "font-size")).toBeLessThanOrEqual(18);
+    expect(stylePx(secondStyle, "font-size")).toBeLessThanOrEqual(18);
+    expect(firstStyle).toContain("box-sizing: border-box");
+    expect(secondStyle).toContain("box-sizing: border-box");
+  });
+
+  it("keeps streamed translations visible when a translation error arrives after partial output", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 14, clientY: 132 });
+    await captureLayer.trigger("mousemove", { clientX: 1068, clientY: 486 });
+    await captureLayer.trigger("mouseup", { clientX: 1068, clientY: 486 });
+    await flushPromises();
+
+    backendMocks.emit("ocr-result", {
+      blocks: [
+        { text: "The space of AI-assisted coding is evolving rapidly.", x: 0, y: 0, width: 0.86, height: 0.08 },
+        { text: "Each day, the pipeline", x: 0, y: 0.2, width: 0.32, height: 0.08 }
+      ]
+    });
+    backendMocks.emit("translation-token", "[1] AI \u8f85\u52a9\u7f16\u7801\u7684\u9886\u57df\u6b63\u5728\u8fc5\u901f\u6f14\u53d8\u3002");
+    backendMocks.emit("workflow-error", {
+      stage: "translation",
+      message: "translation incomplete: expected 2 numbered translation lines, got 1; missing [2]; received [1]"
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("AI \u8f85\u52a9\u7f16\u7801");
+    expect(wrapper.text()).not.toContain("translation incomplete");
+    expect(wrapper.findAll("[data-testid='translation-line']")).toHaveLength(1);
+  });
+
+  it("covers untranslated source rows in prose layout without copying unchanged English", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 14, clientY: 132 });
+    await captureLayer.trigger("mousemove", { clientX: 1068, clientY: 486 });
+    await captureLayer.trigger("mouseup", { clientX: 1068, clientY: 486 });
+    await flushPromises();
+
+    backendMocks.emit("ocr-result", {
+      blocks: [
+        {
+          text: "The space of AI-assisted coding is evolving rapidly.",
+          x: 0,
+          y: 0,
+          width: 0.86,
+          height: 0.08
+        },
+        {
+          text: "You can open a comment by appending the comment ID to https://news.ycombinator.com/item?id=.",
+          x: 0,
+          y: 0.78,
+          width: 0.88,
+          height: 0.07
+        }
+      ]
+    });
+    backendMocks.emit(
+      "translation-token",
+      "[1] AI \u8f85\u52a9\u7f16\u7801\u7684\u9886\u57df\u6b63\u5728\u8fc5\u901f\u6f14\u53d8\u3002\n[2] You can open a comment by appending the comment ID to https://news.ycombinator.com/item?id=."
+    );
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    const translatedLines = wrapper.findAll("[data-testid='translation-line']");
+    const covers = wrapper.findAll("[data-testid='translation-cover']");
+    expect(translatedLines).toHaveLength(1);
+    expect(covers).toHaveLength(1);
+    expect(covers[0].text()).toBe("");
+    expect(covers[0].attributes("style")).toContain("top: 276px");
+    expect(wrapper.text()).not.toContain("You can open a comment");
+  });
+
+  it("suppresses adjacent duplicate prose translations while covering the source row", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 14, clientY: 132 });
+    await captureLayer.trigger("mousemove", { clientX: 1068, clientY: 486 });
+    await captureLayer.trigger("mouseup", { clientX: 1068, clientY: 486 });
+    await flushPromises();
+
+    backendMocks.emit("ocr-result", {
+      blocks: [
+        {
+          text: "I wanted the ability to audit the process and the results, for debugging and sanity checks.",
+          x: 0,
+          y: 0.62,
+          width: 0.9,
+          height: 0.08
+        },
+        {
+          text: "results are logged to a Google Sheet, where you can see the comment IDs and sentiment.",
+          x: 0,
+          y: 0.7,
+          width: 0.9,
+          height: 0.08
+        },
+        {
+          text: "You can open a comment by appending the comment ID to https://news.ycombinator.com/item?id=.",
+          x: 0,
+          y: 0.82,
+          width: 0.88,
+          height: 0.07
+        }
+      ]
+    });
+    backendMocks.emit(
+      "translation-token",
+      "[1] \u6211\u5e0c\u671b\u80fd\u591f\u5ba1\u8ba1\u6d41\u7a0b\u4e0e\u7ed3\u679c\uff0c\u7528\u4e8e\u8c03\u8bd5\u53ca\u5b9a\u671f\u9a8c\u8bc1\u6a21\u578b\u8f93\u51fa\u3002\u56e0\u6b64\u7ed3\u679c\u8bb0\u5f55\u5728 Google Sheet \u4e2d\uff0c\u53ef\u67e5\u770b\u63d0\u53ca\u7279\u5b9a\u6a21\u578b\u7684\u8bc4\u8bba ID \u53ca\u6a21\u578b\u5224\u5b9a\u7684\u60c5\u611f\u503e\u5411\u3002\n[2] \u6211\u5e0c\u671b\u80fd\u591f\u5ba1\u8ba1\u6d41\u7a0b\u548c\u7ed3\u679c\uff0c\u7528\u4e8e\u8c03\u8bd5\u4ee5\u53ca\u5076\u5c14\u5bf9\u6a21\u578b\u8f93\u51fa\u8fdb\u884c\u5408\u7406\u6027\u68c0\u67e5\u3002\u56e0\u6b64\uff0c\u7ed3\u679c\u4f1a\u8bb0\u5f55\u5230 Google \u8868\u683c\u4e2d\uff0c\u4f60\u53ef\u4ee5\u770b\u5230\u63d0\u53ca\u7279\u5b9a\u6a21\u578b\u7684\u8bc4\u8bba ID \u4ee5\u53ca\u6a21\u578b\u5224\u65ad\u51fa\u7684\u60c5\u611f\u503e\u5411\u3002\n[3] \u4f60\u53ef\u4ee5\u901a\u8fc7\u5c06\u8bc4\u8bba ID \u9644\u52a0\u5230 https://news.ycombinator.com/item?id= \u6765\u6253\u5f00\u8bc4\u8bba\u3002"
+    );
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    const translatedLines = wrapper.findAll("[data-testid='translation-line']");
+    const covers = wrapper.findAll("[data-testid='translation-cover']");
+    expect(translatedLines).toHaveLength(2);
+    expect(covers).toHaveLength(1);
+    expect(covers[0].text()).toBe("");
+    expect(wrapper.text()).toContain("\u6211\u5e0c\u671b\u80fd\u591f\u5ba1\u8ba1\u6d41\u7a0b\u4e0e\u7ed3\u679c");
+    expect(wrapper.text()).not.toContain("\u5076\u5c14\u5bf9\u6a21\u578b\u8f93\u51fa\u8fdb\u884c\u5408\u7406\u6027\u68c0\u67e5");
+    expect(wrapper.text()).toContain("https://news.ycombinator.com/item?id=");
+  });
+
   it("copies a translated screenshot from the selected region", async () => {
     const wrapper = mount(App);
     await flushPromises();
@@ -324,6 +716,31 @@ describe("App capture cancellation", () => {
     await flushPromises();
 
     expect(backendMocks.copyImageDataUrl).toHaveBeenCalledWith("data:image/png;base64,c2VsZWN0aW9u");
+  });
+
+  it("reprocesses the current selection in English when reversing translation direction", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 148, clientY: 26 });
+    await captureLayer.trigger("mousemove", { clientX: 600, clientY: 78 });
+    await captureLayer.trigger("mouseup", { clientX: 600, clientY: 78 });
+    await flushPromises();
+
+    expect(backendMocks.processImage).toHaveBeenLastCalledWith("data:image/png;base64,c2VsZWN0aW9u", "to-zh");
+
+    backendMocks.emit("translation-token", "\u6d4b\u8bd5");
+    backendMocks.emit("translation-done", {});
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Reverse translation direction']").trigger("click");
+    await flushPromises();
+
+    expect(backendMocks.processImage).toHaveBeenLastCalledWith("data:image/png;base64,c2VsZWN0aW9u", "to-en");
+    expect(wrapper.text()).toContain("Translating...");
   });
 
   it("closes the result panel when clicking outside it", async () => {

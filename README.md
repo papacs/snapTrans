@@ -1,98 +1,15 @@
 # snapTrans
 
-snapTrans is a small Windows desktop tool for instant screenshot translation.
+snapTrans 是一个极简 Windows 截图翻译工具。
+snapTrans is a minimalist Windows screenshot translation tool.
 
-The target experience is intentionally direct: press the shortcut, draw a box, release the mouse, and watch the translation stream over the original screen area.
+目标体验很直接：按下全局快捷键，拖出选区，松开鼠标，然后在原屏幕区域上直接流式显示翻译结果。鼠标松开后不再出现确认按钮。
+The intended experience is direct: press the global shortcut, draw a selection box, release the mouse, and watch the translation stream over the original screen area. No confirmation button appears after mouse release.
 
-## Current Status
+## 直接使用 / Direct Use
 
-This repository contains the MVP skeleton:
-
-- Wails v2 app structure.
-- Vue 3 capture overlay and in-place translation UI.
-- Config loading from local `config.json` plus `.env` fallback.
-- Local RapidOCR command wrapper.
-- DeepSeek streaming translator boundary.
-- Global shortcut plus Windows tray menu for capture, settings, and quit.
-- Browser fallback for frontend-only development.
-- Engineering TODO list for the details that still need tightening.
-- Verified local Go/Wails build output at `build/bin/snapTrans.exe`.
-
-## Requirements
-
-- Windows 10/11
-- Go 1.21+
-- Wails v2 CLI
-- Node.js 22+ and npm
-- `rapidocr_json.exe`
-- DeepSeek API key
-
-## Quick Start
-
-```powershell
-cd E:\workspace\snapTrans
-Copy-Item .env.sample .env
-```
-
-Edit `.env` and fill:
-
-```dotenv
-DEEPSEEK_API_KEY=your_deepseek_key
-```
-
-Install frontend dependencies:
-
-```powershell
-cd frontend
-npm install
-npm run build
-```
-
-Run backend tests and build the desktop app:
-
-```powershell
-cd E:\workspace\snapTrans
-go test ./...
-wails build
-```
-
-For live desktop development:
-
-```powershell
-wails dev
-```
-
-## Frontend-Only Preview
-
-If Wails is not installed yet, the frontend can still be previewed with a simulated capture and streamed response:
-
-```powershell
-cd frontend
-npm run dev
-```
-
-Open the Vite URL and use the small capture button in the top-right corner.
-
-## Environment
-
-`.env` is intentionally ignored by git.
-
-```dotenv
-DEEPSEEK_API_KEY=
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-chat
-RAPIDOCR_EXE_PATH=./RapidOCR-json_v0.2.0
-RAPIDOCR_TIMEOUT_SECONDS=15
-SNAPTRANS_SHORTCUT=Alt+Q
-```
-
-## Shortcut
-
-The MVP default shortcut is `Alt+Q`. The settings modal can save a shortcut string, and the backend contains the parser for common combinations such as `Alt+Q`, `Ctrl+Shift+S`, and `Alt+Space`.
-
-## OCR Binary
-
-Unzip the RapidOCR release so `RapidOCR-json.exe` and the `models` folder stay together. The recommended Windows package layout is:
+仓库已经包含可直接运行的 Windows 产物：
+This repository includes a runnable Windows build:
 
 ```text
 build/bin/
@@ -102,38 +19,201 @@ build/bin/
     models/
 ```
 
-Then set `RapidOCR Path` to either the folder or the executable:
+快速启动：
+Quick start:
+
+1. 双击或运行 `build/bin/snapTrans.exe`。
+   Run `build/bin/snapTrans.exe`.
+2. 程序默认进入托盘，右键托盘图标打开 `Settings`。
+   The app starts in the system tray. Right-click the tray icon and open `Settings`.
+3. 填入 `DeepSeek API Key`，保持 `RapidOCR Path` 为默认值 `./RapidOCR-json_v0.2.0`。
+   Fill `DeepSeek API Key` and keep `RapidOCR Path` as `./RapidOCR-json_v0.2.0`.
+4. 保存后按默认快捷键 `Alt+Q` 开始截图翻译。
+   Save and press the default shortcut `Alt+Q` to capture and translate.
+
+默认 OCR 路径会按顺序检查当前工作目录、`snapTrans.exe` 所在目录，以及从 `build/bin` 运行时对应的项目根目录。因此只要 `RapidOCR-json_v0.2.0` 放在 `snapTrans.exe` 旁边，默认配置即可工作。
+The default OCR path checks the current working directory, the directory containing `snapTrans.exe`, and the project root when running from `build/bin`. Keeping `RapidOCR-json_v0.2.0` next to `snapTrans.exe` works with the default configuration.
+
+不要提交真实 API key。配置会保存到当前用户的系统配置目录中。
+Do not commit real API keys. Settings are saved in the current user's OS config directory.
+
+## 从源码运行 / Run From Source
+
+环境要求：
+Requirements:
+
+- Windows 10/11
+- Go 1.21+
+- Wails v2 CLI
+- Node.js 22+ and npm
+- DeepSeek-compatible API key
+
+安装前端依赖：
+Install frontend dependencies:
+
+```powershell
+cd frontend
+npm install
+```
+
+可选：复制环境变量示例，便于开发时从 `.env` 读取配置。
+Optional: copy the environment example for local development.
+
+```powershell
+cd E:\workspace\snapTrans
+Copy-Item .env.sample .env
+```
+
+编辑 `.env` 并填入自己的 key：
+Edit `.env` and fill your own key:
+
+```dotenv
+DEEPSEEK_API_KEY=your_deepseek_key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
+RAPIDOCR_EXE_PATH=./RapidOCR-json_v0.2.0
+RAPIDOCR_TIMEOUT_SECONDS=15
+SNAPTRANS_SHORTCUT=Alt+Q
+```
+
+构建前端并运行测试：
+Build and test:
+
+```powershell
+cd frontend
+npm test
+npm run build
+
+cd ..
+go test ./...
+```
+
+开发模式：
+Desktop development:
+
+```powershell
+wails dev
+```
+
+生产构建：
+Production build:
+
+```powershell
+wails build
+```
+
+## 前端预览 / Frontend-Only Preview
+
+如果还没有安装 Wails，也可以用模拟截图和流式响应预览前端：
+If Wails is not installed yet, the frontend can still be previewed with a simulated capture and streamed response:
+
+```powershell
+cd frontend
+npm run dev
+```
+
+打开 Vite URL，点击右上角的 `Capture` 按钮。
+Open the Vite URL and use the `Capture` button in the top-right corner.
+
+## 配置 / Configuration
+
+默认配置：
+Defaults:
 
 ```text
+Shortcut: Alt+Q
+DeepSeek Base URL: https://api.deepseek.com
+DeepSeek Model: deepseek-chat
+RapidOCR Path: ./RapidOCR-json_v0.2.0
+RapidOCR Timeout: 15 seconds
+```
+
+配置来源：
+Configuration sources:
+
+- Settings 窗口保存到用户配置目录。
+  Settings window saves to the user's config directory.
+- `.env` 仅用于本地开发兜底，并被 git 忽略。
+  `.env` is only a local development fallback and is ignored by git.
+- `.env.sample` 可以提交，真实 `.env` 不要提交。
+  `.env.sample` can be committed; real `.env` files must not be committed.
+
+## OCR Binary
+
+RapidOCR 发布包必须保持 `RapidOCR-json.exe` 和 `models` 文件夹在一起。
+The RapidOCR release must keep `RapidOCR-json.exe` and the `models` folder together.
+
+推荐布局：
+Recommended layout:
+
+```text
+build/bin/
+  snapTrans.exe
+  RapidOCR-json_v0.2.0/
+    RapidOCR-json.exe
+    models/
+```
+
+也支持将 `RapidOCR Path` 设置为文件夹或可执行文件：
+`RapidOCR Path` can point to either the folder or the executable:
+
+```text
+./RapidOCR-json_v0.2.0
 E:/workspace/snapTrans/build/bin/RapidOCR-json_v0.2.0
 E:/workspace/snapTrans/build/bin/RapidOCR-json_v0.2.0/RapidOCR-json.exe
 ```
 
-Relative paths are also supported, so `./RapidOCR-json_v0.2.0` works when the folder is next to `snapTrans.exe`.
+OCR 封装会在 RapidOCR 可执行文件目录下运行命令，这样可以正确找到同级 `models` 文件夹。
+The OCR wrapper runs the command from the RapidOCR executable directory so the adjacent `models` folder can be found.
 
-When the configured OCR path is relative, snapTrans checks these locations in order:
+## 快捷键 / Shortcut
 
-- Current working directory.
-- The directory containing `snapTrans.exe`.
-- The project root when running from `build/bin`.
+默认快捷键是 `Alt+Q`。Settings 窗口可以保存快捷键字符串，后端支持常见组合，例如 `Alt+Q`、`Ctrl+Shift+S` 和 `Alt+Space`。
+The default shortcut is `Alt+Q`. The Settings window can save a shortcut string, and the backend parses common combinations such as `Alt+Q`, `Ctrl+Shift+S`, and `Alt+Space`.
 
-The OCR wrapper runs `RapidOCR-json.exe --image=<temp_png>` from the RapidOCR executable directory, so the bundled `models` folder can be found. It expects JSON output and extracts text from common fields such as `text`, `rec_text`, and `content`.
+## 托盘与取消 / Tray And Cancellation
 
-## Tray and Cancellation
+应用启动后默认隐藏，并添加 Windows 托盘菜单，包含 `Capture`、`Settings` 和 `Quit`。截图过程中可以按 `Esc` 或右键取消，并回到隐藏托盘状态。
+The app starts hidden and adds a Windows tray menu with `Capture`, `Settings`, and `Quit`. During capture, press `Esc` or right-click to cancel and return to the hidden tray state.
 
-The app starts hidden and adds a Windows tray menu with Capture, Settings, and Quit actions. During a capture, press `Esc` or right-click to cancel and return to the hidden tray state.
+## 架构 / Architecture
 
-## Architecture
+- `app.go`: Wails 绑定方法和工作流事件。
+- `internal/config`: 本地配置和 `.env` fallback。
+- `internal/capture`: 屏幕截图和 PNG data URL 编码。
+- `internal/hotkeys`: 全局快捷键注册。
+- `internal/ocr`: RapidOCR 进程封装和 JSON 文本提取。
+- `internal/translator`: DeepSeek-compatible streaming translation。
+- `frontend/src/services/backend.ts`: Wails bridge 和浏览器 fallback。
+- `frontend/src/utils/selection.ts`: CSS 到图片坐标映射、裁剪和翻译排版辅助函数。
 
-- `app.go`: Wails-bound application methods and workflow events.
-- `internal/config`: local config and `.env` fallback.
-- `internal/capture`: screen capture and PNG data URL encoding.
-- `internal/hotkeys`: global shortcut registration.
-- `internal/ocr`: RapidOCR process wrapper and JSON text extraction.
-- `internal/translator`: DeepSeek streaming translation.
-- `frontend/src/services/backend.ts`: Wails bridge plus browser fallback.
-- `frontend/src/utils/selection.ts`: CSS-to-image coordinate mapping and crop helpers.
+## 验证 / Verification
 
-## Development TODOs
+前端测试、类型检查和构建：
+Frontend tests, type check, and build:
 
+```powershell
+cd frontend
+npm test
+npm run typecheck
+npm run build
+```
+
+后端测试：
+Backend tests:
+
+```powershell
+go test ./...
+```
+
+桌面开发运行：
+Desktop dev run:
+
+```powershell
+wails dev
+```
+
+## 开发待办 / Development TODOs
+
+详见 `docs/TODO.md`。
 See `docs/TODO.md`.

@@ -137,7 +137,7 @@ func (a *App) ShowCaptureWindow() error {
 	return nil
 }
 
-func (a *App) ProcessImage(base64Crop string) error {
+func (a *App) ProcessImage(base64Crop string, direction string) error {
 	a.mu.Lock()
 	cfg := a.cfg.WithDefaults()
 	if a.processing != nil {
@@ -147,7 +147,7 @@ func (a *App) ProcessImage(base64Crop string) error {
 	a.processing = cancel
 	a.mu.Unlock()
 
-	go a.processImage(ctx, cfg, base64Crop)
+	go a.processImage(ctx, cfg, base64Crop, translator.NormalizeDirection(direction))
 	return nil
 }
 
@@ -233,7 +233,7 @@ func (a *App) onTrayReady() {
 	}()
 }
 
-func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop string) {
+func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop string, direction translator.Direction) {
 	runtime.EventsEmit(a.ctx, "ocr-start", map[string]string{})
 
 	ocrClient := ocr.NewRapidOCR(cfg.RapidOCRPath, time.Duration(cfg.RapidOCRTimeoutSeconds)*time.Second)
@@ -252,7 +252,7 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 		Blocks: result.Blocks,
 	})
 	runtime.EventsEmit(a.ctx, "translation-start", map[string]string{})
-	if translated, ok := translator.TryFastTranslation(result.Text); ok {
+	if translated, ok := translator.TryFastTranslation(result.Text, direction); ok {
 		runtime.EventsEmit(a.ctx, "translation-token", translated)
 		runtime.EventsEmit(a.ctx, "translation-done", map[string]string{})
 		return
@@ -263,7 +263,7 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 		BaseURL: cfg.DeepSeekBaseURL,
 		Model:   cfg.DeepSeekModel,
 	})
-	err = client.Translate(ctx, result.Text, func(token string) {
+	err = client.Translate(ctx, result.Text, direction, func(token string) {
 		runtime.EventsEmit(a.ctx, "translation-token", token)
 	})
 	if err != nil {

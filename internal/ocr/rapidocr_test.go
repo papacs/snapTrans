@@ -64,6 +64,39 @@ func TestExtractResultFromJSONReturnsNormalizedBlocks(t *testing.T) {
 	require.InDelta(t, 0.60, result.Blocks[1].X, 0.001)
 }
 
+func TestExtractResultFromJSONPrefersLeafBlocksOverAggregateContainerText(t *testing.T) {
+	raw := []byte(`{"code":100,"data":{
+		"text":"I wanted the ability to audit the process and the results.\nresults are logged to a Google Sheet.",
+		"box":[[0,40],[200,40],[200,90],[0,90]],
+		"lines":[
+			{"box":[[0,40],[200,40],[200,60],[0,60]],"text":"I wanted the ability to audit the process and the results."},
+			{"box":[[0,65],[200,65],[200,85],[0,85]],"text":"results are logged to a Google Sheet."}
+		]
+	}}`)
+
+	result, err := ExtractResultFromJSON(raw, 200, 100)
+
+	require.NoError(t, err)
+	require.Equal(t, "I wanted the ability to audit the process and the results.\nresults are logged to a Google Sheet.", result.Text)
+	require.Len(t, result.Blocks, 2)
+	require.Equal(t, "I wanted the ability to audit the process and the results.", result.Blocks[0].Text)
+	require.Equal(t, "results are logged to a Google Sheet.", result.Blocks[1].Text)
+}
+
+func TestExtractResultFromJSONDropsDuplicateSiblingBlocks(t *testing.T) {
+	raw := []byte(`{"code":100,"data":[
+		{"box":[[20,10],[180,10],[180,30],[20,30]],"score":0.99,"text":"Each day, the pipeline"},
+		{"box":[[21,11],[181,11],[181,31],[21,31]],"score":0.98,"text":"Each day, the pipeline"},
+		{"box":[[20,40],[180,40],[180,60],[20,60]],"score":0.98,"text":"I wanted the ability to audit the process."}
+	]}`)
+
+	result, err := ExtractResultFromJSON(raw, 200, 100)
+
+	require.NoError(t, err)
+	require.Equal(t, "Each day, the pipeline\nI wanted the ability to audit the process.", result.Text)
+	require.Len(t, result.Blocks, 2)
+}
+
 func TestResolveExecutablePathFindsRelativePathFromWorkingDirectory(t *testing.T) {
 	temp := t.TempDir()
 	exe := filepath.Join(temp, "rapidocr_json.exe")

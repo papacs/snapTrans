@@ -6,6 +6,8 @@ export interface ParsedTranslationOutput {
   lines: string[];
 }
 
+export type TranslationDirection = "to-zh" | "to-en";
+
 export function parseTranslationOutput(rawText: string): ParsedTranslationOutput {
   const indexed: Record<number, string> = {};
   const lines: string[] = [];
@@ -37,13 +39,47 @@ export function translationForOCRBlock(
   blockIndex: number,
   block: OCRBlock,
   parsed: ParsedTranslationOutput,
-  blockCount: number
+  blockCount: number,
+  direction: TranslationDirection = "to-zh"
 ): string {
   const candidate = candidateForBlock(blockIndex, parsed, blockCount);
-  if (!isTrustedReplacement(block.text, candidate)) {
+  if (!isTrustedReplacement(block.text, candidate, direction)) {
     return "";
   }
   return candidate;
+}
+
+export function isLikelyDuplicateTranslation(leftText: string, rightText: string): boolean {
+  const left = normalizeDuplicateText(leftText);
+  const right = normalizeDuplicateText(rightText);
+  if (left.length < 18 || right.length < 18) {
+    return false;
+  }
+
+  const leftListIndex = leadingListIndex(leftText);
+  const rightListIndex = leadingListIndex(rightText);
+  if (leftListIndex && rightListIndex && leftListIndex !== rightListIndex) {
+    return false;
+  }
+
+  if (left === right) {
+    return true;
+  }
+
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length <= right.length ? right : left;
+  const lengthRatio = shorter.length / Math.max(1, longer.length);
+  if (lengthRatio >= 0.45 && longer.includes(shorter)) {
+    return true;
+  }
+
+  const prefixLength = commonPrefixLength(left, right);
+  const characterSimilarity = setSimilarity(characters(left), characters(right));
+  if (prefixLength >= 8 && characterSimilarity >= 0.36) {
+    return true;
+  }
+
+  return diceSimilarity(ngrams(left, 2), ngrams(right, 2)) >= 0.46;
 }
 
 function candidateForBlock(blockIndex: number, parsed: ParsedTranslationOutput, blockCount: number): string {
@@ -91,7 +127,7 @@ function parseIndexedLine(line: string): { index: number; text: string } | null 
   return { index, text };
 }
 
-function isTrustedReplacement(sourceText: string, translatedText: string): boolean {
+function isTrustedReplacement(sourceText: string, translatedText: string, direction: TranslationDirection): boolean {
   const source = normalizeComparableText(sourceText);
   const translated = normalizeComparableText(translatedText);
   if (!source || !translated) {
@@ -107,7 +143,7 @@ function isTrustedReplacement(sourceText: string, translatedText: string): boole
   }
 
   if (source === translated) {
-    return false;
+    return isTargetLanguageText(sourceText, direction);
   }
 
   return true;
@@ -123,4 +159,84 @@ function normalizeComparableText(text: string): string {
 
 function hasNaturalLanguage(text: string): boolean {
   return /[\p{Script=Han}A-Za-z]/u.test(text);
+}
+
+function isTargetLanguageText(text: string, direction: TranslationDirection): boolean {
+  const hasHan = /[\p{Script=Han}]/u.test(text);
+  const hasLatin = /[A-Za-z]/.test(text);
+  if (direction === "to-zh") {
+    return hasHan;
+  }
+  return hasLatin && !hasHan;
+}
+
+function normalizeDuplicateText(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[^\p{Script=Han}a-z0-9]+/gu, "");
+}
+
+function leadingListIndex(text: string): string | null {
+  const match = text.trim().match(/^(\d+)[.)、．]\s+/);
+  return match?.[1] ?? null;
+}
+
+function commonPrefixLength(left: string, right: string): number {
+  const limit = Math.min(left.length, right.length);
+  let index = 0;
+  while (index < limit && left[index] === right[index]) {
+    index += 1;
+  }
+  return index;
+}
+
+function characters(text: string): string[] {
+  return Array.from(text);
+}
+
+function ngrams(text: string, size: number): string[] {
+  const chars = characters(text);
+  if (chars.length <= size) {
+    return chars.length > 0 ? [chars.join("")] : [];
+  }
+
+  const result: string[] = [];
+  for (let index = 0; index <= chars.length - size; index += 1) {
+    result.push(chars.slice(index, index + size).join(""));
+  }
+  return result;
+}
+
+function setSimilarity(leftItems: string[], rightItems: string[]): number {
+  const left = new Set(leftItems);
+  const right = new Set(rightItems);
+  if (left.size === 0 || right.size === 0) {
+    return 0;
+  }
+
+  let intersection = 0;
+  for (const item of left) {
+    if (right.has(item)) {
+      intersection += 1;
+    }
+  }
+  return intersection / Math.min(left.size, right.size);
+}
+
+function diceSimilarity(leftItems: string[], rightItems: string[]): number {
+  const left = new Set(leftItems);
+  const right = new Set(rightItems);
+  if (left.size === 0 || right.size === 0) {
+    return 0;
+  }
+
+  let intersection = 0;
+  for (const item of left) {
+    if (right.has(item)) {
+      intersection += 1;
+    }
+  }
+  return (2 * intersection) / (left.size + right.size);
 }

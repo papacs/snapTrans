@@ -208,6 +208,7 @@ func ExtractResultFromJSON(raw []byte, imageWidth int, imageHeight int) (Result,
 	blocks := make([]Block, 0)
 	collectResult(decoded, imageWidth, imageHeight, &parts, &blocks)
 	sortBlocks(blocks)
+	blocks = dedupeBlocks(blocks)
 	if len(blocks) > 0 {
 		parts = parts[:0]
 		for _, block := range blocks {
@@ -262,33 +263,47 @@ func collectText(value any, parts *[]string) {
 	}
 }
 
-func collectResult(value any, imageWidth int, imageHeight int, parts *[]string, blocks *[]Block) {
+func collectResult(value any, imageWidth int, imageHeight int, parts *[]string, blocks *[]Block) bool {
 	switch typed := value.(type) {
 	case map[string]any:
 		text := textFromMap(typed)
-		if text != "" {
-			appendPart(parts, text)
-			if block, ok := blockFromMap(typed, imageWidth, imageHeight, text); ok {
-				*blocks = append(*blocks, block)
-			}
-		}
+		hasChildText := false
 		for key, child := range typed {
 			if isOCRLeafKey(key) {
 				continue
 			}
-			collectResult(child, imageWidth, imageHeight, parts, blocks)
+			if collectResult(child, imageWidth, imageHeight, parts, blocks) {
+				hasChildText = true
+			}
 		}
+		if hasChildText {
+			return true
+		}
+		if text == "" {
+			return false
+		}
+		appendPart(parts, text)
+		if block, ok := blockFromMap(typed, imageWidth, imageHeight, text); ok {
+			*blocks = append(*blocks, block)
+		}
+		return true
 	case []any:
 		if text, ok := textFromArray(typed); ok {
 			appendPart(parts, text)
 			if block, ok := blockFromArray(typed, imageWidth, imageHeight, text); ok {
 				*blocks = append(*blocks, block)
 			}
+			return true
 		}
+		hasChildText := false
 		for _, child := range typed {
-			collectResult(child, imageWidth, imageHeight, parts, blocks)
+			if collectResult(child, imageWidth, imageHeight, parts, blocks) {
+				hasChildText = true
+			}
 		}
+		return hasChildText
 	}
+	return false
 }
 
 func appendText(parts *[]string, text string) {
@@ -419,6 +434,44 @@ func sortBlocks(blocks []Block) {
 		}
 		return a.X < b.X
 	})
+}
+
+func dedupeBlocks(blocks []Block) []Block {
+	result := make([]Block, 0, len(blocks))
+	for _, block := range blocks {
+		duplicate := false
+		for _, existing := range result {
+			if normalizedBlockText(block.Text) == normalizedBlockText(existing.Text) && blockOverlapRatio(block, existing) >= 0.72 {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			result = append(result, block)
+		}
+	}
+	return result
+}
+
+func normalizedBlockText(text string) string {
+	return strings.ToLower(strings.Join(strings.Fields(text), " "))
+}
+
+func blockOverlapRatio(left Block, right Block) float64 {
+	intersectionWidth := math.Min(left.X+left.Width, right.X+right.Width) - math.Max(left.X, right.X)
+	intersectionHeight := math.Min(left.Y+left.Height, right.Y+right.Height) - math.Max(left.Y, right.Y)
+	if intersectionWidth <= 0 || intersectionHeight <= 0 {
+		return 0
+	}
+
+	intersectionArea := intersectionWidth * intersectionHeight
+	leftArea := left.Width * left.Height
+	rightArea := right.Width * right.Height
+	minArea := math.Min(leftArea, rightArea)
+	if minArea <= 0 {
+		return 0
+	}
+	return intersectionArea / minArea
 }
 
 func imageDimensions(imageBytes []byte) (int, int) {

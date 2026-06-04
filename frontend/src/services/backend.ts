@@ -34,6 +34,8 @@ export interface OCRResultPayload {
   blocks: OCRBlockPayload[];
 }
 
+export type TranslationDirection = "to-zh" | "to-en";
+
 type EventName =
   | "capture-start"
   | "ocr-start"
@@ -117,13 +119,13 @@ export async function showCaptureWindow(): Promise<void> {
   }
 }
 
-export async function processImage(base64Crop: string): Promise<void> {
+export async function processImage(base64Crop: string, direction: TranslationDirection = "to-zh"): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.ProcessImage(base64Crop);
+    await window.go!.main!.App!.ProcessImage(base64Crop, direction);
     return;
   }
 
-  void streamFallbackTranslation();
+  void streamFallbackTranslation(direction);
 }
 
 export async function hideWindow(): Promise<void> {
@@ -213,7 +215,7 @@ function createFallbackCapture(): CapturePayload {
   };
 }
 
-async function streamFallbackTranslation(): Promise<void> {
+async function streamFallbackTranslation(direction: TranslationDirection): Promise<void> {
   emitFallback("ocr-start", {});
   await delay(80);
   emitFallback("ocr-result", {
@@ -226,7 +228,10 @@ async function streamFallbackTranslation(): Promise<void> {
   } satisfies OCRResultPayload);
   emitFallback("translation-start", {});
 
-  const tokens = ["\u4e2d\u6027", "\n", "\u8d1f\u9762", "\n", "\u6b63\u9762"];
+  const tokens =
+    direction === "to-en"
+      ? ["Neutral", "\n", "Negative", "\n", "Positive"]
+      : ["\u4e2d\u6027", "\n", "\u8d1f\u9762", "\n", "\u6b63\u9762"];
 
   for (const token of tokens) {
     emitFallback("translation-token", token);
