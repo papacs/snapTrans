@@ -26,8 +26,8 @@ Quick start:
    Run `build/bin/snapTrans.exe`.
 2. 程序默认进入托盘，右键托盘图标打开 `Settings`。
    The app starts in the system tray. Right-click the tray icon and open `Settings`.
-3. 填入 `DeepSeek API Key`，保持 `RapidOCR Path` 为默认值 `./RapidOCR-json_v0.2.0`。
-   Fill `DeepSeek API Key` and keep `RapidOCR Path` as `./RapidOCR-json_v0.2.0`.
+3. 填入 LiteLLM Virtual Key、API Base URL（通常以 `/v1` 结尾）和模型名，保持 `RapidOCR Path` 为默认值 `./RapidOCR-json_v0.2.0`。
+   Fill the LiteLLM Virtual Key, API Base URL (usually ending in `/v1`), Model, and keep `RapidOCR Path` as `./RapidOCR-json_v0.2.0`.
 4. 保存后按默认快捷键 `Alt+Q` 开始截图翻译。
    Save and press the default shortcut `Alt+Q` to capture and translate.
 
@@ -46,7 +46,7 @@ Requirements:
 - Go 1.21+
 - Wails v2 CLI
 - Node.js 22+ and npm
-- DeepSeek-compatible API key
+- LiteLLM Virtual Key or another OpenAI-compatible API key
 
 安装前端依赖：
 Install frontend dependencies:
@@ -68,9 +68,9 @@ Copy-Item .env.sample .env
 Edit `.env` and fill your own key:
 
 ```dotenv
-DEEPSEEK_API_KEY=your_deepseek_key
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-chat
+LLM_API_KEY=your_litellm_virtual_key
+LLM_BASE_URL=https://your-litellm-host/v1
+LLM_MODEL=gemini/gemini-3.5-flash-lite
 RAPIDOCR_EXE_PATH=./RapidOCR-json_v0.2.0
 RAPIDOCR_TIMEOUT_SECONDS=15
 SNAPTRANS_SHORTCUT=Alt+Q
@@ -122,8 +122,8 @@ Defaults:
 
 ```text
 Shortcut: Alt+Q
-DeepSeek Base URL: https://api.deepseek.com
-DeepSeek Model: deepseek-chat
+LLM API Base URL: https://your-litellm-host/v1
+LLM Model: gemini/gemini-3.5-flash-lite
 RapidOCR Path: ./RapidOCR-json_v0.2.0
 RapidOCR Timeout: 15 seconds
 ```
@@ -183,7 +183,7 @@ The app starts hidden and adds a Windows tray menu with `Capture`, `Settings`, a
 - `internal/capture`: 屏幕截图和 PNG data URL 编码。
 - `internal/hotkeys`: 全局快捷键注册。
 - `internal/ocr`: RapidOCR 进程封装和 JSON 文本提取。
-- `internal/translator`: DeepSeek-compatible streaming translation。
+- `internal/translator`: OpenAI-compatible streaming translation (LiteLLM supported)。
 - `frontend/src/services/backend.ts`: Wails bridge 和浏览器 fallback。
 - `frontend/src/utils/selection.ts`: CSS 到图片坐标映射、裁剪和翻译排版辅助函数。
 

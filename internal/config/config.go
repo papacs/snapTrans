@@ -12,11 +12,36 @@ import (
 
 type Config struct {
 	ShortcutKey            string `json:"shortcutKey"`
+	APIKey                 string `json:"apiKey"`
+	BaseURL                string `json:"baseURL"`
+	Model                  string `json:"model"`
+	RapidOCRPath           string `json:"rapidOCRPath"`
+	RapidOCRTimeoutSeconds int    `json:"rapidOCRTimeoutSeconds"`
+}
+
+// persistedConfig accepts both the current generic LLM fields and the
+// DeepSeek-specific fields written by versions before LiteLLM support.
+type persistedConfig struct {
+	ShortcutKey            string `json:"shortcutKey"`
+	APIKey                 string `json:"apiKey"`
+	BaseURL                string `json:"baseURL"`
+	Model                  string `json:"model"`
 	DeepSeekAPIKey         string `json:"deepSeekAPIKey"`
 	DeepSeekBaseURL        string `json:"deepSeekBaseURL"`
 	DeepSeekModel          string `json:"deepSeekModel"`
 	RapidOCRPath           string `json:"rapidOCRPath"`
 	RapidOCRTimeoutSeconds int    `json:"rapidOCRTimeoutSeconds"`
+}
+
+func (p persistedConfig) Config() Config {
+	return Config{
+		ShortcutKey:            p.ShortcutKey,
+		APIKey:                 firstNonEmpty(p.APIKey, p.DeepSeekAPIKey),
+		BaseURL:                firstNonEmpty(p.BaseURL, p.DeepSeekBaseURL),
+		Model:                  firstNonEmpty(p.Model, p.DeepSeekModel),
+		RapidOCRPath:           p.RapidOCRPath,
+		RapidOCRTimeoutSeconds: p.RapidOCRTimeoutSeconds,
+	}
 }
 
 type Store struct {
@@ -27,8 +52,8 @@ type Store struct {
 func Default() Config {
 	return Config{
 		ShortcutKey:            "Alt+Q",
-		DeepSeekBaseURL:        "https://api.deepseek.com",
-		DeepSeekModel:          "deepseek-chat",
+		BaseURL:                "https://api.deepseek.com",
+		Model:                  "deepseek-chat",
 		RapidOCRPath:           "./RapidOCR-json_v0.2.0",
 		RapidOCRTimeoutSeconds: 15,
 	}
@@ -71,14 +96,14 @@ func (s *Store) Load() (Config, error) {
 		return cfg, err
 	}
 
-	var saved Config
+	var saved persistedConfig
 	if err := json.Unmarshal(raw, &saved); err != nil {
 		return cfg, err
 	}
 
-	saved = saved.WithDefaults()
-	applyEnvFallback(&saved, env)
-	return saved, nil
+	loaded := saved.Config()
+	applyEnvFallback(&loaded, env)
+	return loaded, nil
 }
 
 func (s *Store) Save(cfg Config) error {
@@ -104,11 +129,11 @@ func (c Config) WithDefaults() Config {
 	if strings.TrimSpace(c.ShortcutKey) == "" {
 		c.ShortcutKey = defaults.ShortcutKey
 	}
-	if strings.TrimSpace(c.DeepSeekBaseURL) == "" {
-		c.DeepSeekBaseURL = defaults.DeepSeekBaseURL
+	if strings.TrimSpace(c.BaseURL) == "" {
+		c.BaseURL = defaults.BaseURL
 	}
-	if strings.TrimSpace(c.DeepSeekModel) == "" {
-		c.DeepSeekModel = defaults.DeepSeekModel
+	if strings.TrimSpace(c.Model) == "" {
+		c.Model = defaults.Model
 	}
 	if strings.TrimSpace(c.RapidOCRPath) == "" {
 		c.RapidOCRPath = defaults.RapidOCRPath
@@ -155,14 +180,14 @@ func readEnvFile(path string) (map[string]string, error) {
 }
 
 func applyEnvFallback(cfg *Config, env map[string]string) {
-	if cfg.DeepSeekAPIKey == "" {
-		cfg.DeepSeekAPIKey = env["DEEPSEEK_API_KEY"]
+	if cfg.APIKey == "" {
+		cfg.APIKey = firstNonEmpty(env["LLM_API_KEY"], env["LITELLM_API_KEY"], env["DEEPSEEK_API_KEY"])
 	}
-	if cfg.DeepSeekBaseURL == "" {
-		cfg.DeepSeekBaseURL = env["DEEPSEEK_BASE_URL"]
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = firstNonEmpty(env["LLM_BASE_URL"], env["LITELLM_BASE_URL"], env["DEEPSEEK_BASE_URL"])
 	}
-	if cfg.DeepSeekModel == "" {
-		cfg.DeepSeekModel = env["DEEPSEEK_MODEL"]
+	if cfg.Model == "" {
+		cfg.Model = firstNonEmpty(env["LLM_MODEL"], env["LITELLM_MODEL"], env["DEEPSEEK_MODEL"])
 	}
 	if cfg.RapidOCRPath == "" {
 		cfg.RapidOCRPath = env["RAPIDOCR_EXE_PATH"]
@@ -179,14 +204,14 @@ func applyEnvFallback(cfg *Config, env map[string]string) {
 }
 
 func applyEnvOverrides(cfg *Config, env map[string]string) {
-	if env["DEEPSEEK_API_KEY"] != "" {
-		cfg.DeepSeekAPIKey = env["DEEPSEEK_API_KEY"]
+	if value := firstNonEmpty(env["LLM_API_KEY"], env["LITELLM_API_KEY"], env["DEEPSEEK_API_KEY"]); value != "" {
+		cfg.APIKey = value
 	}
-	if env["DEEPSEEK_BASE_URL"] != "" {
-		cfg.DeepSeekBaseURL = env["DEEPSEEK_BASE_URL"]
+	if value := firstNonEmpty(env["LLM_BASE_URL"], env["LITELLM_BASE_URL"], env["DEEPSEEK_BASE_URL"]); value != "" {
+		cfg.BaseURL = value
 	}
-	if env["DEEPSEEK_MODEL"] != "" {
-		cfg.DeepSeekModel = env["DEEPSEEK_MODEL"]
+	if value := firstNonEmpty(env["LLM_MODEL"], env["LITELLM_MODEL"], env["DEEPSEEK_MODEL"]); value != "" {
+		cfg.Model = value
 	}
 	if env["RAPIDOCR_EXE_PATH"] != "" {
 		cfg.RapidOCRPath = env["RAPIDOCR_EXE_PATH"]
@@ -200,4 +225,13 @@ func applyEnvOverrides(cfg *Config, env map[string]string) {
 		}
 	}
 	*cfg = cfg.WithDefaults()
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }

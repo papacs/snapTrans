@@ -176,7 +176,7 @@ func (a *App) ShowSettings() error {
 
 	runtime.WindowUnfullscreen(a.ctx)
 	runtime.WindowSetAlwaysOnTop(a.ctx, true)
-	runtime.WindowSetSize(a.ctx, 520, 420)
+	runtime.WindowSetSize(a.ctx, 520, 540)
 	runtime.WindowCenter(a.ctx)
 	runtime.WindowShow(a.ctx)
 	runtime.EventsEmit(a.ctx, "settings-open", map[string]string{})
@@ -258,10 +258,10 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 		return
 	}
 
-	client := translator.NewDeepSeek(translator.Options{
-		APIKey:  cfg.DeepSeekAPIKey,
-		BaseURL: cfg.DeepSeekBaseURL,
-		Model:   cfg.DeepSeekModel,
+	client := translator.NewOpenAICompatible(translator.Options{
+		APIKey:  cfg.APIKey,
+		BaseURL: cfg.BaseURL,
+		Model:   cfg.Model,
 	})
 	err = client.Translate(ctx, result.Text, direction, func(token string) {
 		runtime.EventsEmit(a.ctx, "translation-token", token)

@@ -1,8 +1,8 @@
 export interface AppConfig {
   shortcutKey: string;
-  deepSeekAPIKey: string;
-  deepSeekBaseURL: string;
-  deepSeekModel: string;
+  apiKey: string;
+  baseURL: string;
+  model: string;
   rapidOCRPath: string;
   rapidOCRTimeoutSeconds: number;
 }
@@ -52,9 +52,9 @@ const fallbackListeners = new Map<EventName, Set<Listener<unknown>>>();
 
 export const defaultConfig: AppConfig = {
   shortcutKey: "Alt+Q",
-  deepSeekAPIKey: "",
-  deepSeekBaseURL: "https://api.deepseek.com",
-  deepSeekModel: "deepseek-chat",
+  apiKey: "",
+  baseURL: "https://api.deepseek.com",
+  model: "deepseek-chat",
   rapidOCRPath: "./RapidOCR-json_v0.2.0",
   rapidOCRTimeoutSeconds: 15
 };

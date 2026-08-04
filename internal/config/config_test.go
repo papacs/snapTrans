@@ -11,18 +11,20 @@ import (
 func TestLoadUsesEnvFallbackWhenConfigIsMissing(t *testing.T) {
 	temp := t.TempDir()
 	envPath := filepath.Join(temp, ".env")
-	err := os.WriteFile(envPath, []byte("DEEPSEEK_API_KEY=env-key\nSNAPTRANS_SHORTCUT=Ctrl+Shift+S\nRAPIDOCR_EXE_PATH=C:/tools/rapidocr_json.exe\nRAPIDOCR_TIMEOUT_SECONDS=20\n"), 0o600)
+	err := os.WriteFile(envPath, []byte("LLM_API_KEY=env-key\nLLM_BASE_URL=https://litellm.example/v1\nLLM_MODEL=gemini/gemini-3.5-flash-lite\nSNAPTRANS_SHORTCUT=Ctrl+Shift+S\nRAPIDOCR_EXE_PATH=C:/tools/rapidocr_json.exe\nRAPIDOCR_TIMEOUT_SECONDS=20\n"), 0o600)
 	require.NoError(t, err)
 
 	store := NewStoreAt(filepath.Join(temp, "config.json"), envPath)
 	cfg, err := store.Load()
 
 	require.NoError(t, err)
-	require.Equal(t, "env-key", cfg.DeepSeekAPIKey)
+	require.Equal(t, "env-key", cfg.APIKey)
+	require.Equal(t, "https://litellm.example/v1", cfg.BaseURL)
+	require.Equal(t, "gemini/gemini-3.5-flash-lite", cfg.Model)
 	require.Equal(t, "Ctrl+Shift+S", cfg.ShortcutKey)
 	require.Equal(t, "C:/tools/rapidocr_json.exe", cfg.RapidOCRPath)
 	require.Equal(t, 20, cfg.RapidOCRTimeoutSeconds)
-	require.Equal(t, "deepseek-chat", cfg.DeepSeekModel)
+	require.Equal(t, "gemini/gemini-3.5-flash-lite", cfg.Model)
 }
 
 func TestSaveAndLoadRoundTrip(t *testing.T) {
@@ -30,7 +32,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	store := NewStoreAt(filepath.Join(temp, "config.json"), filepath.Join(temp, ".env"))
 
 	expected := Default()
-	expected.DeepSeekAPIKey = "saved-key"
+	expected.APIKey = "saved-key"
 	expected.ShortcutKey = "Alt+Q"
 
 	require.NoError(t, store.Save(expected))
@@ -38,4 +40,18 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, expected, actual)
+}
+
+func TestLoadMigratesLegacyDeepSeekConfig(t *testing.T) {
+	temp := t.TempDir()
+	configPath := filepath.Join(temp, "config.json")
+	err := os.WriteFile(configPath, []byte(`{"deepSeekAPIKey":"legacy-key","deepSeekBaseURL":"https://legacy.example/v1","deepSeekModel":"legacy-model"}`), 0o600)
+	require.NoError(t, err)
+
+	cfg, err := NewStoreAt(configPath, filepath.Join(temp, ".env")).Load()
+
+	require.NoError(t, err)
+	require.Equal(t, "legacy-key", cfg.APIKey)
+	require.Equal(t, "https://legacy.example/v1", cfg.BaseURL)
+	require.Equal(t, "legacy-model", cfg.Model)
 }

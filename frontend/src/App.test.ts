@@ -7,9 +7,9 @@ const backendMocks = vi.hoisted(() => {
   const listeners = new Map<string, Set<Listener>>();
   const defaultConfig = {
     shortcutKey: "Alt+Q",
-    deepSeekAPIKey: "",
-    deepSeekBaseURL: "https://api.deepseek.com",
-    deepSeekModel: "deepseek-chat",
+    apiKey: "",
+    baseURL: "https://api.deepseek.com",
+    model: "deepseek-chat",
     rapidOCRPath: "./RapidOCR-json_v0.2.0",
     rapidOCRTimeoutSeconds: 15
   };

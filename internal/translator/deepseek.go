@@ -24,7 +24,9 @@ const (
 	DirectionToEnglish Direction = "to-en"
 )
 
-type DeepSeek struct {
+// OpenAICompatible streams translation through any OpenAI-compatible API,
+// including LiteLLM, DeepSeek, and self-hosted gateways.
+type OpenAICompatible struct {
 	options Options
 }
 
@@ -37,19 +39,19 @@ func NormalizeDirection(value string) Direction {
 	}
 }
 
-func NewDeepSeek(options Options) *DeepSeek {
+func NewOpenAICompatible(options Options) *OpenAICompatible {
 	if strings.TrimSpace(options.BaseURL) == "" {
 		options.BaseURL = "https://api.deepseek.com"
 	}
 	if strings.TrimSpace(options.Model) == "" {
 		options.Model = "deepseek-chat"
 	}
-	return &DeepSeek{options: options}
+	return &OpenAICompatible{options: options}
 }
 
-func (d *DeepSeek) Translate(ctx context.Context, sourceText string, direction Direction, onToken func(string)) error {
+func (d *OpenAICompatible) Translate(ctx context.Context, sourceText string, direction Direction, onToken func(string)) error {
 	if strings.TrimSpace(d.options.APIKey) == "" {
-		return errors.New("DeepSeek API key is required")
+		return errors.New("LLM API key is required")
 	}
 	if strings.TrimSpace(sourceText) == "" {
 		return errors.New("source text is empty")

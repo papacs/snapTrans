@@ -1142,15 +1142,36 @@ async function saveSettings(): Promise<void> {
         </div>
 
         <label class="mb-3 block text-sm font-medium">
-          <span class="mb-1 block">DeepSeek API Key</span>
+          <span class="mb-1 block">LLM API Key</span>
           <input
-            v-model="config.deepSeekAPIKey"
+            v-model="config.apiKey"
             class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-zinc-900"
             type="password"
             autocomplete="off"
+            placeholder="LiteLLM Virtual Key"
           />
         </label>
 
+        <label class="mb-3 block text-sm font-medium">
+          <span class="mb-1 block">LLM API Base URL</span>
+          <input
+            v-model="config.baseURL"
+            class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-zinc-900"
+            type="url"
+            placeholder="https://your-litellm-host/v1"
+          />
+          <span class="mt-1 block text-xs font-normal text-slate-500">LiteLLM 地址通常以 /v1 结尾</span>
+        </label>
+
+        <label class="mb-3 block text-sm font-medium">
+          <span class="mb-1 block">Model</span>
+          <input
+            v-model="config.model"
+            class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-zinc-900"
+            type="text"
+            placeholder="gemini/gemini-3.5-flash-lite"
+          />
+        </label>
         <label class="mb-3 block text-sm font-medium">
           <span class="mb-1 block">Shortcut</span>
           <input
