@@ -5,6 +5,11 @@ export interface AppConfig {
   model: string;
   rapidOCRPath: string;
   rapidOCRTimeoutSeconds: number;
+  autoDirection: boolean;
+  systemPrompt: string;
+  glossary: string;
+  persistentOCR: boolean;
+  autoCopy: boolean;
 }
 
 export interface CapturePayload {
@@ -13,12 +18,39 @@ export interface CapturePayload {
   height: number;
   originX?: number;
   originY?: number;
+  displays?: DisplayInfo[];
   source?: "wails" | "browser";
 }
 
+export interface DisplayInfo {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale: number;
+}
+
 export interface WorkflowErrorPayload {
+  generation?: number;
   stage: "capture" | "ocr" | "translation" | "config" | "unknown";
   message: string;
+}
+
+export interface GenerationEvent {
+  generation: number;
+}
+
+export interface TranslationTokenEvent extends GenerationEvent {
+  token: string;
+}
+
+export interface TranslationDirectionEvent extends GenerationEvent {
+  direction: TranslationDirection;
+}
+
+export interface OCRResultEvent extends GenerationEvent {
+  text: string;
+  blocks: OCRBlockPayload[];
 }
 
 export interface OCRBlockPayload {
@@ -34,12 +66,30 @@ export interface OCRResultPayload {
   blocks: OCRBlockPayload[];
 }
 
-export type TranslationDirection = "to-zh" | "to-en";
+import type { TranslationDirection as ResolvedDirection } from "../utils/translation";
+
+export type TranslationDirection = ResolvedDirection | "auto";
+
+export interface HistoryEntry {
+  id: string;
+  timestamp: string;
+  source: string;
+  translation: string;
+  direction: TranslationDirection;
+}
+
+export interface EnvironmentStatus {
+  ocrReady: boolean;
+  ocrDetail: string;
+  apiKeyConfigured: boolean;
+  shortcut: string;
+}
 
 type EventName =
   | "capture-start"
   | "ocr-start"
   | "ocr-result"
+  | "translation-direction"
   | "translation-start"
   | "translation-token"
   | "translation-done"
@@ -56,7 +106,12 @@ export const defaultConfig: AppConfig = {
   baseURL: "https://api.deepseek.com",
   model: "deepseek-chat",
   rapidOCRPath: "./RapidOCR-json_v0.2.0",
-  rapidOCRTimeoutSeconds: 15
+  rapidOCRTimeoutSeconds: 15,
+  autoDirection: true,
+  systemPrompt: "",
+  glossary: "",
+  persistentOCR: true,
+  autoCopy: false
 };
 
 export function hasWailsBackend(): boolean {
@@ -119,18 +174,95 @@ export async function showCaptureWindow(): Promise<void> {
   }
 }
 
-export async function processImage(base64Crop: string, direction: TranslationDirection = "to-zh"): Promise<void> {
+export async function processImage(
+  base64Crop: string,
+  direction: TranslationDirection = "to-zh",
+  generation = 0
+): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.ProcessImage(base64Crop, direction);
+    await window.go!.main!.App!.ProcessImage(base64Crop, direction, generation);
     return;
   }
 
-  void streamFallbackTranslation(direction);
+  void streamFallbackTranslation(direction, generation);
 }
 
 export async function hideWindow(): Promise<void> {
   if (hasWailsBackend()) {
     await window.go!.main!.App!.HideWindow();
+  }
+}
+
+export async function getHistory(): Promise<HistoryEntry[]> {
+  if (hasWailsBackend()) {
+    return window.go!.main!.App!.GetHistory();
+  }
+
+  const saved = localStorage.getItem("snaptrans.history");
+  if (!saved) {
+    return [];
+  }
+  try {
+    return JSON.parse(saved);
+  } catch {
+    return [];
+  }
+}
+
+export async function clearHistory(): Promise<void> {
+  if (hasWailsBackend()) {
+    await window.go!.main!.App!.ClearHistory();
+    return;
+  }
+
+  localStorage.removeItem("snaptrans.history");
+}
+
+export async function testConnection(): Promise<void> {
+  if (hasWailsBackend()) {
+    await window.go!.main!.App!.TestConnection();
+    return;
+  }
+
+  await delay(250);
+}
+
+export async function getEnvironmentStatus(): Promise<EnvironmentStatus> {
+  if (hasWailsBackend()) {
+    return window.go!.main!.App!.GetEnvironmentStatus();
+  }
+
+  return {
+    ocrReady: false,
+    ocrDetail: "Browser preview does not run local OCR.",
+    apiKeyConfigured: false,
+    shortcut: defaultConfig.shortcutKey
+  };
+}
+
+export async function setAutoStart(enabled: boolean): Promise<void> {
+  if (hasWailsBackend()) {
+    await window.go!.main!.App!.SetAutoStart(enabled);
+  }
+}
+
+export async function isAutoStartEnabled(): Promise<boolean> {
+  if (hasWailsBackend()) {
+    return window.go!.main!.App!.IsAutoStartEnabled();
+  }
+  return false;
+}
+
+export async function getVersion(): Promise<string> {
+  if (hasWailsBackend()) {
+    return window.go!.main!.App!.GetVersion();
+  }
+  return "browser-preview";
+}
+
+export async function openLogFolder(): Promise<void> {
+  if (hasWailsBackend()) {
+    await window.go!.main!.App!.OpenLogFolder();
   }
 }
 
@@ -215,18 +347,21 @@ function createFallbackCapture(): CapturePayload {
   };
 }
 
-async function streamFallbackTranslation(direction: TranslationDirection): Promise<void> {
-  emitFallback("ocr-start", {});
+async function streamFallbackTranslation(direction: TranslationDirection, generation: number): Promise<void> {
+  emitFallback("ocr-start", { generation });
   await delay(80);
+  const resolvedDirection: "to-zh" | "to-en" = direction === "to-en" ? "to-en" : "to-zh";
+  emitFallback("translation-direction", { generation, direction: resolvedDirection });
   emitFallback("ocr-result", {
+    generation,
     text: "Neutral\nNegative\nPositive",
     blocks: [
       { text: "Neutral", x: 0.16, y: 0.2, width: 0.15, height: 0.36 },
       { text: "Negative", x: 0.39, y: 0.2, width: 0.17, height: 0.36 },
       { text: "Positive", x: 0.62, y: 0.2, width: 0.18, height: 0.36 }
     ]
-  } satisfies OCRResultPayload);
-  emitFallback("translation-start", {});
+  } satisfies OCRResultEvent);
+  emitFallback("translation-start", { generation });
 
   const tokens =
     direction === "to-en"
@@ -234,11 +369,11 @@ async function streamFallbackTranslation(direction: TranslationDirection): Promi
       : ["\u4e2d\u6027", "\n", "\u8d1f\u9762", "\n", "\u6b63\u9762"];
 
   for (const token of tokens) {
-    emitFallback("translation-token", token);
+    emitFallback("translation-token", { generation, token });
     await delay(35);
   }
 
-  emitFallback("translation-done", {});
+  emitFallback("translation-done", { generation });
 }
 
 function delay(ms: number): Promise<void> {

@@ -159,6 +159,17 @@ func TestNewRapidOCRCommandUsesImageArgumentAndExecutableDirectory(t *testing.T)
 	require.Equal(t, []string{executable, "--image=" + imagePath}, cmd.Args)
 }
 
+func TestNewRapidOCRCommandWithImagePathArgUsesDocumentedShape(t *testing.T) {
+	executable := filepath.Join("C:", "tools", "RapidOCR-json_v0.2.0", "RapidOCR-json.exe")
+	imagePath := filepath.Join("C:", "Users", "dell", "AppData", "Local", "Temp", "snaptrans.png")
+
+	cmd := NewRapidOCRCommandWithImagePathArg(context.Background(), executable, imagePath)
+
+	require.Equal(t, filepath.Dir(executable), cmd.Dir)
+	require.Equal(t, executable, cmd.Path)
+	require.Equal(t, []string{executable, "--image_path=" + imagePath}, cmd.Args)
+}
+
 func TestResolveExecutablePathReportsCheckedLocations(t *testing.T) {
 	temp := t.TempDir()
 	_, err := ResolveExecutablePath("./rapidocr_json.exe", temp, filepath.Join(temp, "build", "bin", "snapTrans.exe"))

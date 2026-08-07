@@ -74,6 +74,9 @@ LLM_MODEL=gemini/gemini-3.5-flash-lite
 RAPIDOCR_EXE_PATH=./RapidOCR-json_v0.2.0
 RAPIDOCR_TIMEOUT_SECONDS=15
 SNAPTRANS_SHORTCUT=Alt+Q
+SNAPTRANS_AUTO_DIRECTION=true
+SNAPTRANS_PERSISTENT_OCR=true
+SNAPTRANS_AUTO_COPY=false
 ```
 
 构建前端并运行测试：
@@ -176,16 +179,46 @@ The default shortcut is `Alt+Q`. The Settings window can save a shortcut string,
 应用启动后默认隐藏，并添加 Windows 托盘菜单，包含 `Capture`、`Settings` 和 `Quit`。截图过程中可以按 `Esc` 或右键取消，并回到隐藏托盘状态。
 The app starts hidden and adds a Windows tray menu with `Capture`, `Settings`, and `Quit`. During capture, press `Esc` or right-click to cancel and return to the hidden tray state.
 
+## 更多功能 / Additional Features
+
+- **单实例 / Single instance**: 重复启动会提示已有实例，避免热键与托盘冲突。
+  Starting a second instance shows a message box instead of duplicating the tray and hotkey.
+- **常驻 OCR / Persistent OCR**: RapidOCR 以 stdin 循环模式常驻运行并随应用预热，显著降低每次截图的冷启动延迟；失败时自动回退到单次调用。常驻期间任务管理器里可见一个 `RapidOCR-json.exe` 进程，退出应用时自动关闭；可在设置中关闭常驻以省内存。
+  RapidOCR runs as a persistent stdin-loop worker and warms up at startup; failures fall back to one-shot invocations. While resident, one `RapidOCR-json.exe` process is visible in Task Manager and exits with the app; the setting can disable residency to save memory.
+- **自动方向 / Auto direction**: 默认按 OCR 文本自动选择翻译方向（中文为主 → 译英，否则译中），可在设置中关闭；手动反向在本次结果内保持，下次截图恢复自动。
+  The translation direction is detected from the OCR text by default; the reverse button overrides it for the current result.
+- **翻译历史 / History**: 最近 50 条翻译保存在设置窗口，可复制或清空。
+  The latest 50 translations are shown in Settings and can be copied or cleared.
+- **测试连接 / Test connection**: 设置页一键校验 API key、Base URL 与模型。
+  One-click validation of the LLM endpoint in Settings.
+- **快捷键录制 / Shortcut recorder**: 设置页点击 Record 后直接按键生成快捷键字符串。
+  Press the Record button, then the desired key combination.
+- **启动自检 / Environment status**: 设置页显示 OCR 可执行文件与 API key 状态徽章。
+  Settings shows OCR and API key readiness badges.
+- **开机自启 / Autostart**: 设置页开关注册到注册表 Run 键。
+  Start with Windows is managed through the registry Run key.
+- **自定义提示词与术语表 / Custom prompt & glossary**: 可选地为翻译模型追加指令和术语对照表。
+  Optional extra instructions and a source->target glossary for the model.
+- **自动复制 / Auto-copy**: 设置中开启后，翻译完成自动复制结果到剪贴板。
+  When enabled in Settings, the translation result is copied to the clipboard automatically.
+- **本地日志 / Logs**: 错误写入用户配置目录 `logs/snaptrans.log`（无遥测），包含各阶段耗时。
+  Errors and per-stage timings are logged locally without any telemetry.
+
 ## 架构 / Architecture
 
 - `app.go`: Wails 绑定方法和工作流事件。
 - `internal/config`: 本地配置和 `.env` fallback。
-- `internal/capture`: 屏幕截图和 PNG data URL 编码。
+- `internal/capture`: 屏幕截图、PNG data URL 编码和按显示器 DPI 的坐标元数据。
 - `internal/hotkeys`: 全局快捷键注册。
-- `internal/ocr`: RapidOCR 进程封装和 JSON 文本提取。
+- `internal/ocr`: RapidOCR 常驻 worker（stdin 循环）与单次调用封装、JSON 文本提取。
 - `internal/translator`: OpenAI-compatible streaming translation (LiteLLM supported)。
+- `internal/history`: 翻译历史持久化。
+- `internal/autostart`: Windows 注册表开机自启。
+- `internal/logfile`: 本地诊断日志。
+- `internal/singleinstance`: 单实例互斥。
 - `frontend/src/services/backend.ts`: Wails bridge 和浏览器 fallback。
-- `frontend/src/utils/selection.ts`: CSS 到图片坐标映射、裁剪和翻译排版辅助函数。
+- `frontend/src/utils/selection.ts`: CSS 到图片坐标映射（含多显示器 DPI 缩放）、裁剪和翻译排版辅助函数。
+- `frontend/src/utils/shortcut.ts`: 快捷键录制解析。
 
 ## 验证 / Verification
 

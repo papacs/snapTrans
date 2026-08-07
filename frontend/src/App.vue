@@ -1,26 +1,58 @@
 <script setup lang="ts">
-import { Camera, Check, Copy, Image as ImageIcon, Languages, Settings, X } from "lucide-vue-next";
+import {
+  Bot,
+  Camera,
+  Check,
+  Copy,
+  Cpu,
+  Eye,
+  EyeOff,
+  FolderOpen,
+  History,
+  Image as ImageIcon,
+  Keyboard,
+  Languages,
+  RefreshCw,
+  Settings,
+  Sparkles,
+  X
+} from "lucide-vue-next";
 import MarkdownIt from "markdown-it";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import {
+  clearHistory,
   copyImageDataUrl,
   copyText,
   defaultConfig,
+  getEnvironmentStatus,
+  getHistory,
+  getVersion,
   hasWailsBackend,
   hideWindow,
+  isAutoStartEnabled,
   loadConfig,
   onBackendEvent,
+  openLogFolder,
   processImage,
   saveConfig,
+  setAutoStart,
   showCaptureWindow,
+  testConnection,
   triggerCapture,
   type AppConfig,
   type CapturePayload,
-  type OCRResultPayload,
+  type EnvironmentStatus,
+  type GenerationEvent,
+  type HistoryEntry,
+  type OCRBlockPayload,
+  type OCRResultEvent,
   type TranslationDirection,
+  type TranslationDirectionEvent,
+  type TranslationTokenEvent,
   type WorkflowErrorPayload
 } from "./services/backend";
 import {
+  clampPointToBounds,
   cropCanvasToDataUrl,
   fontSizeForTranslationBlock,
   isUsableSelection,
@@ -30,6 +62,7 @@ import {
   normalizeRect,
   sampleCanvasColor,
   sampleCanvasForegroundColor,
+  selectionBadgePosition,
   shouldUseFlowTranslationLayout,
   translationPaletteForColor,
   wrapTranslationText,
@@ -37,7 +70,12 @@ import {
   type Rect,
   type SampledColor
 } from "./utils/selection";
-import { isLikelyDuplicateTranslation, parseTranslationOutput, translationForOCRBlock } from "./utils/translation";
+import {
+  isLikelyDuplicateTranslation,
+  parseTranslationOutput,
+  translationForOCRBlock
+} from "./utils/translation";
+import { shortcutKeyFromKeyboardEvent } from "./utils/shortcut";
 
 type Phase = "idle" | "loading" | "ready" | "drawing" | "processing" | "streaming" | "done" | "error";
 type AnchoredTranslationLayoutBlock = {
@@ -61,23 +99,49 @@ type AnchoredTranslationLayout = {
 const ANCHORED_TRANSLATION_BLOCK_GAP = 2;
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
+const captureLayerRef = ref<HTMLElement | null>(null);
 const resultPanelRef = ref<HTMLElement | null>(null);
 const phase = ref<Phase>("idle");
 const capture = ref<CapturePayload | null>(null);
 const dragStart = ref<Point | null>(null);
 const selection = ref<Rect | null>(null);
 const resultRect = ref<Rect | null>(null);
-const ocrBlocks = ref<OCRResultPayload["blocks"]>([]);
+const ocrBlocks = ref<OCRBlockPayload[]>([]);
 const viewport = reactive({ width: window.innerWidth, height: window.innerHeight });
 const translationText = ref("");
 const translationDirection = ref<TranslationDirection>("to-zh");
+const manualDirection = ref(false);
+const resolvedTranslationDirection = computed<"to-zh" | "to-en">(() =>
+  translationDirection.value === "to-en" ? "to-en" : "to-zh"
+);
 const currentCropDataUrl = ref("");
+const workflowGeneration = ref(0);
 const errorMessage = ref("");
 const settingsOpen = ref(false);
+const settingsError = ref("");
+const settingsSaving = ref(false);
+const historyEntries = ref<HistoryEntry[]>([]);
+const historyLoaded = ref(false);
+const testStatus = ref<"idle" | "testing" | "ok" | "error">("idle");
+const testMessage = ref("");
+const shortcutRecording = ref(false);
+const envStatus = ref<EnvironmentStatus | null>(null);
+const autoStartEnabled = ref(false);
+const autoStartTouched = ref(false);
+const appVersion = ref("");
+const showAPIKey = ref(false);
+const settingsDrag = reactive({
+  active: false,
+  startX: 0,
+  startY: 0,
+  winX: 0,
+  winY: 0,
+  lastMove: 0
+});
 const copied = ref(false);
 const copiedImage = ref(false);
 const isDesktop = hasWailsBackend();
-const markdown = new MarkdownIt({ breaks: true, linkify: false });
+const markdown = new MarkdownIt({ breaks: true, linkify: false, html: false });
 const config = reactive<AppConfig>({ ...defaultConfig });
 
 const parsedTranslation = computed(() => parseTranslationOutput(translationText.value));
@@ -162,7 +226,7 @@ const inlineOCRBlocks = computed(() => {
       block,
       parsedTranslation.value,
       ocrBlocks.value.length,
-      translationDirection.value
+      resolvedTranslationDirection.value
     );
     if (!text) {
       return [];
@@ -282,6 +346,19 @@ const selectionStyle = computed(() => {
   };
 });
 
+const selectionBadgeStyle = computed(() => {
+  const rect = selection.value;
+  if (!rect) {
+    return {};
+  }
+
+  const point = selectionBadgePosition(rect, viewport);
+  return {
+    left: `${point.x}px`,
+    top: `${point.y}px`
+  };
+});
+
 const unsubs: Array<() => void> = [];
 
 onMounted(async () => {
@@ -293,23 +370,54 @@ onMounted(async () => {
     onBackendEvent<CapturePayload>("capture-start", async (payload) => {
       await startCapture(payload);
     }),
-    onBackendEvent("ocr-start", () => {
+    onBackendEvent<GenerationEvent>("ocr-start", (payload) => {
+      if (!isCurrentGeneration(payload)) {
+        return;
+      }
       phase.value = "processing";
     }),
-    onBackendEvent<OCRResultPayload>("ocr-result", (payload) => {
+    onBackendEvent<OCRResultEvent>("ocr-result", (payload) => {
+      if (!isCurrentGeneration(payload)) {
+        return;
+      }
       ocrBlocks.value = payload.blocks ?? [];
     }),
-    onBackendEvent("translation-start", () => {
+    onBackendEvent<TranslationDirectionEvent>("translation-direction", (payload) => {
+      if (!isCurrentGeneration(payload) || manualDirection.value) {
+        return;
+      }
+      translationDirection.value = payload.direction === "to-en" ? "to-en" : "to-zh";
+    }),
+    onBackendEvent<GenerationEvent>("translation-start", (payload) => {
+      if (!isCurrentGeneration(payload)) {
+        return;
+      }
       phase.value = "streaming";
     }),
-    onBackendEvent<string>("translation-token", (token) => {
-      translationText.value += token;
+    onBackendEvent<TranslationTokenEvent>("translation-token", (payload) => {
+      if (!isCurrentGeneration(payload)) {
+        return;
+      }
+      translationText.value += payload.token;
       phase.value = "streaming";
     }),
-    onBackendEvent("translation-done", () => {
+    onBackendEvent<GenerationEvent>("translation-done", (payload) => {
+      if (!isCurrentGeneration(payload)) {
+        return;
+      }
       phase.value = "done";
+      if (config.autoCopy && cleanTranslationText.value) {
+        void copyText(cleanTranslationText.value);
+        copied.value = true;
+        window.setTimeout(() => {
+          copied.value = false;
+        }, 1100);
+      }
     }),
     onBackendEvent<WorkflowErrorPayload>("workflow-error", (payload) => {
+      if (!isCurrentGeneration(payload)) {
+        return;
+      }
       if (payload.stage === "translation" && translationText.value.trim()) {
         errorMessage.value = "";
         phase.value = "done";
@@ -327,8 +435,13 @@ onMounted(async () => {
       errorMessage.value = "";
       copied.value = false;
       copiedImage.value = false;
+      workflowGeneration.value += 1;
       phase.value = "idle";
       settingsOpen.value = true;
+      void loadHistory();
+      void loadEnvironmentStatus();
+      void loadAutoStart();
+      void loadVersion();
     })
   );
 });
@@ -336,6 +449,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener("resize", updateViewport);
   window.removeEventListener("keydown", onKeyDown);
+  detachCaptureDragListeners();
   for (const unsub of unsubs) {
     unsub();
   }
@@ -346,7 +460,16 @@ function updateViewport(): void {
   viewport.height = window.innerHeight;
 }
 
+function isCurrentGeneration(payload: { generation?: number }): boolean {
+  return typeof payload.generation !== "number" || payload.generation === workflowGeneration.value;
+}
+
 function onKeyDown(event: KeyboardEvent): void {
+  if (event.key === "Escape" && settingsOpen.value) {
+    event.preventDefault();
+    void closeSettings();
+    return;
+  }
   if (event.key === "Escape" && isCaptureActive()) {
     event.preventDefault();
     void cancelCapture();
@@ -363,6 +486,8 @@ async function startCapture(payload: CapturePayload): Promise<void> {
   errorMessage.value = "";
   copied.value = false;
   copiedImage.value = false;
+  manualDirection.value = false;
+  workflowGeneration.value += 1;
   phase.value = "loading";
 
   await nextTick();
@@ -398,19 +523,23 @@ async function drawCapture(payload: CapturePayload): Promise<void> {
 }
 
 function pointerPosition(event: MouseEvent): Point {
-  const target = event.currentTarget as HTMLElement;
+  const target = captureLayerRef.value ?? (event.currentTarget as HTMLElement);
   const rect = target.getBoundingClientRect();
-  return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top
-  };
+  return clampPointToBounds(
+    {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top
+    },
+    { width: rect.width, height: rect.height }
+  );
 }
 
 function onMouseDown(event: MouseEvent): void {
-  if (phase.value !== "ready") {
+  if (event.button !== 0 || phase.value !== "ready") {
     return;
   }
 
+  attachCaptureDragListeners();
   const point = pointerPosition(event);
   dragStart.value = point;
   selection.value = normalizeRect(point, point);
@@ -430,6 +559,7 @@ async function onMouseUp(event: MouseEvent): Promise<void> {
     return;
   }
 
+  detachCaptureDragListeners();
   const rect = normalizeRect(dragStart.value, pointerPosition(event));
   selection.value = rect;
   dragStart.value = null;
@@ -443,6 +573,16 @@ async function onMouseUp(event: MouseEvent): Promise<void> {
   await submitSelection(rect);
 }
 
+function attachCaptureDragListeners(): void {
+  window.addEventListener("mousemove", onMouseMove);
+  window.addEventListener("mouseup", onMouseUp);
+}
+
+function detachCaptureDragListeners(): void {
+  window.removeEventListener("mousemove", onMouseMove);
+  window.removeEventListener("mouseup", onMouseUp);
+}
+
 async function submitSelection(rect: Rect): Promise<void> {
   const canvas = canvasRef.value;
   const payload = capture.value;
@@ -454,7 +594,8 @@ async function submitSelection(rect: Rect): Promise<void> {
   const imageRect = mapCssRectToImageRect(
     rect,
     { width: bounds.width, height: bounds.height },
-    { width: canvas.width, height: canvas.height }
+    { width: canvas.width, height: canvas.height },
+    payload.displays
   );
 
   resultRect.value = rect;
@@ -469,7 +610,7 @@ async function submitSelection(rect: Rect): Promise<void> {
   try {
     const crop = cropCanvasToDataUrl(canvas, imageRect);
     currentCropDataUrl.value = crop;
-    await processImage(crop, translationDirection.value);
+    await processImage(crop, directionForRequest(), workflowGeneration.value);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "Failed to process selection";
     phase.value = "error";
@@ -512,6 +653,7 @@ function isCaptureActive(): boolean {
 }
 
 async function cancelCapture(): Promise<void> {
+  detachCaptureDragListeners();
   dragStart.value = null;
   selection.value = null;
   capture.value = null;
@@ -522,6 +664,7 @@ async function cancelCapture(): Promise<void> {
   copied.value = false;
   copiedImage.value = false;
   currentCropDataUrl.value = "";
+  workflowGeneration.value += 1;
   phase.value = "idle";
   await hideWindow();
 }
@@ -536,6 +679,14 @@ async function copyResult(): Promise<void> {
   window.setTimeout(() => {
     copied.value = false;
   }, 1100);
+}
+
+async function copyOcrText(): Promise<void> {
+  const text = ocrBlocks.value.map((block) => block.text).join("\n").trim();
+  if (!text) {
+    return;
+  }
+  await copyText(text);
 }
 
 async function copyTranslatedImage(): Promise<void> {
@@ -556,6 +707,7 @@ async function reverseTranslationDirection(): Promise<void> {
     return;
   }
 
+  manualDirection.value = true;
   translationDirection.value = translationDirection.value === "to-zh" ? "to-en" : "to-zh";
   ocrBlocks.value = [];
   translationText.value = "";
@@ -563,13 +715,42 @@ async function reverseTranslationDirection(): Promise<void> {
   copied.value = false;
   copiedImage.value = false;
   phase.value = "streaming";
+  workflowGeneration.value += 1;
 
   try {
-    await processImage(currentCropDataUrl.value, translationDirection.value);
+    await processImage(currentCropDataUrl.value, directionForRequest(), workflowGeneration.value);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "Failed to reverse translation direction";
     phase.value = "error";
   }
+}
+
+async function retryProcessing(): Promise<void> {
+  if (!currentCropDataUrl.value || isResultBusy.value) {
+    return;
+  }
+
+  errorMessage.value = "";
+  ocrBlocks.value = [];
+  translationText.value = "";
+  copied.value = false;
+  copiedImage.value = false;
+  phase.value = "processing";
+  workflowGeneration.value += 1;
+
+  try {
+    await processImage(currentCropDataUrl.value, directionForRequest(), workflowGeneration.value);
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "Failed to retry";
+    phase.value = "error";
+  }
+}
+
+function directionForRequest(): TranslationDirection {
+  if (config.autoDirection && !manualDirection.value) {
+    return "auto";
+  }
+  return translationDirection.value;
 }
 
 function renderTranslatedSelectionImage(): string | null {
@@ -583,7 +764,8 @@ function renderTranslatedSelectionImage(): string | null {
   const imageRect = mapCssRectToImageRect(
     rect,
     { width: bounds.width, height: bounds.height },
-    { width: sourceCanvas.width, height: sourceCanvas.height }
+    { width: sourceCanvas.width, height: sourceCanvas.height },
+    capture.value?.displays
   );
   if (imageRect.width <= 0 || imageRect.height <= 0) {
     return null;
@@ -662,7 +844,7 @@ function renderTranslatedSelectionImage(): string | null {
   const localSelection = { x: 0, y: 0, width: rect.width, height: rect.height };
   const parsed = parsedTranslation.value;
   ocrBlocks.value.forEach((block, index) => {
-    const text = translationForOCRBlock(index, block, parsed, ocrBlocks.value.length, translationDirection.value);
+    const text = translationForOCRBlock(index, block, parsed, ocrBlocks.value.length, resolvedTranslationDirection.value);
     if (!text) {
       return;
     }
@@ -723,7 +905,7 @@ function buildAnchoredTranslationLayout(box: Rect): AnchoredTranslationLayout {
       entry.block,
       parsedTranslation.value,
       ocrBlocks.value.length,
-      translationDirection.value
+      resolvedTranslationDirection.value
     );
     const sourceLanguage = sourceLanguageForDuplicateGuard(entry.block.text);
     if (
@@ -902,19 +1084,172 @@ async function restore(): Promise<void> {
   errorMessage.value = "";
   copied.value = false;
   copiedImage.value = false;
+  workflowGeneration.value += 1;
   await hideWindow();
 }
 
 async function closeSettings(): Promise<void> {
   settingsOpen.value = false;
+  shortcutRecording.value = false;
+  testStatus.value = "idle";
+  testMessage.value = "";
   if (isDesktop) {
     await hideWindow();
   }
 }
 
+function openSettings(): void {
+  settingsError.value = "";
+  settingsOpen.value = true;
+  void loadHistory();
+  void loadEnvironmentStatus();
+  void loadAutoStart();
+  void loadVersion();
+}
+
+async function loadVersion(): Promise<void> {
+  try {
+    appVersion.value = await getVersion();
+  } catch {
+    appVersion.value = "";
+  }
+}
+
+async function loadAutoStart(): Promise<void> {
+  try {
+    autoStartEnabled.value = await isAutoStartEnabled();
+  } catch {
+    autoStartEnabled.value = false;
+  }
+}
+
+async function toggleAutoStart(): Promise<void> {
+  autoStartTouched.value = true;
+  const desiredState = autoStartEnabled.value;
+  try {
+    await setAutoStart(desiredState);
+  } catch (error) {
+    autoStartEnabled.value = !desiredState;
+    settingsError.value = error instanceof Error ? error.message : "Failed to update autostart";
+  } finally {
+    autoStartTouched.value = false;
+  }
+}
+
+async function loadEnvironmentStatus(): Promise<void> {
+  try {
+    envStatus.value = await getEnvironmentStatus();
+  } catch {
+    envStatus.value = null;
+  }
+}
+
+async function loadHistory(): Promise<void> {
+  try {
+    historyEntries.value = await getHistory();
+  } catch {
+    historyEntries.value = [];
+  }
+  historyLoaded.value = true;
+}
+
+async function clearAllHistory(): Promise<void> {
+  try {
+    await clearHistory();
+    historyEntries.value = [];
+  } catch {
+    // ignore
+  }
+}
+
+async function runConnectionTest(): Promise<void> {
+  testStatus.value = "testing";
+  testMessage.value = "";
+  try {
+    await testConnection();
+    testStatus.value = "ok";
+    testMessage.value = "Connection successful";
+  } catch (error) {
+    testStatus.value = "error";
+    testMessage.value = error instanceof Error ? error.message : "Connection failed";
+  }
+}
+
+function startShortcutRecording(): void {
+  shortcutRecording.value = true;
+}
+
+function beginSettingsDrag(event: MouseEvent): void {
+  if (event.button !== 0 || !isDesktop) {
+    return;
+  }
+  settingsDrag.active = true;
+  settingsDrag.startX = event.clientX;
+  settingsDrag.startY = event.clientY;
+  settingsDrag.lastMove = 0;
+  void window.go?.main?.App?.GetWindowPosition().then(([x, y]) => {
+    settingsDrag.winX = x;
+    settingsDrag.winY = y;
+  });
+  window.addEventListener("mousemove", onSettingsDragMove);
+  window.addEventListener("mouseup", endSettingsDrag);
+}
+
+function onSettingsDragMove(event: MouseEvent): void {
+  if (!settingsDrag.active) {
+    return;
+  }
+  const now = performance.now();
+  if (now - settingsDrag.lastMove < 16) {
+    return;
+  }
+  settingsDrag.lastMove = now;
+  const x = Math.round(settingsDrag.winX + event.clientX - settingsDrag.startX);
+  const y = Math.round(settingsDrag.winY + event.clientY - settingsDrag.startY);
+  void window.go?.main?.App?.SetWindowPosition(x, y);
+}
+
+function endSettingsDrag(): void {
+  settingsDrag.active = false;
+  window.removeEventListener("mousemove", onSettingsDragMove);
+  window.removeEventListener("mouseup", endSettingsDrag);
+}
+
+function cancelShortcutRecording(): void {
+  shortcutRecording.value = false;
+}
+
+function onShortcutRecorderKeydown(event: KeyboardEvent): void {
+  if (!shortcutRecording.value) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (event.key === "Escape") {
+    cancelShortcutRecording();
+    return;
+  }
+
+  const shortcut = shortcutKeyFromKeyboardEvent(event);
+  if (shortcut) {
+    config.shortcutKey = shortcut;
+    shortcutRecording.value = false;
+  }
+}
+
 async function saveSettings(): Promise<void> {
-  await saveConfig({ ...config });
-  await closeSettings();
+  settingsError.value = "";
+  settingsSaving.value = true;
+  try {
+    await saveConfig({ ...config });
+    settingsSaving.value = false;
+    await closeSettings();
+  } catch (error) {
+    settingsSaving.value = false;
+    settingsError.value = error instanceof Error ? error.message : "Failed to save settings";
+  }
 }
 </script>
 
@@ -969,13 +1304,14 @@ async function saveSettings(): Promise<void> {
       type="button"
       title="Settings"
       aria-label="Settings"
-      @click="settingsOpen = true"
+      @click="openSettings"
     >
       <Settings class="h-5 w-5" aria-hidden="true" />
     </button>
 
     <section
       v-if="capture"
+      ref="captureLayerRef"
       class="absolute inset-0 z-10 select-none transition-opacity duration-75"
       :class="[
         phase === 'ready' || phase === 'drawing' ? 'cursor-crosshair' : 'cursor-default',
@@ -992,6 +1328,14 @@ async function saveSettings(): Promise<void> {
         class="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-200/5 shadow-[0_0_0_9999px_rgba(2,6,23,0.18)] outline outline-1 outline-white/90"
         :style="selectionStyle"
       />
+      <div
+        v-if="selection && phase === 'drawing' && selection.width > 0 && selection.height > 0"
+        class="pointer-events-none absolute z-20 rounded-md bg-slate-950/80 px-2 py-1 font-mono text-xs font-medium tabular-nums text-white shadow-lg backdrop-blur-sm"
+        :style="selectionBadgeStyle"
+        data-testid="selection-size"
+      >
+        {{ Math.round(selection.width) }} × {{ Math.round(selection.height) }}
+      </div>
     </section>
 
     <section
@@ -1059,8 +1403,32 @@ async function saveSettings(): Promise<void> {
           <span>Translating...</span>
         </div>
 
-        <div v-else-if="phase === 'error'" class="h-full overflow-auto text-sm leading-6 text-rose-700 dark:text-rose-300">
-          {{ errorMessage }}
+        <div v-else-if="phase === 'error'" class="flex h-full flex-col gap-2 overflow-auto text-sm leading-6 text-rose-700 dark:text-rose-300">
+          <div class="flex-1">{{ errorMessage }}</div>
+          <div class="flex gap-2">
+            <button
+              class="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-200 dark:hover:bg-zinc-800"
+              type="button"
+              title="Retry translation"
+              aria-label="Retry translation"
+              :disabled="!currentCropDataUrl"
+              @click="retryProcessing"
+            >
+              <RefreshCw class="h-3.5 w-3.5" aria-hidden="true" />
+              Retry
+            </button>
+            <button
+              class="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-200 dark:hover:bg-zinc-800"
+              type="button"
+              title="Copy original OCR text"
+              aria-label="Copy OCR text"
+              :disabled="!ocrBlocks.length"
+              @click="copyOcrText"
+            >
+              <Copy class="h-3.5 w-3.5" aria-hidden="true" />
+              Copy OCR
+            </button>
+          </div>
         </div>
 
         <div
@@ -1121,90 +1489,378 @@ async function saveSettings(): Promise<void> {
 
     <section
       v-if="settingsOpen"
-      class="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
-      @mousedown.self="closeSettings"
+      data-testid="settings-shell"
+      class="absolute inset-0 z-40 overflow-hidden bg-slate-100 text-slate-900 dark:bg-zinc-950 dark:text-slate-100"
     >
       <form
-        class="w-full max-w-md rounded-lg border border-white/40 bg-white p-5 shadow-floating dark:border-slate-700 dark:bg-zinc-950"
+        class="flex h-full w-full flex-col overflow-hidden"
         @submit.prevent="saveSettings"
+        @keydown="onShortcutRecorderKeydown"
       >
-        <div class="mb-5 flex items-center justify-between">
-          <h1 class="text-base font-semibold">Settings</h1>
+        <header
+          class="flex shrink-0 cursor-move select-none items-center justify-between border-b border-slate-200 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-zinc-950"
+          @mousedown.left="beginSettingsDrag"
+        >
+          <div class="flex min-w-0 items-center gap-3">
+            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
+              <Settings class="h-4 w-4" aria-hidden="true" />
+            </div>
+            <div class="min-w-0">
+              <div class="flex items-baseline gap-2">
+                <h1 class="text-base font-semibold tracking-tight">Settings</h1>
+                <span v-if="appVersion" class="text-[11px] font-medium text-slate-400">v{{ appVersion }}</span>
+              </div>
+              <p class="truncate text-xs text-slate-500 dark:text-slate-400">Configure capture, OCR, and translation behavior</p>
+            </div>
+          </div>
           <button
-            class="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-zinc-800 dark:hover:text-white"
             type="button"
-            title="Close"
+            title="Close settings"
             aria-label="Close"
+            @mousedown.stop
             @click="closeSettings"
           >
             <X class="h-4 w-4" aria-hidden="true" />
           </button>
+        </header>
+
+        <div data-testid="settings-scroll" class="settings-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div class="mx-auto max-w-3xl space-y-4">
+
+            <section data-testid="settings-section" class="settings-card">
+              <div class="settings-section-header">
+                <div class="settings-section-icon bg-violet-50 text-violet-600 dark:bg-violet-950 dark:text-violet-300">
+                  <Bot class="h-4 w-4" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 class="settings-section-title">AI service</h2>
+                  <p class="settings-section-description">Connect an OpenAI-compatible translation provider.</p>
+                </div>
+              </div>
+
+        <div v-if="envStatus" class="mb-4 grid gap-2 sm:grid-cols-2">
+          <div
+            class="settings-status"
+            :class="envStatus.ocrReady
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+              : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300'"
+          >
+            <Check v-if="envStatus.ocrReady" class="h-3.5 w-3.5" aria-hidden="true" />
+            <X v-else class="h-3.5 w-3.5" aria-hidden="true" />
+            <span class="truncate">
+              OCR: {{ envStatus.ocrReady ? "ready" : "not found" }}
+              <span v-if="!envStatus.ocrReady" class="opacity-80">- {{ envStatus.ocrDetail }}</span>
+            </span>
+          </div>
+          <div
+            class="settings-status"
+            :class="envStatus.apiKeyConfigured
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+              : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300'"
+          >
+            <Check v-if="envStatus.apiKeyConfigured" class="h-3.5 w-3.5" aria-hidden="true" />
+            <X v-else class="h-3.5 w-3.5" aria-hidden="true" />
+            <span>
+              API key: {{ envStatus.apiKeyConfigured ? "configured" : "missing - set it below" }}
+            </span>
+          </div>
         </div>
 
-        <label class="mb-3 block text-sm font-medium">
-          <span class="mb-1 block">LLM API Key</span>
-          <input
-            v-model="config.apiKey"
-            class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-zinc-900"
-            type="password"
-            autocomplete="off"
-            placeholder="LiteLLM Virtual Key"
-          />
+        <label class="settings-field">
+          <span class="settings-label">API key</span>
+          <span class="relative block">
+            <input
+              v-model="config.apiKey"
+              class="settings-input pr-11"
+              :type="showAPIKey ? 'text' : 'password'"
+              autocomplete="off"
+              placeholder="Enter your API key"
+            />
+            <button
+              class="absolute inset-y-0 right-1 inline-flex w-9 items-center justify-center rounded-md text-slate-400 transition hover:text-slate-700 dark:hover:text-slate-200"
+              type="button"
+              :title="showAPIKey ? 'Hide API key' : 'Show API key'"
+              :aria-label="showAPIKey ? 'Hide API key' : 'Show API key'"
+              @click="showAPIKey = !showAPIKey"
+            >
+              <EyeOff v-if="showAPIKey" class="h-4 w-4" aria-hidden="true" />
+              <Eye v-else class="h-4 w-4" aria-hidden="true" />
+            </button>
+          </span>
         </label>
 
-        <label class="mb-3 block text-sm font-medium">
-          <span class="mb-1 block">LLM API Base URL</span>
+        <div class="mt-4 grid gap-4 sm:grid-cols-2">
+        <label class="settings-field">
+          <span class="settings-label">Base URL</span>
           <input
             v-model="config.baseURL"
-            class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-zinc-900"
+            class="settings-input"
             type="url"
             placeholder="https://your-litellm-host/v1"
           />
-          <span class="mt-1 block text-xs font-normal text-slate-500">LiteLLM 地址通常以 /v1 结尾</span>
+          <span class="settings-help">OpenAI-compatible endpoints usually end with /v1.</span>
         </label>
 
-        <label class="mb-3 block text-sm font-medium">
-          <span class="mb-1 block">Model</span>
+        <label class="settings-field">
+          <span class="settings-label">Model</span>
           <input
             v-model="config.model"
-            class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-zinc-900"
+            class="settings-input"
             type="text"
             placeholder="gemini/gemini-3.5-flash-lite"
           />
+          <span class="settings-help">Use the exact model ID exposed by your provider.</span>
         </label>
-        <label class="mb-3 block text-sm font-medium">
-          <span class="mb-1 block">Shortcut</span>
-          <input
-            v-model="config.shortcutKey"
-            class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-zinc-900"
-            type="text"
-          />
+        </div>
+
+        <div class="mt-4 flex min-h-9 flex-wrap items-center gap-3 border-t border-slate-100 pt-4 dark:border-zinc-800">
+          <button
+            class="settings-secondary-button"
+            type="button"
+            title="Test the API key, base URL, and model"
+            :disabled="testStatus === 'testing'"
+            @click="runConnectionTest"
+          >
+            <span v-if="testStatus === 'testing'" class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+            <Sparkles v-else class="h-3.5 w-3.5" aria-hidden="true" />
+            {{ testStatus === "testing" ? "Testing..." : "Test connection" }}
+          </button>
+          <span
+            v-if="testStatus !== 'idle'"
+            class="min-w-0 flex-1 truncate text-xs font-medium"
+            :class="testStatus === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'"
+          >
+            {{ testMessage }}
+          </span>
+        </div>
+            </section>
+
+            <section data-testid="settings-section" class="settings-card">
+              <div class="settings-section-header">
+                <div class="settings-section-icon bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300">
+                  <Cpu class="h-4 w-4" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 class="settings-section-title">Capture & OCR</h2>
+                  <p class="settings-section-description">Choose how captures start and how OCR runs.</p>
+                </div>
+              </div>
+
+        <div class="grid gap-4 sm:grid-cols-2">
+        <label class="settings-field">
+          <span class="settings-label">Capture shortcut</span>
+          <div class="flex gap-2">
+            <span class="relative min-w-0 flex-1">
+              <Keyboard class="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" aria-hidden="true" />
+              <input
+                v-model="config.shortcutKey"
+                class="settings-input pl-9"
+                type="text"
+                :placeholder="shortcutRecording ? 'Press keys...' : 'Alt+Q'"
+                :readonly="shortcutRecording"
+              />
+            </span>
+            <button
+              class="settings-secondary-button h-10 shrink-0"
+              type="button"
+              :title="shortcutRecording ? 'Press a key combination or Esc to cancel' : 'Record shortcut'"
+              @click="startShortcutRecording"
+            >
+              {{ shortcutRecording ? "Listening..." : "Record" }}
+            </button>
+          </div>
+          <span class="settings-help" :class="shortcutRecording ? 'text-emerald-600 dark:text-emerald-400' : ''">
+            {{ shortcutRecording ? "Press a combination, or Esc to cancel." : "Global shortcut for instant capture." }}
+          </span>
         </label>
 
-        <label class="mb-3 block text-sm font-medium">
-          <span class="mb-1 block">RapidOCR Path</span>
+        <label class="settings-field">
+          <span class="settings-label">RapidOCR path</span>
           <input
             v-model="config.rapidOCRPath"
-            class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-zinc-900"
+            class="settings-input"
             type="text"
+            placeholder="RapidOCR-json_v0.2.0"
+          />
+          <span class="settings-help">Folder or full path to rapidocr_json.exe.</span>
+        </label>
+        </div>
+
+        <div class="mt-4 grid gap-2 sm:grid-cols-2">
+        <label class="settings-toggle">
+          <span class="min-w-0 pr-3">
+            <span class="settings-toggle-title">Start with Windows</span>
+            <span class="settings-toggle-description">Keep snapTrans available from sign-in.</span>
+          </span>
+          <input
+            v-model="autoStartEnabled"
+            class="peer sr-only"
+            type="checkbox"
+            :disabled="autoStartTouched"
+            @change="toggleAutoStart"
+          />
+          <span class="settings-switch" aria-hidden="true" />
+        </label>
+
+        <label class="settings-toggle">
+          <span class="min-w-0 pr-3">
+            <span class="settings-toggle-title">Keep OCR ready</span>
+            <span class="settings-toggle-description">Faster captures with a small memory cost.</span>
+          </span>
+          <input
+            v-model="config.persistentOCR"
+            class="peer sr-only"
+            type="checkbox"
+          />
+          <span class="settings-switch" aria-hidden="true" />
+        </label>
+        </div>
+            </section>
+
+            <section data-testid="settings-section" class="settings-card">
+              <div class="settings-section-header">
+                <div class="settings-section-icon bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300">
+                  <Languages class="h-4 w-4" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 class="settings-section-title">Translation</h2>
+                  <p class="settings-section-description">Tune automatic behavior and terminology.</p>
+                </div>
+              </div>
+
+        <div class="grid gap-2 sm:grid-cols-2">
+        <label class="settings-toggle">
+          <span class="min-w-0 pr-3">
+            <span class="settings-toggle-title">Detect direction</span>
+            <span class="settings-toggle-description">Choose Chinese or English from OCR text.</span>
+          </span>
+          <input v-model="config.autoDirection" class="peer sr-only" type="checkbox" />
+          <span class="settings-switch" aria-hidden="true" />
+        </label>
+
+        <label class="settings-toggle">
+          <span class="min-w-0 pr-3">
+            <span class="settings-toggle-title">Copy automatically</span>
+            <span class="settings-toggle-description">Copy each completed translation.</span>
+          </span>
+          <input
+            v-model="config.autoCopy"
+            class="peer sr-only"
+            type="checkbox"
+          />
+          <span class="settings-switch" aria-hidden="true" />
+        </label>
+        </div>
+
+        <div class="mt-4 grid gap-4 sm:grid-cols-2">
+        <label class="settings-field">
+          <span class="settings-label">Custom instructions</span>
+          <textarea
+            v-model="config.systemPrompt"
+            class="settings-textarea"
+            placeholder="Optional tone, formatting, or domain instructions"
           />
         </label>
 
-        <div class="mt-5 flex justify-end gap-2">
+        <label class="settings-field">
+          <span class="settings-label">Glossary</span>
+          <textarea
+            v-model="config.glossary"
+            class="settings-textarea"
+            placeholder="API -> 接口&#10;commit -> 提交"
+          />
+          <span class="settings-help">One source → target term per line.</span>
+        </label>
+        </div>
+            </section>
+
+            <section data-testid="settings-section" class="settings-card">
+        <div class="settings-section-header mb-3">
+          <div class="settings-section-icon bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-300">
+            <History class="h-4 w-4" aria-hidden="true" />
+          </div>
+          <div class="min-w-0 flex-1">
+            <h2 class="settings-section-title">Recent translations</h2>
+            <p class="settings-section-description">Reuse a recent result without capturing again.</p>
+          </div>
           <button
-            class="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100 dark:hover:bg-zinc-800"
+            class="settings-tertiary-button shrink-0"
             type="button"
-            @click="closeSettings"
+            title="Clear translation history"
+            aria-label="Clear history"
+            :disabled="historyEntries.length === 0"
+            @click="clearAllHistory"
           >
-            Cancel
-          </button>
-          <button
-            class="h-9 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-500"
-            type="submit"
-          >
-            Save
+            Clear
           </button>
         </div>
+        <div v-if="historyEntries.length === 0" class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-xs text-slate-500 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-slate-400">
+          {{ historyLoaded ? "No recent translations yet." : "Loading history..." }}
+        </div>
+        <div v-else class="max-h-44 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 dark:divide-zinc-800 dark:border-zinc-800">
+          <div
+            v-for="entry in historyEntries"
+            :key="entry.id"
+            class="group flex items-center gap-3 px-3 py-2.5 transition hover:bg-slate-50 dark:hover:bg-zinc-900"
+          >
+            <div class="min-w-0 flex-1 text-xs">
+              <div class="truncate text-slate-400 dark:text-slate-500">{{ entry.source }}</div>
+              <div class="mt-0.5 truncate font-medium text-slate-700 dark:text-slate-200">{{ entry.translation }}</div>
+            </div>
+            <button
+              class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-slate-700 hover:shadow-sm dark:hover:bg-zinc-800 dark:hover:text-slate-100"
+              type="button"
+              title="Copy this translation"
+              aria-label="Copy history entry"
+              @click="copyText(entry.translation)"
+            >
+              <Copy class="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+            </section>
+          </div>
+        </div>
+
+        <footer
+          data-testid="settings-footer"
+          class="shrink-0 border-t border-slate-200 bg-white px-6 py-3.5 dark:border-zinc-800 dark:bg-zinc-950"
+        >
+          <div v-if="settingsError" class="mx-auto mb-3 max-w-3xl rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300">
+            {{ settingsError }}
+          </div>
+        <div class="mx-auto flex max-w-3xl items-center justify-between gap-3">
+          <button
+            v-if="isDesktop"
+            class="settings-tertiary-button"
+            type="button"
+            title="Open the local log folder"
+            aria-label="Open log folder"
+            @click="openLogFolder"
+          >
+            <FolderOpen class="h-3.5 w-3.5" aria-hidden="true" />
+            Open logs
+          </button>
+          <span v-else class="text-[11px] text-slate-400">Changes apply after saving.</span>
+          <div class="flex items-center gap-2">
+            <button
+              class="settings-secondary-button h-9"
+              type="button"
+              @click="closeSettings"
+            >
+              Cancel
+            </button>
+            <button
+              class="inline-flex h-9 min-w-24 items-center justify-center rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+              type="submit"
+              :disabled="settingsSaving"
+            >
+              {{ settingsSaving ? "Saving..." : "Save changes" }}
+            </button>
+          </div>
+        </div>
+        </footer>
       </form>
     </section>
   </main>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  fontSizeForOCRBlock,
+	clampPointToBounds,
+	fontSizeForOCRBlock,
   fontSizeForTranslationBlock,
   mapCssRectToImageRect,
   mapOCRBlockToSelection,
@@ -8,7 +9,8 @@ import {
   normalizeRect,
   ocrScaleForRect,
   sampleCanvasColor,
-  sampleCanvasForegroundColor,
+	sampleCanvasForegroundColor,
+	selectionBadgePosition,
   translationPaletteForColor,
   translationPaletteForLuminance,
   wrapTranslationText
@@ -34,6 +36,33 @@ describe("normalizeRect", () => {
   });
 });
 
+describe("capture pointer helpers", () => {
+	it("clamps pointer coordinates to the capture surface", () => {
+		expect(clampPointToBounds({ x: -40, y: 760 }, { width: 1280, height: 720 })).toEqual({
+			x: 0,
+			y: 720
+		});
+	});
+
+	it("places the size badge above the selection when space is available", () => {
+		expect(
+			selectionBadgePosition(
+				{ x: 120, y: 80, width: 320, height: 160 },
+				{ width: 1280, height: 720 }
+			)
+		).toEqual({ x: 120, y: 48 });
+	});
+
+	it("moves the size badge below a selection near the top edge", () => {
+		expect(
+			selectionBadgePosition(
+				{ x: 1240, y: 4, width: 32, height: 24 },
+				{ width: 1280, height: 720 }
+			)
+		).toEqual({ x: 1184, y: 36 });
+	});
+});
+
 describe("mapCssRectToImageRect", () => {
   it("maps CSS coordinates to source image pixels for high DPI screenshots", () => {
     expect(
@@ -53,6 +82,44 @@ describe("mapCssRectToImageRect", () => {
         { width: 2000, height: 1200 }
       )
     ).toEqual({ x: 1800, y: 1000, width: 200, height: 200 });
+  });
+
+  it("uses per-display DPI scales when display metadata is present", () => {
+    const displays = [
+      { x: 0, y: 0, width: 1920, height: 1080, scale: 1.5 },
+      { x: 1920, y: 0, width: 1280, height: 1080, scale: 1.0 }
+    ];
+    const cssSize = { width: 3200, height: 1080 };
+    const imageSize = { width: 4160, height: 1620 };
+
+    const withinPrimary = mapCssRectToImageRect(
+      { x: 960, y: 270, width: 480, height: 270 },
+      cssSize,
+      imageSize,
+      displays
+    );
+
+    expect(withinPrimary).toEqual({ x: 1440, y: 405, width: 720, height: 405 });
+
+    const withinSecondary = mapCssRectToImageRect(
+      { x: 2880, y: 270, width: 320, height: 270 },
+      cssSize,
+      imageSize,
+      displays
+    );
+
+    expect(withinSecondary).toEqual({ x: 2880, y: 270, width: 320, height: 270 });
+  });
+
+  it("falls back to ratio mapping when display metadata is absent", () => {
+    expect(
+      mapCssRectToImageRect(
+        { x: 100, y: 50, width: 300, height: 150 },
+        { width: 1280, height: 720 },
+        { width: 2560, height: 1440 },
+        []
+      )
+    ).toEqual({ x: 200, y: 100, width: 600, height: 300 });
   });
 });
 

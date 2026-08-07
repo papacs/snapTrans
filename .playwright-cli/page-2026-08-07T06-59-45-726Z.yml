@@ -1,0 +1,7 @@
+- main [ref=e3]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e8]: snapTrans
+      - generic [ref=e9]: Instant capture translation
+    - button "Capture" [ref=e10] [cursor=pointer]
+  - button "Settings" [ref=e18] [cursor=pointer]

@@ -37,6 +37,14 @@ export interface Size {
   height: number;
 }
 
+export interface DisplayInfo {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale: number;
+}
+
 export function normalizeRect(start: Point, end: Point): Rect {
   const x = Math.min(start.x, end.x);
   const y = Math.min(start.y, end.y);
@@ -48,11 +56,85 @@ export function normalizeRect(start: Point, end: Point): Rect {
   };
 }
 
-export function mapCssRectToImageRect(rect: Rect, cssSize: Size, imageSize: Size): Rect {
+export function clampPointToBounds(point: Point, bounds: Size): Point {
+  return {
+    x: clamp(point.x, 0, Math.max(0, bounds.width)),
+    y: clamp(point.y, 0, Math.max(0, bounds.height))
+  };
+}
+
+export function selectionBadgePosition(
+  selection: Rect,
+  viewport: Size,
+  badge: Size = { width: 88, height: 24 }
+): Point {
+  const padding = 8;
+  const gap = 8;
+  const x = clamp(
+    selection.x,
+    padding,
+    Math.max(padding, viewport.width - badge.width - padding)
+  );
+  const above = selection.y - badge.height - gap;
+  const below = selection.y + selection.height + gap;
+  const y = above >= padding
+    ? above
+    : clamp(below, padding, Math.max(padding, viewport.height - badge.height - padding));
+
+  return { x: Math.round(x), y: Math.round(y) };
+}
+
+export function mapCssRectToImageRect(
+  rect: Rect,
+  cssSize: Size,
+  imageSize: Size,
+  displays: DisplayInfo[] = []
+): Rect {
   if (cssSize.width <= 0 || cssSize.height <= 0) {
     return { x: 0, y: 0, width: 0, height: 0 };
   }
 
+  if (!displays || displays.length === 0) {
+    return ratioMapCssRectToImageRect(rect, cssSize, imageSize);
+  }
+
+  const unionLogical = unionLogicalSize(displays);
+  const scaleX = unionLogical.width / cssSize.width;
+  const scaleY = unionLogical.height / cssSize.height;
+
+  const corners: Point[] = [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y },
+    { x: rect.x, y: rect.y + rect.height },
+    { x: rect.x + rect.width, y: rect.y + rect.height }
+  ];
+
+  const mapped = corners.map((corner) => {
+    const logical = {
+      x: corner.x * scaleX,
+      y: corner.y * scaleY
+    };
+    const display = displayForLogicalPoint(logical, displays) ?? nearestDisplay(logical, displays)!;
+    return {
+      x: logical.x * display.scale,
+      y: logical.y * display.scale
+    };
+  });
+
+  const minX = Math.min(...mapped.map((point) => point.x));
+  const minY = Math.min(...mapped.map((point) => point.y));
+  const maxX = Math.max(...mapped.map((point) => point.x));
+  const maxY = Math.max(...mapped.map((point) => point.y));
+
+  return {
+    x: clamp(Math.round(minX), 0, imageSize.width),
+    y: clamp(Math.round(minY), 0, imageSize.height),
+    width: clamp(Math.round(maxX - minX), 0, imageSize.width),
+    height: clamp(Math.round(maxY - minY), 0, imageSize.height)
+  };
+}
+
+function ratioMapCssRectToImageRect(rect: Rect, cssSize: Size, imageSize: Size): Rect {
   const scaleX = imageSize.width / cssSize.width;
   const scaleY = imageSize.height / cssSize.height;
 
@@ -67,6 +149,47 @@ export function mapCssRectToImageRect(rect: Rect, cssSize: Size, imageSize: Size
     width: Math.max(0, right - x),
     height: Math.max(0, bottom - y)
   };
+}
+
+function unionLogicalSize(displays: DisplayInfo[]): Size {
+  let maxRight = 0;
+  let maxBottom = 0;
+  for (const display of displays) {
+    maxRight = Math.max(maxRight, display.x + display.width);
+    maxBottom = Math.max(maxBottom, display.y + display.height);
+  }
+  return { width: Math.max(1, maxRight), height: Math.max(1, maxBottom) };
+}
+
+function displayForLogicalPoint(point: Point, displays: DisplayInfo[]): DisplayInfo | null {
+  return displays.find(
+    (display) =>
+      point.x >= display.x &&
+      point.x <= display.x + display.width &&
+      point.y >= display.y &&
+      point.y <= display.y + display.height
+  ) ?? null;
+}
+
+function nearestDisplay(point: Point, displays: DisplayInfo[]): DisplayInfo | null {
+  if (displays.length === 0) {
+    return null;
+  }
+  const centerX = point.x;
+  const centerY = point.y;
+  return displays.reduce((best, display) => {
+    const bestCenter = {
+      x: best.x + best.width / 2,
+      y: best.y + best.height / 2
+    };
+    const candidateCenter = {
+      x: display.x + display.width / 2,
+      y: display.y + display.height / 2
+    };
+    const bestDistance = (bestCenter.x - centerX) ** 2 + (bestCenter.y - centerY) ** 2;
+    const candidateDistance = (candidateCenter.x - centerX) ** 2 + (candidateCenter.y - centerY) ** 2;
+    return candidateDistance < bestDistance ? display : best;
+  });
 }
 
 export function normalizeResultBox(selection: Rect, viewport: Size): Rect {

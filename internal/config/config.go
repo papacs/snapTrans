@@ -17,6 +17,11 @@ type Config struct {
 	Model                  string `json:"model"`
 	RapidOCRPath           string `json:"rapidOCRPath"`
 	RapidOCRTimeoutSeconds int    `json:"rapidOCRTimeoutSeconds"`
+	AutoDirection          bool   `json:"autoDirection"`
+	SystemPrompt           string `json:"systemPrompt"`
+	Glossary               string `json:"glossary"`
+	PersistentOCR          bool   `json:"persistentOCR"`
+	AutoCopy               bool   `json:"autoCopy"`
 }
 
 // persistedConfig accepts both the current generic LLM fields and the
@@ -29,8 +34,13 @@ type persistedConfig struct {
 	DeepSeekAPIKey         string `json:"deepSeekAPIKey"`
 	DeepSeekBaseURL        string `json:"deepSeekBaseURL"`
 	DeepSeekModel          string `json:"deepSeekModel"`
-	RapidOCRPath           string `json:"rapidOCRPath"`
-	RapidOCRTimeoutSeconds int    `json:"rapidOCRTimeoutSeconds"`
+	RapidOCRPath           string    `json:"rapidOCRPath"`
+	RapidOCRTimeoutSeconds int       `json:"rapidOCRTimeoutSeconds"`
+	AutoDirection          *bool     `json:"autoDirection"`
+	SystemPrompt           string    `json:"systemPrompt"`
+	Glossary               string    `json:"glossary"`
+	PersistentOCR          *bool     `json:"persistentOCR"`
+	AutoCopy               *bool     `json:"autoCopy"`
 }
 
 func (p persistedConfig) Config() Config {
@@ -41,6 +51,11 @@ func (p persistedConfig) Config() Config {
 		Model:                  firstNonEmpty(p.Model, p.DeepSeekModel),
 		RapidOCRPath:           p.RapidOCRPath,
 		RapidOCRTimeoutSeconds: p.RapidOCRTimeoutSeconds,
+		AutoDirection:          p.AutoDirection == nil || *p.AutoDirection,
+		SystemPrompt:           p.SystemPrompt,
+		Glossary:               p.Glossary,
+		PersistentOCR:          p.PersistentOCR == nil || *p.PersistentOCR,
+		AutoCopy:               p.AutoCopy != nil && *p.AutoCopy,
 	}
 }
 
@@ -56,6 +71,8 @@ func Default() Config {
 		Model:                  "deepseek-chat",
 		RapidOCRPath:           "./RapidOCR-json_v0.2.0",
 		RapidOCRTimeoutSeconds: 15,
+		AutoDirection:          true,
+		PersistentOCR:          true,
 	}
 }
 
@@ -198,6 +215,16 @@ func applyEnvFallback(cfg *Config, env map[string]string) {
 	if cfg.RapidOCRTimeoutSeconds <= 0 && env["RAPIDOCR_TIMEOUT_SECONDS"] != "" {
 		if parsed, err := strconv.Atoi(env["RAPIDOCR_TIMEOUT_SECONDS"]); err == nil {
 			cfg.RapidOCRTimeoutSeconds = parsed
+		}
+	}
+	if env["SNAPTRANS_AUTO_DIRECTION"] != "" {
+		if parsed, err := strconv.ParseBool(env["SNAPTRANS_AUTO_DIRECTION"]); err == nil {
+			cfg.AutoDirection = parsed
+		}
+	}
+	if env["SNAPTRANS_PERSISTENT_OCR"] != "" {
+		if parsed, err := strconv.ParseBool(env["SNAPTRANS_PERSISTENT_OCR"]); err == nil {
+			cfg.PersistentOCR = parsed
 		}
 	}
 	*cfg = cfg.WithDefaults()

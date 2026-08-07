@@ -55,3 +55,65 @@ func TestLoadMigratesLegacyDeepSeekConfig(t *testing.T) {
 	require.Equal(t, "https://legacy.example/v1", cfg.BaseURL)
 	require.Equal(t, "legacy-model", cfg.Model)
 }
+
+func TestLoadDefaultsAutoDirectionWhenMissing(t *testing.T) {
+	temp := t.TempDir()
+	configPath := filepath.Join(temp, "config.json")
+	err := os.WriteFile(configPath, []byte(`{"shortcutKey":"Alt+Q"}`), 0o600)
+	require.NoError(t, err)
+
+	cfg, err := NewStoreAt(configPath, filepath.Join(temp, ".env")).Load()
+
+	require.NoError(t, err)
+	require.True(t, cfg.AutoDirection)
+}
+
+func TestLoadHonorsSavedAutoDirectionFalse(t *testing.T) {
+	temp := t.TempDir()
+	configPath := filepath.Join(temp, "config.json")
+	err := os.WriteFile(configPath, []byte(`{"autoDirection":false}`), 0o600)
+	require.NoError(t, err)
+
+	cfg, err := NewStoreAt(configPath, filepath.Join(temp, ".env")).Load()
+
+	require.NoError(t, err)
+	require.False(t, cfg.AutoDirection)
+}
+
+func TestSaveAndLoadRoundTripKeepsAutoDirection(t *testing.T) {
+	temp := t.TempDir()
+	store := NewStoreAt(filepath.Join(temp, "config.json"), filepath.Join(temp, ".env"))
+
+	expected := Default()
+	expected.AutoDirection = false
+
+	require.NoError(t, store.Save(expected))
+	actual, err := store.Load()
+
+	require.NoError(t, err)
+	require.False(t, actual.AutoDirection)
+}
+
+func TestLoadDefaultsPersistentOCRWhenMissing(t *testing.T) {
+	temp := t.TempDir()
+	configPath := filepath.Join(temp, "config.json")
+	err := os.WriteFile(configPath, []byte(`{"shortcutKey":"Alt+Q"}`), 0o600)
+	require.NoError(t, err)
+
+	cfg, err := NewStoreAt(configPath, filepath.Join(temp, ".env")).Load()
+
+	require.NoError(t, err)
+	require.True(t, cfg.PersistentOCR)
+}
+
+func TestLoadHonorsSavedPersistentOCROff(t *testing.T) {
+	temp := t.TempDir()
+	configPath := filepath.Join(temp, "config.json")
+	err := os.WriteFile(configPath, []byte(`{"persistentOCR":false}`), 0o600)
+	require.NoError(t, err)
+
+	cfg, err := NewStoreAt(configPath, filepath.Join(temp, ".env")).Load()
+
+	require.NoError(t, err)
+	require.False(t, cfg.PersistentOCR)
+}

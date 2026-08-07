@@ -1,8 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { isLikelyDuplicateTranslation, parseTranslationOutput, translationForOCRBlock } from "./translation";
+import {
+  detectDirectionForText,
+  isLikelyDuplicateTranslation,
+  parseTranslationOutput,
+  translationForOCRBlock
+} from "./translation";
 import type { OCRBlock } from "./selection";
 
 const block = (text: string): OCRBlock => ({ text, x: 0, y: 0, width: 0.2, height: 0.1 });
+
+describe("detectDirectionForText", () => {
+  it("translates Chinese-dominated text to English", () => {
+    expect(detectDirectionForText("\u5982\u679c\u5c1a\u672a\u5b89\u88c5 Wails\uff0c\u4e5f\u53ef\u4ee5\u7528\u6a21\u62df\u622a\u56fe")).toBe("to-en");
+  });
+
+  it("translates Latin-dominated text to Chinese", () => {
+    expect(detectDirectionForText("Neutral\nNegative\nPositive")).toBe("to-zh");
+  });
+
+  it("defaults to Chinese for empty text", () => {
+    expect(detectDirectionForText("")).toBe("to-zh");
+    expect(detectDirectionForText("   ")).toBe("to-zh");
+  });
+
+  it("defaults to Chinese for numeric-only text", () => {
+    expect(detectDirectionForText("30\n42\n100")).toBe("to-zh");
+  });
+});
 
 describe("parseTranslationOutput", () => {
   it("strips leaked OCR delimiters and preserves numbered translation mapping", () => {

@@ -92,8 +92,16 @@ func (r *RapidOCR) ExtractResult(ctx context.Context, imageDataURL string) (Resu
 	runCtx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
 
+	startedAt := time.Now()
 	cmd := NewRapidOCRCommand(runCtx, resolvedExecutable, tempPath)
 	output, err := cmd.CombinedOutput()
+	if err != nil && runCtx.Err() == nil && time.Since(startedAt) < 3*time.Second {
+		// The documented v0.2.0 argument shape is --image_path=. If the
+		// first attempt failed fast (likely an unknown option error),
+		// retry once with that shape.
+		altCmd := NewRapidOCRCommandWithImagePathArg(runCtx, resolvedExecutable, tempPath)
+		output, err = altCmd.CombinedOutput()
+	}
 	if runCtx.Err() != nil {
 		return Result{}, fmt.Errorf("RapidOCR timed out after %s", r.Timeout)
 	}
@@ -106,6 +114,16 @@ func (r *RapidOCR) ExtractResult(ctx context.Context, imageDataURL string) (Resu
 
 func NewRapidOCRCommand(ctx context.Context, resolvedExecutable string, imagePath string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, resolvedExecutable, "--image="+imagePath)
+	configureOCRCommand(cmd)
+	cmd.Dir = filepath.Dir(resolvedExecutable)
+	return cmd
+}
+
+// NewRapidOCRCommandWithImagePathArg builds a command using the documented
+// v0.2.0 argument shape (--image_path=).
+func NewRapidOCRCommandWithImagePathArg(ctx context.Context, resolvedExecutable string, imagePath string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, resolvedExecutable, "--image_path="+imagePath)
+	configureOCRCommand(cmd)
 	cmd.Dir = filepath.Dir(resolvedExecutable)
 	return cmd
 }

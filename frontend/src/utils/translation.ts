@@ -8,6 +8,40 @@ export interface ParsedTranslationOutput {
 
 export type TranslationDirection = "to-zh" | "to-en";
 
+// detectDirectionForText decides the translation direction based on the
+// dominant script in the OCR text: Chinese-dominated text is translated to
+// English, otherwise to Chinese.
+export function detectDirectionForText(text: string): TranslationDirection {
+  const sample = text.trim();
+  if (!sample) {
+    return "to-zh";
+  }
+
+  const characters = Array.from(sample);
+  const total = Math.max(1, characters.length);
+  let hanCount = 0;
+  let latinCount = 0;
+
+  for (const char of characters) {
+    if (/\s/.test(char)) {
+      continue;
+    }
+    if (/[\p{Script=Han}]/u.test(char)) {
+      hanCount += 1;
+    } else if (/[A-Za-z]/.test(char)) {
+      latinCount += 1;
+    }
+  }
+
+  if (hanCount / total > 0.35) {
+    return "to-en";
+  }
+  if (latinCount / total > 0.35) {
+    return "to-zh";
+  }
+  return "to-zh";
+}
+
 export function parseTranslationOutput(rawText: string): ParsedTranslationOutput {
   const indexed: Record<number, string> = {};
   const lines: string[] = [];

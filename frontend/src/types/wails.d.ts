@@ -1,8 +1,13 @@
 import type {
   AppConfig,
   CapturePayload,
-  OCRResultPayload,
+  EnvironmentStatus,
+  GenerationEvent,
+  HistoryEntry,
+  OCRResultEvent,
   TranslationDirection,
+  TranslationDirectionEvent,
+  TranslationTokenEvent,
   WorkflowErrorPayload
 } from "../services/backend";
 
@@ -15,10 +20,20 @@ declare global {
           SaveConfig: (config: AppConfig) => Promise<void>;
           TriggerCapture: () => Promise<void>;
           ShowCaptureWindow: () => Promise<void>;
-          ProcessImage: (base64Crop: string, direction: TranslationDirection) => Promise<void>;
+          ProcessImage: (base64Crop: string, direction: TranslationDirection, generation?: number) => Promise<void>;
           HideWindow: () => Promise<void>;
           QuitApp: () => Promise<void>;
           ShowSettings: () => Promise<void>;
+          GetHistory: () => Promise<HistoryEntry[]>;
+          ClearHistory: () => Promise<void>;
+          TestConnection: () => Promise<void>;
+          GetEnvironmentStatus: () => Promise<EnvironmentStatus>;
+          SetAutoStart: (enabled: boolean) => Promise<void>;
+          IsAutoStartEnabled: () => Promise<boolean>;
+          GetWindowPosition: () => Promise<[number, number]>;
+          SetWindowPosition: (x: number, y: number) => Promise<void>;
+          GetVersion: () => Promise<string>;
+          OpenLogFolder: () => Promise<void>;
         };
       };
     };
@@ -32,11 +47,12 @@ declare global {
 
 export interface BackendEvents {
   "capture-start": CapturePayload;
-  "ocr-start": Record<string, never>;
-  "ocr-result": OCRResultPayload;
-  "translation-start": Record<string, never>;
-  "translation-token": string;
-  "translation-done": Record<string, never>;
+  "ocr-start": GenerationEvent;
+  "ocr-result": OCRResultEvent;
+  "translation-direction": TranslationDirectionEvent;
+  "translation-start": GenerationEvent;
+  "translation-token": TranslationTokenEvent;
+  "translation-done": GenerationEvent;
   "workflow-error": WorkflowErrorPayload;
   "settings-open": Record<string, never>;
 }

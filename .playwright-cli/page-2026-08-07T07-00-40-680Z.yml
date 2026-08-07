@@ -1,0 +1,109 @@
+- main [ref=e3]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e8]: snapTrans
+      - generic [ref=e9]: Instant capture translation
+    - button "Capture" [ref=e10] [cursor=pointer]
+  - generic [ref=e23]:
+    - generic [ref=e24]:
+      - generic [ref=e30]:
+        - generic [ref=e31]:
+          - heading "Settings" [level=1] [ref=e32]
+          - generic [ref=e33]: vbrowser-preview
+        - paragraph [ref=e34]: Configure capture, OCR, and translation behavior
+      - button "Close" [ref=e35] [cursor=pointer]
+    - generic [ref=e40]:
+      - generic [ref=e41]:
+        - generic [ref=e47]:
+          - heading "AI service" [level=2] [ref=e48]
+          - paragraph [ref=e49]: Connect an OpenAI-compatible translation provider.
+        - generic [ref=e50]:
+          - generic [ref=e51]: "OCR: not found - Browser preview does not run local OCR."
+          - generic [ref=e56]: "API key: missing - set it below"
+        - generic [ref=e61]:
+          - generic [ref=e62]: API key
+          - generic [ref=e63]:
+            - textbox "API key Show API key" [ref=e64]:
+              - /placeholder: Enter your API key
+            - button "Show API key" [ref=e65] [cursor=pointer]
+        - generic [ref=e69]:
+          - generic [ref=e70]:
+            - generic [ref=e71]: Base URL
+            - textbox "Base URL OpenAI-compatible endpoints usually end with /v1." [ref=e72]:
+              - /placeholder: https://your-litellm-host/v1
+              - text: https://api.deepseek.com
+            - generic [ref=e73]: OpenAI-compatible endpoints usually end with /v1.
+          - generic [ref=e74]:
+            - generic [ref=e75]: Model
+            - textbox "Model Use the exact model ID exposed by your provider." [ref=e76]:
+              - /placeholder: gemini/gemini-3.5-flash-lite
+              - text: deepseek-chat
+            - generic [ref=e77]: Use the exact model ID exposed by your provider.
+        - button "Test connection" [ref=e79] [cursor=pointer]
+      - generic [ref=e83]:
+        - generic [ref=e89]:
+          - heading "Capture & OCR" [level=2] [ref=e90]
+          - paragraph [ref=e91]: Choose how captures start and how OCR runs.
+        - generic [ref=e92]:
+          - generic [ref=e93]:
+            - generic [ref=e94]: Capture shortcut
+            - generic [ref=e95]:
+              - textbox "Capture shortcut Record Global shortcut for instant capture." [ref=e97]:
+                - /placeholder: Alt+Q
+                - text: Alt+Q
+              - button "Record" [ref=e98] [cursor=pointer]
+            - generic [ref=e99]: Global shortcut for instant capture.
+          - generic [ref=e100]:
+            - generic [ref=e101]: RapidOCR path
+            - textbox "RapidOCR path Folder or full path to rapidocr_json.exe." [ref=e102]:
+              - /placeholder: RapidOCR-json_v0.2.0
+              - text: ./RapidOCR-json_v0.2.0
+            - generic [ref=e103]: Folder or full path to rapidocr_json.exe.
+        - generic [ref=e104]:
+          - generic [ref=e105] [cursor=pointer]:
+            - generic [ref=e106]:
+              - generic [ref=e107]: Start with Windows
+              - generic [ref=e108]: Keep snapTrans available from sign-in.
+            - checkbox "Start with Windows Keep snapTrans available from sign-in." [ref=e109]
+          - generic [ref=e111] [cursor=pointer]:
+            - generic [ref=e112]:
+              - generic [ref=e113]: Keep OCR ready
+              - generic [ref=e114]: Faster captures with a small memory cost.
+            - checkbox "Keep OCR ready Faster captures with a small memory cost." [checked] [ref=e115]
+      - generic [ref=e117]:
+        - generic [ref=e124]:
+          - heading "Translation" [level=2] [ref=e125]
+          - paragraph [ref=e126]: Tune automatic behavior and terminology.
+        - generic [ref=e127]:
+          - generic [ref=e128] [cursor=pointer]:
+            - generic [ref=e129]:
+              - generic [ref=e130]: Detect direction
+              - generic [ref=e131]: Choose Chinese or English from OCR text.
+            - checkbox "Detect direction Choose Chinese or English from OCR text." [checked] [ref=e132]
+          - generic [ref=e134] [cursor=pointer]:
+            - generic [ref=e135]:
+              - generic [ref=e136]: Copy automatically
+              - generic [ref=e137]: Copy each completed translation.
+            - checkbox "Copy automatically Copy each completed translation." [ref=e138]
+        - generic [ref=e140]:
+          - generic [ref=e141]:
+            - generic [ref=e142]: Custom instructions
+            - textbox "Custom instructions" [ref=e143]:
+              - /placeholder: Optional tone, formatting, or domain instructions
+          - generic [ref=e144]:
+            - generic [ref=e145]: Glossary
+            - textbox "Glossary One source → target term per line." [ref=e146]:
+              - /placeholder: "API -> 接口\ncommit -> 提交"
+            - generic [ref=e147]: One source → target term per line.
+      - generic [ref=e148]:
+        - generic [ref=e149]:
+          - generic [ref=e155]:
+            - heading "Recent translations" [level=2] [ref=e156]
+            - paragraph [ref=e157]: Reuse a recent result without capturing again.
+          - button "Clear history" [disabled] [ref=e158]: Clear
+        - generic [ref=e159]: No recent translations yet.
+    - generic [ref=e161]:
+      - generic [ref=e162]: Changes apply after saving.
+      - generic [ref=e163]:
+        - button "Cancel" [ref=e164] [cursor=pointer]
+        - button "Save changes" [ref=e165] [cursor=pointer]
