@@ -1,5 +1,7 @@
 export interface AppConfig {
+  uiLanguage: "zh-CN" | "en";
   shortcutKey: string;
+  screenshotShortcutKey: string;
   apiKey: string;
   baseURL: string;
   model: string;
@@ -20,6 +22,7 @@ export interface CapturePayload {
   originY?: number;
   displays?: DisplayInfo[];
   source?: "wails" | "browser";
+  mode?: "translate" | "screenshot";
 }
 
 export interface DisplayInfo {
@@ -83,6 +86,7 @@ export interface EnvironmentStatus {
   ocrDetail: string;
   apiKeyConfigured: boolean;
   shortcut: string;
+  screenshotShortcut: string;
 }
 
 type EventName =
@@ -101,7 +105,9 @@ type Listener<T> = (payload: T) => void;
 const fallbackListeners = new Map<EventName, Set<Listener<unknown>>>();
 
 export const defaultConfig: AppConfig = {
+  uiLanguage: "zh-CN",
   shortcutKey: "Alt+Q",
+  screenshotShortcutKey: "Alt+W",
   apiKey: "",
   baseURL: "https://api.deepseek.com",
   model: "deepseek-chat",
@@ -135,7 +141,8 @@ export function onBackendEvent<T>(eventName: EventName, callback: Listener<T>): 
 
 export async function loadConfig(): Promise<AppConfig> {
   if (hasWailsBackend()) {
-    return window.go!.main!.App!.LoadConfig();
+    const loaded = await window.go!.main!.App!.LoadConfig();
+    return normalizeLoadedConfig(loaded);
   }
 
   const saved = localStorage.getItem("snaptrans.config");
@@ -144,9 +151,23 @@ export async function loadConfig(): Promise<AppConfig> {
   }
 
   try {
-    return { ...defaultConfig, ...JSON.parse(saved) };
+    return normalizeLoadedConfig(JSON.parse(saved));
   } catch {
     return { ...defaultConfig };
+  }
+}
+
+function normalizeLoadedConfig(loaded: Partial<AppConfig> | null | undefined): AppConfig {
+  return {
+    ...defaultConfig,
+    ...loaded,
+    uiLanguage: loaded?.uiLanguage === "en" ? "en" : "zh-CN"
+  };
+}
+
+export async function frontendReady(): Promise<void> {
+  if (hasWailsBackend()) {
+    await window.go!.main!.App!.FrontendReady();
   }
 }
 
@@ -165,12 +186,27 @@ export async function triggerCapture(): Promise<void> {
     return;
   }
 
-  emitFallback("capture-start", createFallbackCapture());
+  emitFallback("capture-start", createFallbackCapture("translate"));
+}
+
+export async function triggerScreenshot(): Promise<void> {
+  if (hasWailsBackend()) {
+    await window.go!.main!.App!.TriggerScreenshot();
+    return;
+  }
+
+  emitFallback("capture-start", createFallbackCapture("screenshot"));
 }
 
 export async function showCaptureWindow(): Promise<void> {
   if (hasWailsBackend()) {
     await window.go!.main!.App!.ShowCaptureWindow();
+  }
+}
+
+export async function showSettingsWindow(): Promise<void> {
+  if (hasWailsBackend()) {
+    await window.go!.main!.App!.ShowSettingsWindow();
   }
 }
 
@@ -195,7 +231,8 @@ export async function hideWindow(): Promise<void> {
 
 export async function getHistory(): Promise<HistoryEntry[]> {
   if (hasWailsBackend()) {
-    return window.go!.main!.App!.GetHistory();
+    const entries = await window.go!.main!.App!.GetHistory();
+    return Array.isArray(entries) ? entries : [];
   }
 
   const saved = localStorage.getItem("snaptrans.history");
@@ -203,7 +240,8 @@ export async function getHistory(): Promise<HistoryEntry[]> {
     return [];
   }
   try {
-    return JSON.parse(saved);
+    const entries: unknown = JSON.parse(saved);
+    return Array.isArray(entries) ? entries : [];
   } catch {
     return [];
   }
@@ -236,7 +274,8 @@ export async function getEnvironmentStatus(): Promise<EnvironmentStatus> {
     ocrReady: false,
     ocrDetail: "Browser preview does not run local OCR.",
     apiKeyConfigured: false,
-    shortcut: defaultConfig.shortcutKey
+    shortcut: defaultConfig.shortcutKey,
+    screenshotShortcut: defaultConfig.screenshotShortcutKey
   };
 }
 
@@ -264,6 +303,18 @@ export async function openLogFolder(): Promise<void> {
   if (hasWailsBackend()) {
     await window.go!.main!.App!.OpenLogFolder();
   }
+}
+
+export async function saveScreenshot(dataUrl: string): Promise<string> {
+  if (hasWailsBackend()) {
+    return window.go!.main!.App!.SaveScreenshot(dataUrl);
+  }
+
+  const link = document.createElement("a");
+  link.href = dataUrl;
+  link.download = `snapTrans-${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
+  link.click();
+  return link.download;
 }
 
 export async function copyText(text: string): Promise<void> {
@@ -296,7 +347,7 @@ function emitFallback<T>(eventName: EventName, payload: T): void {
   }
 }
 
-function createFallbackCapture(): CapturePayload {
+function createFallbackCapture(mode: "translate" | "screenshot"): CapturePayload {
   const canvas = document.createElement("canvas");
   const scale = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
   canvas.width = Math.max(720, Math.round(window.innerWidth * scale));
@@ -343,7 +394,8 @@ function createFallbackCapture(): CapturePayload {
     height: canvas.height,
     originX: 0,
     originY: 0,
-    source: "browser"
+    source: "browser",
+    mode
   };
 }
 

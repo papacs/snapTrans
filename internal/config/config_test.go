@@ -42,6 +42,24 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	require.Equal(t, expected, actual)
 }
 
+func TestScreenshotShortcutDefaultsAndRoundTrips(t *testing.T) {
+	temp := t.TempDir()
+	store := NewStoreAt(filepath.Join(temp, "config.json"), filepath.Join(temp, ".env"))
+
+	legacyPath := filepath.Join(temp, "legacy.json")
+	require.NoError(t, os.WriteFile(legacyPath, []byte(`{"shortcutKey":"Alt+Q"}`), 0o600))
+	legacy, err := NewStoreAt(legacyPath, filepath.Join(temp, ".env")).Load()
+	require.NoError(t, err)
+	require.Equal(t, "Alt+W", legacy.ScreenshotShortcutKey)
+
+	expected := Default()
+	expected.ScreenshotShortcutKey = "Ctrl+Shift+W"
+	require.NoError(t, store.Save(expected))
+	actual, err := store.Load()
+	require.NoError(t, err)
+	require.Equal(t, "Ctrl+Shift+W", actual.ScreenshotShortcutKey)
+}
+
 func TestLoadMigratesLegacyDeepSeekConfig(t *testing.T) {
 	temp := t.TempDir()
 	configPath := filepath.Join(temp, "config.json")
@@ -66,6 +84,24 @@ func TestLoadDefaultsAutoDirectionWhenMissing(t *testing.T) {
 
 	require.NoError(t, err)
 	require.True(t, cfg.AutoDirection)
+}
+
+func TestLoadDefaultsUILanguageToChineseWhenMissing(t *testing.T) {
+	temp := t.TempDir()
+	configPath := filepath.Join(temp, "config.json")
+	require.NoError(t, os.WriteFile(configPath, []byte(`{"shortcutKey":"Alt+Q"}`), 0o600))
+
+	cfg, err := NewStoreAt(configPath, filepath.Join(temp, ".env")).Load()
+
+	require.NoError(t, err)
+	require.Equal(t, "zh-CN", cfg.UILanguage)
+}
+
+func TestWithDefaultsNormalizesUnsupportedUILanguage(t *testing.T) {
+	cfg := Default()
+	cfg.UILanguage = "fr"
+
+	require.Equal(t, "zh-CN", cfg.WithDefaults().UILanguage)
 }
 
 func TestLoadHonorsSavedAutoDirectionFalse(t *testing.T) {

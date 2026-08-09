@@ -17,23 +17,25 @@ declare global {
       main?: {
         App?: {
           LoadConfig: () => Promise<AppConfig>;
+          FrontendReady: () => Promise<void>;
           SaveConfig: (config: AppConfig) => Promise<void>;
           TriggerCapture: () => Promise<void>;
+          TriggerScreenshot: () => Promise<void>;
           ShowCaptureWindow: () => Promise<void>;
           ProcessImage: (base64Crop: string, direction: TranslationDirection, generation?: number) => Promise<void>;
           HideWindow: () => Promise<void>;
           QuitApp: () => Promise<void>;
           ShowSettings: () => Promise<void>;
+          ShowSettingsWindow: () => Promise<void>;
           GetHistory: () => Promise<HistoryEntry[]>;
           ClearHistory: () => Promise<void>;
           TestConnection: () => Promise<void>;
           GetEnvironmentStatus: () => Promise<EnvironmentStatus>;
           SetAutoStart: (enabled: boolean) => Promise<void>;
           IsAutoStartEnabled: () => Promise<boolean>;
-          GetWindowPosition: () => Promise<[number, number]>;
-          SetWindowPosition: (x: number, y: number) => Promise<void>;
           GetVersion: () => Promise<string>;
           OpenLogFolder: () => Promise<void>;
+          SaveScreenshot: (dataUrl: string) => Promise<string>;
         };
       };
     };

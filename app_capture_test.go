@@ -31,3 +31,31 @@ func TestBeginCaptureOnlyRequestsHideDelayForVisibleWindow(t *testing.T) {
 	require.True(t, wasVisible)
 	require.False(t, app.windowVisible)
 }
+
+func TestCaptureWindowPreparationIsReusedOnSameDisplay(t *testing.T) {
+	app := NewApp()
+
+	require.True(t, app.shouldPrepareCaptureWindow(0, 0))
+	require.False(t, app.shouldPrepareCaptureWindow(0, 0))
+	require.True(t, app.shouldPrepareCaptureWindow(1920, 0))
+	require.False(t, app.shouldPrepareCaptureWindow(1920, 0))
+}
+
+func TestCaptureWindowPreparationIsInvalidatedForSettings(t *testing.T) {
+	app := NewApp()
+
+	require.True(t, app.shouldPrepareCaptureWindow(0, 0))
+	app.invalidateCaptureWindowPreparation()
+	require.True(t, app.shouldPrepareCaptureWindow(0, 0))
+}
+
+func TestSettingsRequestWaitsForFrontendReady(t *testing.T) {
+	app := NewApp()
+
+	require.False(t, app.requestSettingsOpen())
+	require.True(t, app.settingsPending)
+	require.True(t, app.markFrontendReady())
+	require.False(t, app.settingsPending)
+	require.True(t, app.requestSettingsOpen())
+	require.False(t, app.markFrontendReady())
+}

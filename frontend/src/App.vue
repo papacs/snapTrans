@@ -18,12 +18,14 @@ import {
   X
 } from "lucide-vue-next";
 import MarkdownIt from "markdown-it";
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import ScreenshotEditor from "./components/ScreenshotEditor.vue";
 import {
   clearHistory,
   copyImageDataUrl,
   copyText,
   defaultConfig,
+  frontendReady,
   getEnvironmentStatus,
   getHistory,
   getVersion,
@@ -35,8 +37,10 @@ import {
   openLogFolder,
   processImage,
   saveConfig,
+  saveScreenshot,
   setAutoStart,
   showCaptureWindow,
+  showSettingsWindow,
   testConnection,
   triggerCapture,
   type AppConfig,
@@ -53,7 +57,7 @@ import {
 } from "./services/backend";
 import {
   clampPointToBounds,
-  cropCanvasToDataUrl,
+  cropCanvasToDataUrlAsync,
   fontSizeForTranslationBlock,
   isUsableSelection,
   mapCssRectToImageRect,
@@ -76,8 +80,13 @@ import {
   translationForOCRBlock
 } from "./utils/translation";
 import { shortcutKeyFromKeyboardEvent } from "./utils/shortcut";
+import {
+  normalizeSettingsLocale,
+  settingsMessages,
+  type SettingsLocale
+} from "./i18n/settings";
 
-type Phase = "idle" | "loading" | "ready" | "drawing" | "processing" | "streaming" | "done" | "error";
+type Phase = "idle" | "loading" | "ready" | "drawing" | "editing" | "processing" | "streaming" | "done" | "error";
 type AnchoredTranslationLayoutBlock = {
   key: string;
   testId: "translation-line" | "translation-cover";
@@ -116,6 +125,7 @@ const resolvedTranslationDirection = computed<"to-zh" | "to-en">(() =>
 );
 const currentCropDataUrl = ref("");
 const workflowGeneration = ref(0);
+let captureLoadSequence = 0;
 const errorMessage = ref("");
 const settingsOpen = ref(false);
 const settingsError = ref("");
@@ -124,25 +134,91 @@ const historyEntries = ref<HistoryEntry[]>([]);
 const historyLoaded = ref(false);
 const testStatus = ref<"idle" | "testing" | "ok" | "error">("idle");
 const testMessage = ref("");
-const shortcutRecording = ref(false);
+const shortcutRecording = ref<"translate" | "screenshot" | null>(null);
+const screenshotNotice = ref("");
 const envStatus = ref<EnvironmentStatus | null>(null);
 const autoStartEnabled = ref(false);
 const autoStartTouched = ref(false);
 const appVersion = ref("");
 const showAPIKey = ref(false);
-const settingsDrag = reactive({
-  active: false,
-  startX: 0,
-  startY: 0,
-  winX: 0,
-  winY: 0,
-  lastMove: 0
-});
 const copied = ref(false);
 const copiedImage = ref(false);
 const isDesktop = hasWailsBackend();
 const markdown = new MarkdownIt({ breaks: true, linkify: false, html: false });
 const config = reactive<AppConfig>({ ...defaultConfig });
+const settingsLocale = computed(() => normalizeSettingsLocale(config.uiLanguage));
+const settingsText = computed(() => settingsMessages[settingsLocale.value]);
+
+watch(
+  settingsLocale,
+  (locale) => {
+    document.documentElement.lang = locale;
+  },
+  { immediate: true }
+);
+
+function setSettingsLocale(locale: SettingsLocale): void {
+  config.uiLanguage = locale;
+}
+
+let pendingTranslationText = "";
+let translationFrame: number | null = null;
+let translationFrameUsesTimeout = false;
+
+function commitPendingTranslationText(): void {
+  if (!pendingTranslationText) {
+    return;
+  }
+  translationText.value += pendingTranslationText;
+  pendingTranslationText = "";
+}
+
+function queueTranslationText(token: string): void {
+  pendingTranslationText += token;
+  if (translationFrame !== null) {
+    return;
+  }
+
+  if (typeof globalThis.requestAnimationFrame === "function") {
+    translationFrameUsesTimeout = false;
+    translationFrame = globalThis.requestAnimationFrame(() => {
+      translationFrame = null;
+      commitPendingTranslationText();
+    });
+    return;
+  }
+
+  translationFrameUsesTimeout = true;
+  translationFrame = window.setTimeout(() => {
+    translationFrame = null;
+    commitPendingTranslationText();
+  }, 16);
+}
+
+function flushTranslationText(): void {
+  if (translationFrame !== null) {
+    if (translationFrameUsesTimeout) {
+      window.clearTimeout(translationFrame);
+    } else if (typeof globalThis.cancelAnimationFrame === "function") {
+      globalThis.cancelAnimationFrame(translationFrame);
+    }
+    translationFrame = null;
+  }
+  commitPendingTranslationText();
+}
+
+function resetTranslationText(): void {
+  if (translationFrame !== null) {
+    if (translationFrameUsesTimeout) {
+      window.clearTimeout(translationFrame);
+    } else if (typeof globalThis.cancelAnimationFrame === "function") {
+      globalThis.cancelAnimationFrame(translationFrame);
+    }
+  }
+  translationFrame = null;
+  pendingTranslationText = "";
+  translationText.value = "";
+}
 
 const parsedTranslation = computed(() => parseTranslationOutput(translationText.value));
 
@@ -162,14 +238,22 @@ const resultStyle = computed(() => {
   }
 
   const box = normalizeResultBox(rect, viewport);
-  const height =
+  let height =
     usesFlowTranslationLayout.value && cleanTranslationText.value
       ? buildAnchoredTranslationLayout(box).height
       : box.height;
 
+  if (phase.value === "error") {
+    const errorLines = wrapTranslationText(errorMessage.value, 14, Math.max(80, box.width - 24));
+    height = Math.max(height, Math.min(196, Math.max(112, errorLines.length * 21 + 58)));
+  }
+
+  height = Math.min(height, Math.max(48, viewport.height - 16));
+  const top = Math.max(8, Math.min(box.y, viewport.height - height - 8));
+
   return {
     left: `${box.x}px`,
-    top: `${box.y}px`,
+    top: `${top}px`,
     width: `${box.width}px`,
     height: `${height}px`,
     minHeight: `${height}px`
@@ -332,6 +416,10 @@ const hasTranslatedOverlay = computed(
   () => hasOCRBlockLayout.value || hasFlowTranslationLayout.value
 );
 
+const showsTranslatedOverlay = computed(
+  () => hasTranslatedOverlay.value && phase.value !== "error"
+);
+
 const selectionStyle = computed(() => {
   const rect = selection.value;
   if (!rect) {
@@ -364,7 +452,6 @@ const unsubs: Array<() => void> = [];
 onMounted(async () => {
   window.addEventListener("resize", updateViewport);
   window.addEventListener("keydown", onKeyDown);
-  Object.assign(config, await loadConfig());
 
   unsubs.push(
     onBackendEvent<CapturePayload>("capture-start", async (payload) => {
@@ -398,13 +485,14 @@ onMounted(async () => {
       if (!isCurrentGeneration(payload)) {
         return;
       }
-      translationText.value += payload.token;
+      queueTranslationText(payload.token);
       phase.value = "streaming";
     }),
     onBackendEvent<GenerationEvent>("translation-done", (payload) => {
       if (!isCurrentGeneration(payload)) {
         return;
       }
+      flushTranslationText();
       phase.value = "done";
       if (config.autoCopy && cleanTranslationText.value) {
         void copyText(cleanTranslationText.value);
@@ -418,6 +506,7 @@ onMounted(async () => {
       if (!isCurrentGeneration(payload)) {
         return;
       }
+      flushTranslationText();
       if (payload.stage === "translation" && translationText.value.trim()) {
         errorMessage.value = "";
         phase.value = "done";
@@ -426,27 +515,36 @@ onMounted(async () => {
       errorMessage.value = payload.message;
       phase.value = "error";
     }),
-    onBackendEvent("settings-open", () => {
+    onBackendEvent("settings-open", async () => {
+      invalidatePendingCaptureLoad();
       capture.value = null;
       resultRect.value = null;
       selection.value = null;
       ocrBlocks.value = [];
-      translationText.value = "";
+      resetTranslationText();
       errorMessage.value = "";
       copied.value = false;
       copiedImage.value = false;
+      screenshotNotice.value = "";
       workflowGeneration.value += 1;
       phase.value = "idle";
       settingsOpen.value = true;
+      await nextTick();
+      await showSettingsWindow();
       void loadHistory();
       void loadEnvironmentStatus();
       void loadAutoStart();
       void loadVersion();
     })
   );
+
+  await frontendReady();
+  Object.assign(config, await loadConfig());
 });
 
 onBeforeUnmount(() => {
+  invalidatePendingCaptureLoad();
+  resetTranslationText();
   window.removeEventListener("resize", updateViewport);
   window.removeEventListener("keydown", onKeyDown);
   detachCaptureDragListeners();
@@ -477,39 +575,56 @@ function onKeyDown(event: KeyboardEvent): void {
 }
 
 async function startCapture(payload: CapturePayload): Promise<void> {
+  const sequence = ++captureLoadSequence;
+  settingsOpen.value = false;
   capture.value = payload;
   dragStart.value = null;
   selection.value = null;
   resultRect.value = null;
   ocrBlocks.value = [];
-  translationText.value = "";
+  resetTranslationText();
   errorMessage.value = "";
   copied.value = false;
   copiedImage.value = false;
+  screenshotNotice.value = "";
   manualDirection.value = false;
   workflowGeneration.value += 1;
   phase.value = "loading";
 
   await nextTick();
-  await drawCapture(payload);
-  phase.value = "ready";
-  await nextTick();
-  await showCaptureWindow();
-}
-
-async function drawCapture(payload: CapturePayload): Promise<void> {
-  const canvas = canvasRef.value;
-  if (!canvas) {
+  if (sequence !== captureLoadSequence) {
     return;
   }
 
-  const image = new Image();
-  image.src = payload.image;
+  const drawn = await drawCapture(payload, sequence);
+  if (!drawn || sequence !== captureLoadSequence) {
+    return;
+  }
 
+  phase.value = "ready";
+  await nextTick();
+  if (sequence !== captureLoadSequence) {
+    return;
+  }
+  await showCaptureWindow();
+}
+
+async function drawCapture(payload: CapturePayload, sequence: number): Promise<boolean> {
+  const image = new Image();
   await new Promise<void>((resolve, reject) => {
     image.onload = () => resolve();
     image.onerror = () => reject(new Error("Failed to load captured image"));
+    image.src = payload.image;
   });
+
+  if (sequence !== captureLoadSequence) {
+    return false;
+  }
+
+  const canvas = canvasRef.value;
+  if (!canvas) {
+    return false;
+  }
 
   canvas.width = image.naturalWidth || payload.width;
   canvas.height = image.naturalHeight || payload.height;
@@ -520,6 +635,11 @@ async function drawCapture(payload: CapturePayload): Promise<void> {
 
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return true;
+}
+
+function invalidatePendingCaptureLoad(): void {
+  captureLoadSequence += 1;
 }
 
 function pointerPosition(event: MouseEvent): Point {
@@ -570,6 +690,11 @@ async function onMouseUp(event: MouseEvent): Promise<void> {
     return;
   }
 
+  if (capture.value?.mode === "screenshot") {
+    phase.value = "editing";
+    return;
+  }
+
   await submitSelection(rect);
 }
 
@@ -601,14 +726,17 @@ async function submitSelection(rect: Rect): Promise<void> {
   resultRect.value = rect;
   selection.value = null;
   ocrBlocks.value = [];
-  translationText.value = "";
+  resetTranslationText();
   errorMessage.value = "";
   copied.value = false;
   copiedImage.value = false;
   phase.value = "processing";
 
   try {
-    const crop = cropCanvasToDataUrl(canvas, imageRect);
+		// Let Vue paint the OCR indicator before PNG compression. toBlob keeps
+		// the potentially expensive encoding work off the interaction task.
+		await nextTick();
+		const crop = await cropCanvasToDataUrlAsync(canvas, imageRect);
     currentCropDataUrl.value = crop;
     await processImage(crop, directionForRequest(), workflowGeneration.value);
   } catch (error) {
@@ -649,24 +777,46 @@ function onMainContextMenu(event: MouseEvent): void {
 }
 
 function isCaptureActive(): boolean {
-  return phase.value === "loading" || phase.value === "ready" || phase.value === "drawing";
+  return phase.value === "loading" || phase.value === "ready" || phase.value === "drawing" || phase.value === "editing";
 }
 
 async function cancelCapture(): Promise<void> {
+  invalidatePendingCaptureLoad();
   detachCaptureDragListeners();
   dragStart.value = null;
   selection.value = null;
   capture.value = null;
   resultRect.value = null;
   ocrBlocks.value = [];
-  translationText.value = "";
+  resetTranslationText();
   errorMessage.value = "";
   copied.value = false;
   copiedImage.value = false;
   currentCropDataUrl.value = "";
+  screenshotNotice.value = "";
   workflowGeneration.value += 1;
   phase.value = "idle";
   await hideWindow();
+}
+
+async function completeScreenshot(dataUrl: string): Promise<void> {
+  screenshotNotice.value = "正在复制...";
+  try {
+    await copyImageDataUrl(dataUrl);
+    await cancelCapture();
+  } catch (error) {
+    screenshotNotice.value = error instanceof Error ? error.message : "复制截图失败";
+  }
+}
+
+async function saveEditedScreenshot(dataUrl: string): Promise<void> {
+  screenshotNotice.value = "正在保存...";
+  try {
+    const path = await saveScreenshot(dataUrl);
+    screenshotNotice.value = path ? "截图已保存" : "";
+  } catch (error) {
+    screenshotNotice.value = error instanceof Error ? error.message : "保存截图失败";
+  }
 }
 
 async function copyResult(): Promise<void> {
@@ -710,10 +860,11 @@ async function reverseTranslationDirection(): Promise<void> {
   manualDirection.value = true;
   translationDirection.value = translationDirection.value === "to-zh" ? "to-en" : "to-zh";
   ocrBlocks.value = [];
-  translationText.value = "";
+  resetTranslationText();
   errorMessage.value = "";
   copied.value = false;
   copiedImage.value = false;
+  screenshotNotice.value = "";
   phase.value = "streaming";
   workflowGeneration.value += 1;
 
@@ -732,7 +883,7 @@ async function retryProcessing(): Promise<void> {
 
   errorMessage.value = "";
   ocrBlocks.value = [];
-  translationText.value = "";
+  resetTranslationText();
   copied.value = false;
   copiedImage.value = false;
   phase.value = "processing";
@@ -1079,7 +1230,7 @@ async function restore(): Promise<void> {
   selection.value = null;
   resultRect.value = null;
   ocrBlocks.value = [];
-  translationText.value = "";
+  resetTranslationText();
   currentCropDataUrl.value = "";
   errorMessage.value = "";
   copied.value = false;
@@ -1090,7 +1241,7 @@ async function restore(): Promise<void> {
 
 async function closeSettings(): Promise<void> {
   settingsOpen.value = false;
-  shortcutRecording.value = false;
+  shortcutRecording.value = null;
   testStatus.value = "idle";
   testMessage.value = "";
   if (isDesktop) {
@@ -1146,7 +1297,8 @@ async function loadEnvironmentStatus(): Promise<void> {
 
 async function loadHistory(): Promise<void> {
   try {
-    historyEntries.value = await getHistory();
+    const entries = await getHistory();
+    historyEntries.value = Array.isArray(entries) ? entries : [];
   } catch {
     historyEntries.value = [];
   }
@@ -1168,55 +1320,19 @@ async function runConnectionTest(): Promise<void> {
   try {
     await testConnection();
     testStatus.value = "ok";
-    testMessage.value = "Connection successful";
+    testMessage.value = settingsText.value.connectionSuccessful;
   } catch (error) {
     testStatus.value = "error";
-    testMessage.value = error instanceof Error ? error.message : "Connection failed";
+    testMessage.value = error instanceof Error ? error.message : settingsText.value.connectionFailed;
   }
 }
 
-function startShortcutRecording(): void {
-  shortcutRecording.value = true;
-}
-
-function beginSettingsDrag(event: MouseEvent): void {
-  if (event.button !== 0 || !isDesktop) {
-    return;
-  }
-  settingsDrag.active = true;
-  settingsDrag.startX = event.clientX;
-  settingsDrag.startY = event.clientY;
-  settingsDrag.lastMove = 0;
-  void window.go?.main?.App?.GetWindowPosition().then(([x, y]) => {
-    settingsDrag.winX = x;
-    settingsDrag.winY = y;
-  });
-  window.addEventListener("mousemove", onSettingsDragMove);
-  window.addEventListener("mouseup", endSettingsDrag);
-}
-
-function onSettingsDragMove(event: MouseEvent): void {
-  if (!settingsDrag.active) {
-    return;
-  }
-  const now = performance.now();
-  if (now - settingsDrag.lastMove < 16) {
-    return;
-  }
-  settingsDrag.lastMove = now;
-  const x = Math.round(settingsDrag.winX + event.clientX - settingsDrag.startX);
-  const y = Math.round(settingsDrag.winY + event.clientY - settingsDrag.startY);
-  void window.go?.main?.App?.SetWindowPosition(x, y);
-}
-
-function endSettingsDrag(): void {
-  settingsDrag.active = false;
-  window.removeEventListener("mousemove", onSettingsDragMove);
-  window.removeEventListener("mouseup", endSettingsDrag);
+function startShortcutRecording(kind: "translate" | "screenshot" = "translate"): void {
+  shortcutRecording.value = kind;
 }
 
 function cancelShortcutRecording(): void {
-  shortcutRecording.value = false;
+  shortcutRecording.value = null;
 }
 
 function onShortcutRecorderKeydown(event: KeyboardEvent): void {
@@ -1234,8 +1350,12 @@ function onShortcutRecorderKeydown(event: KeyboardEvent): void {
 
   const shortcut = shortcutKeyFromKeyboardEvent(event);
   if (shortcut) {
-    config.shortcutKey = shortcut;
-    shortcutRecording.value = false;
+    if (shortcutRecording.value === "screenshot") {
+      config.screenshotShortcutKey = shortcut;
+    } else {
+      config.shortcutKey = shortcut;
+    }
+    shortcutRecording.value = null;
   }
 }
 
@@ -1324,7 +1444,7 @@ async function saveSettings(): Promise<void> {
     >
       <canvas ref="canvasRef" class="h-full w-full object-fill" />
       <div
-        v-if="selection"
+        v-if="selection && phase !== 'editing'"
         class="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-200/5 shadow-[0_0_0_9999px_rgba(2,6,23,0.18)] outline outline-1 outline-white/90"
         :style="selectionStyle"
       />
@@ -1338,12 +1458,31 @@ async function saveSettings(): Promise<void> {
       </div>
     </section>
 
+    <ScreenshotEditor
+      v-if="phase === 'editing' && capture && selection && canvasRef"
+      :source-canvas="canvasRef"
+      :capture="capture"
+      :rect="selection"
+      @cancel="cancelCapture"
+      @complete="completeScreenshot"
+      @save="saveEditedScreenshot"
+    />
+
+    <div
+      v-if="phase === 'editing' && screenshotNotice"
+      class="pointer-events-none absolute left-1/2 top-5 z-[70] -translate-x-1/2 rounded-lg bg-slate-950/88 px-3 py-2 text-sm font-medium text-white shadow-lg backdrop-blur"
+      data-testid="screenshot-notice"
+    >
+      {{ screenshotNotice }}
+    </div>
+
     <section
       v-if="resultRect"
       ref="resultPanelRef"
-      class="absolute z-20 overflow-visible transition"
+      data-testid="result-panel"
+      class="absolute z-20 overflow-visible transition-[height,top,box-shadow,background-color] duration-100 ease-out"
       :class="
-        hasTranslatedOverlay
+        showsTranslatedOverlay
           ? 'rounded-md border-2 border-emerald-400 shadow-[0_0_0_1px_rgba(255,255,255,0.70),0_8px_28px_rgba(16,185,129,0.18)]'
           : 'rounded-md border border-white/70 bg-white/92 p-2 shadow-[0_10px_36px_rgba(15,23,42,0.26)] ring-1 ring-slate-900/5 backdrop-blur-[2px] dark:border-slate-700/70 dark:bg-zinc-950/92'
       "
@@ -1403,8 +1542,12 @@ async function saveSettings(): Promise<void> {
           <span>Translating...</span>
         </div>
 
-        <div v-else-if="phase === 'error'" class="flex h-full flex-col gap-2 overflow-auto text-sm leading-6 text-rose-700 dark:text-rose-300">
-          <div class="flex-1">{{ errorMessage }}</div>
+        <div
+          v-else-if="phase === 'error'"
+          data-testid="result-error"
+          class="flex h-full flex-col gap-2 overflow-y-auto overflow-x-hidden break-words whitespace-pre-wrap text-sm leading-6 text-rose-700 dark:text-rose-300"
+        >
+          <div class="min-h-0 flex-1 [overflow-wrap:anywhere]">{{ errorMessage }}</div>
           <div class="flex gap-2">
             <button
               class="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-200 dark:hover:bg-zinc-800"
@@ -1433,7 +1576,7 @@ async function saveSettings(): Promise<void> {
 
         <div
           v-else
-          class="markdown-body h-full overflow-auto pr-1 text-slate-950 dark:text-slate-100"
+          class="markdown-body h-full overflow-y-auto overflow-x-hidden break-words pr-1 text-slate-950 dark:text-slate-100"
           :style="resultTextStyle"
           v-html="renderedTranslation"
         />
@@ -1490,7 +1633,7 @@ async function saveSettings(): Promise<void> {
     <section
       v-if="settingsOpen"
       data-testid="settings-shell"
-      class="absolute inset-0 z-40 overflow-hidden bg-slate-100 text-slate-900 dark:bg-zinc-950 dark:text-slate-100"
+      class="absolute inset-0 z-40 overflow-hidden bg-[radial-gradient(circle_at_90%_0%,rgba(16,185,129,0.08),transparent_32%),linear-gradient(180deg,#f8fafc,#f1f5f9)] text-slate-900 dark:bg-[radial-gradient(circle_at_90%_0%,rgba(16,185,129,0.10),transparent_32%),linear-gradient(180deg,#09090b,#18181b)] dark:text-slate-100"
     >
       <form
         class="flex h-full w-full flex-col overflow-hidden"
@@ -1498,31 +1641,59 @@ async function saveSettings(): Promise<void> {
         @keydown="onShortcutRecorderKeydown"
       >
         <header
-          class="flex shrink-0 cursor-move select-none items-center justify-between border-b border-slate-200 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-zinc-950"
-          @mousedown.left="beginSettingsDrag"
+          data-testid="settings-drag-region"
+          class="flex shrink-0 cursor-move select-none items-center justify-between border-b border-slate-200/90 bg-white/95 px-6 py-4 shadow-[0_1px_0_rgba(15,23,42,0.02)] backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/95"
+          style="--wails-draggable: drag"
         >
           <div class="flex min-w-0 items-center gap-3">
-            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
+            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-[0_6px_18px_rgba(5,150,105,0.24)]">
               <Settings class="h-4 w-4" aria-hidden="true" />
             </div>
             <div class="min-w-0">
               <div class="flex items-baseline gap-2">
-                <h1 class="text-base font-semibold tracking-tight">Settings</h1>
+                <h1 class="text-base font-semibold tracking-tight">{{ settingsText.title }}</h1>
                 <span v-if="appVersion" class="text-[11px] font-medium text-slate-400">v{{ appVersion }}</span>
               </div>
-              <p class="truncate text-xs text-slate-500 dark:text-slate-400">Configure capture, OCR, and translation behavior</p>
+              <p class="truncate text-xs text-slate-500 dark:text-slate-400">{{ settingsText.subtitle }}</p>
             </div>
           </div>
-          <button
-            class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-zinc-800 dark:hover:text-white"
-            type="button"
-            title="Close settings"
-            aria-label="Close"
-            @mousedown.stop
-            @click="closeSettings"
+          <div
+            class="flex items-center gap-2"
+            style="--wails-draggable: no-drag"
           >
-            <X class="h-4 w-4" aria-hidden="true" />
-          </button>
+            <div class="flex h-8 items-center rounded-lg bg-slate-100 p-0.5 ring-1 ring-slate-200/80 dark:bg-zinc-900 dark:ring-zinc-800">
+              <button
+                data-testid="locale-zh"
+                class="h-7 rounded-md px-2.5 text-[11px] font-semibold transition"
+                :class="settingsLocale === 'zh-CN' ? 'bg-white text-emerald-700 shadow-sm dark:bg-zinc-800 dark:text-emerald-300' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'"
+                style="--wails-draggable: no-drag"
+                type="button"
+                @click="setSettingsLocale('zh-CN')"
+              >
+                {{ settingsText.chinese }}
+              </button>
+              <button
+                data-testid="locale-en"
+                class="h-7 rounded-md px-2.5 text-[11px] font-semibold transition"
+                :class="settingsLocale === 'en' ? 'bg-white text-emerald-700 shadow-sm dark:bg-zinc-800 dark:text-emerald-300' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100'"
+                style="--wails-draggable: no-drag"
+                type="button"
+                @click="setSettingsLocale('en')"
+              >
+                {{ settingsText.english }}
+              </button>
+            </div>
+            <button
+              class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-zinc-800 dark:hover:text-white"
+              style="--wails-draggable: no-drag"
+              type="button"
+              :title="settingsText.close"
+              aria-label="Close"
+              @click="closeSettings"
+            >
+              <X class="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
         </header>
 
         <div data-testid="settings-scroll" class="settings-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-5">
@@ -1534,8 +1705,8 @@ async function saveSettings(): Promise<void> {
                   <Bot class="h-4 w-4" aria-hidden="true" />
                 </div>
                 <div>
-                  <h2 class="settings-section-title">AI service</h2>
-                  <p class="settings-section-description">Connect an OpenAI-compatible translation provider.</p>
+                  <h2 class="settings-section-title">{{ settingsText.aiService }}</h2>
+                  <p class="settings-section-description">{{ settingsText.aiServiceDescription }}</p>
                 </div>
               </div>
 
@@ -1549,7 +1720,7 @@ async function saveSettings(): Promise<void> {
             <Check v-if="envStatus.ocrReady" class="h-3.5 w-3.5" aria-hidden="true" />
             <X v-else class="h-3.5 w-3.5" aria-hidden="true" />
             <span class="truncate">
-              OCR: {{ envStatus.ocrReady ? "ready" : "not found" }}
+              {{ settingsText.ocr }}: {{ envStatus.ocrReady ? settingsText.ready : settingsText.notFound }}
               <span v-if="!envStatus.ocrReady" class="opacity-80">- {{ envStatus.ocrDetail }}</span>
             </span>
           </div>
@@ -1562,26 +1733,26 @@ async function saveSettings(): Promise<void> {
             <Check v-if="envStatus.apiKeyConfigured" class="h-3.5 w-3.5" aria-hidden="true" />
             <X v-else class="h-3.5 w-3.5" aria-hidden="true" />
             <span>
-              API key: {{ envStatus.apiKeyConfigured ? "configured" : "missing - set it below" }}
+              {{ settingsText.apiKey }}: {{ envStatus.apiKeyConfigured ? settingsText.configured : settingsText.missingAPIKey }}
             </span>
           </div>
         </div>
 
         <label class="settings-field">
-          <span class="settings-label">API key</span>
+          <span class="settings-label">{{ settingsText.apiKey }}</span>
           <span class="relative block">
             <input
               v-model="config.apiKey"
               class="settings-input pr-11"
               :type="showAPIKey ? 'text' : 'password'"
               autocomplete="off"
-              placeholder="Enter your API key"
+              :placeholder="settingsText.apiKeyPlaceholder"
             />
             <button
               class="absolute inset-y-0 right-1 inline-flex w-9 items-center justify-center rounded-md text-slate-400 transition hover:text-slate-700 dark:hover:text-slate-200"
               type="button"
-              :title="showAPIKey ? 'Hide API key' : 'Show API key'"
-              :aria-label="showAPIKey ? 'Hide API key' : 'Show API key'"
+              :title="showAPIKey ? settingsText.hideAPIKey : settingsText.showAPIKey"
+              :aria-label="showAPIKey ? settingsText.hideAPIKey : settingsText.showAPIKey"
               @click="showAPIKey = !showAPIKey"
             >
               <EyeOff v-if="showAPIKey" class="h-4 w-4" aria-hidden="true" />
@@ -1592,25 +1763,25 @@ async function saveSettings(): Promise<void> {
 
         <div class="mt-4 grid gap-4 sm:grid-cols-2">
         <label class="settings-field">
-          <span class="settings-label">Base URL</span>
+          <span class="settings-label">{{ settingsText.baseURL }}</span>
           <input
             v-model="config.baseURL"
             class="settings-input"
             type="url"
             placeholder="https://your-litellm-host/v1"
           />
-          <span class="settings-help">OpenAI-compatible endpoints usually end with /v1.</span>
+          <span class="settings-help">{{ settingsText.baseURLHelp }}</span>
         </label>
 
         <label class="settings-field">
-          <span class="settings-label">Model</span>
+          <span class="settings-label">{{ settingsText.model }}</span>
           <input
             v-model="config.model"
             class="settings-input"
             type="text"
             placeholder="gemini/gemini-3.5-flash-lite"
           />
-          <span class="settings-help">Use the exact model ID exposed by your provider.</span>
+          <span class="settings-help">{{ settingsText.modelHelp }}</span>
         </label>
         </div>
 
@@ -1624,7 +1795,7 @@ async function saveSettings(): Promise<void> {
           >
             <span v-if="testStatus === 'testing'" class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
             <Sparkles v-else class="h-3.5 w-3.5" aria-hidden="true" />
-            {{ testStatus === "testing" ? "Testing..." : "Test connection" }}
+            {{ testStatus === "testing" ? settingsText.testing : settingsText.testConnection }}
           </button>
           <span
             v-if="testStatus !== 'idle'"
@@ -1642,14 +1813,14 @@ async function saveSettings(): Promise<void> {
                   <Cpu class="h-4 w-4" aria-hidden="true" />
                 </div>
                 <div>
-                  <h2 class="settings-section-title">Capture & OCR</h2>
-                  <p class="settings-section-description">Choose how captures start and how OCR runs.</p>
+                  <h2 class="settings-section-title">{{ settingsText.captureOCR }}</h2>
+                  <p class="settings-section-description">{{ settingsText.captureOCRDescription }}</p>
                 </div>
               </div>
 
         <div class="grid gap-4 sm:grid-cols-2">
         <label class="settings-field">
-          <span class="settings-label">Capture shortcut</span>
+          <span class="settings-label">{{ settingsText.captureShortcut }}</span>
           <div class="flex gap-2">
             <span class="relative min-w-0 flex-1">
               <Keyboard class="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" aria-hidden="true" />
@@ -1657,41 +1828,68 @@ async function saveSettings(): Promise<void> {
                 v-model="config.shortcutKey"
                 class="settings-input pl-9"
                 type="text"
-                :placeholder="shortcutRecording ? 'Press keys...' : 'Alt+Q'"
-                :readonly="shortcutRecording"
+                :placeholder="shortcutRecording === 'translate' ? settingsText.pressShortcut : 'Alt+Q'"
+                :readonly="shortcutRecording === 'translate'"
               />
             </span>
             <button
               class="settings-secondary-button h-10 shrink-0"
               type="button"
-              :title="shortcutRecording ? 'Press a key combination or Esc to cancel' : 'Record shortcut'"
-              @click="startShortcutRecording"
+              :title="shortcutRecording === 'translate' ? 'Press a key combination or Esc to cancel' : 'Record shortcut'"
+              @click="startShortcutRecording('translate')"
             >
-              {{ shortcutRecording ? "Listening..." : "Record" }}
+              {{ shortcutRecording === "translate" ? settingsText.recording : settingsText.record }}
             </button>
           </div>
-          <span class="settings-help" :class="shortcutRecording ? 'text-emerald-600 dark:text-emerald-400' : ''">
-            {{ shortcutRecording ? "Press a combination, or Esc to cancel." : "Global shortcut for instant capture." }}
+          <span class="settings-help" :class="shortcutRecording === 'translate' ? 'text-emerald-600 dark:text-emerald-400' : ''">
+            {{ shortcutRecording === "translate" ? settingsText.pressShortcut : settingsText.shortcutHelp }}
           </span>
         </label>
 
         <label class="settings-field">
-          <span class="settings-label">RapidOCR path</span>
+          <span class="settings-label">{{ settingsText.screenshotShortcut }}</span>
+          <div class="flex gap-2">
+            <span class="relative min-w-0 flex-1">
+              <Keyboard class="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" aria-hidden="true" />
+              <input
+                v-model="config.screenshotShortcutKey"
+                class="settings-input pl-9"
+                type="text"
+                :placeholder="shortcutRecording === 'screenshot' ? settingsText.pressShortcut : 'Alt+W'"
+                :readonly="shortcutRecording === 'screenshot'"
+              />
+            </span>
+            <button
+              class="settings-secondary-button h-10 shrink-0"
+              type="button"
+              :title="shortcutRecording === 'screenshot' ? 'Press a key combination or Esc to cancel' : 'Record shortcut'"
+              @click="startShortcutRecording('screenshot')"
+            >
+              {{ shortcutRecording === "screenshot" ? settingsText.recording : settingsText.record }}
+            </button>
+          </div>
+          <span class="settings-help" :class="shortcutRecording === 'screenshot' ? 'text-emerald-600 dark:text-emerald-400' : ''">
+            {{ shortcutRecording === "screenshot" ? settingsText.pressShortcut : settingsText.screenshotShortcutHelp }}
+          </span>
+        </label>
+
+        <label class="settings-field">
+          <span class="settings-label">{{ settingsText.rapidOCRPath }}</span>
           <input
             v-model="config.rapidOCRPath"
             class="settings-input"
             type="text"
             placeholder="RapidOCR-json_v0.2.0"
           />
-          <span class="settings-help">Folder or full path to rapidocr_json.exe.</span>
+          <span class="settings-help">{{ settingsText.rapidOCRPathHelp }}</span>
         </label>
         </div>
 
         <div class="mt-4 grid gap-2 sm:grid-cols-2">
         <label class="settings-toggle">
           <span class="min-w-0 pr-3">
-            <span class="settings-toggle-title">Start with Windows</span>
-            <span class="settings-toggle-description">Keep snapTrans available from sign-in.</span>
+            <span class="settings-toggle-title">{{ settingsText.startWithWindows }}</span>
+            <span class="settings-toggle-description">{{ settingsText.startWithWindowsDescription }}</span>
           </span>
           <input
             v-model="autoStartEnabled"
@@ -1705,8 +1903,8 @@ async function saveSettings(): Promise<void> {
 
         <label class="settings-toggle">
           <span class="min-w-0 pr-3">
-            <span class="settings-toggle-title">Keep OCR ready</span>
-            <span class="settings-toggle-description">Faster captures with a small memory cost.</span>
+            <span class="settings-toggle-title">{{ settingsText.keepOCRReady }}</span>
+            <span class="settings-toggle-description">{{ settingsText.keepOCRReadyDescription }}</span>
           </span>
           <input
             v-model="config.persistentOCR"
@@ -1724,16 +1922,16 @@ async function saveSettings(): Promise<void> {
                   <Languages class="h-4 w-4" aria-hidden="true" />
                 </div>
                 <div>
-                  <h2 class="settings-section-title">Translation</h2>
-                  <p class="settings-section-description">Tune automatic behavior and terminology.</p>
+                  <h2 class="settings-section-title">{{ settingsText.translation }}</h2>
+                  <p class="settings-section-description">{{ settingsText.translationDescription }}</p>
                 </div>
               </div>
 
         <div class="grid gap-2 sm:grid-cols-2">
         <label class="settings-toggle">
           <span class="min-w-0 pr-3">
-            <span class="settings-toggle-title">Detect direction</span>
-            <span class="settings-toggle-description">Choose Chinese or English from OCR text.</span>
+            <span class="settings-toggle-title">{{ settingsText.detectDirection }}</span>
+            <span class="settings-toggle-description">{{ settingsText.detectDirectionDescription }}</span>
           </span>
           <input v-model="config.autoDirection" class="peer sr-only" type="checkbox" />
           <span class="settings-switch" aria-hidden="true" />
@@ -1741,8 +1939,8 @@ async function saveSettings(): Promise<void> {
 
         <label class="settings-toggle">
           <span class="min-w-0 pr-3">
-            <span class="settings-toggle-title">Copy automatically</span>
-            <span class="settings-toggle-description">Copy each completed translation.</span>
+            <span class="settings-toggle-title">{{ settingsText.copyAutomatically }}</span>
+            <span class="settings-toggle-description">{{ settingsText.copyAutomaticallyDescription }}</span>
           </span>
           <input
             v-model="config.autoCopy"
@@ -1755,22 +1953,22 @@ async function saveSettings(): Promise<void> {
 
         <div class="mt-4 grid gap-4 sm:grid-cols-2">
         <label class="settings-field">
-          <span class="settings-label">Custom instructions</span>
+          <span class="settings-label">{{ settingsText.customInstructions }}</span>
           <textarea
             v-model="config.systemPrompt"
             class="settings-textarea"
-            placeholder="Optional tone, formatting, or domain instructions"
+            :placeholder="settingsText.customInstructionsPlaceholder"
           />
         </label>
 
         <label class="settings-field">
-          <span class="settings-label">Glossary</span>
+          <span class="settings-label">{{ settingsText.glossary }}</span>
           <textarea
             v-model="config.glossary"
             class="settings-textarea"
-            placeholder="API -> 接口&#10;commit -> 提交"
+            :placeholder="settingsText.glossaryPlaceholder"
           />
-          <span class="settings-help">One source → target term per line.</span>
+          <span class="settings-help">{{ settingsText.glossaryHelp }}</span>
         </label>
         </div>
             </section>
@@ -1781,22 +1979,22 @@ async function saveSettings(): Promise<void> {
             <History class="h-4 w-4" aria-hidden="true" />
           </div>
           <div class="min-w-0 flex-1">
-            <h2 class="settings-section-title">Recent translations</h2>
-            <p class="settings-section-description">Reuse a recent result without capturing again.</p>
+            <h2 class="settings-section-title">{{ settingsText.recentTranslations }}</h2>
+            <p class="settings-section-description">{{ settingsText.recentTranslationsDescription }}</p>
           </div>
           <button
             class="settings-tertiary-button shrink-0"
             type="button"
-            title="Clear translation history"
+            :title="settingsText.clearHistory"
             aria-label="Clear history"
             :disabled="historyEntries.length === 0"
             @click="clearAllHistory"
           >
-            Clear
+            {{ settingsText.clear }}
           </button>
         </div>
         <div v-if="historyEntries.length === 0" class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-xs text-slate-500 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-slate-400">
-          {{ historyLoaded ? "No recent translations yet." : "Loading history..." }}
+          {{ historyLoaded ? settingsText.noRecentTranslations : settingsText.loadingHistory }}
         </div>
         <div v-else class="max-h-44 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 dark:divide-zinc-800 dark:border-zinc-800">
           <div
@@ -1811,7 +2009,7 @@ async function saveSettings(): Promise<void> {
             <button
               class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-slate-700 hover:shadow-sm dark:hover:bg-zinc-800 dark:hover:text-slate-100"
               type="button"
-              title="Copy this translation"
+              :title="settingsText.copyHistoryEntry"
               aria-label="Copy history entry"
               @click="copyText(entry.translation)"
             >
@@ -1840,23 +2038,23 @@ async function saveSettings(): Promise<void> {
             @click="openLogFolder"
           >
             <FolderOpen class="h-3.5 w-3.5" aria-hidden="true" />
-            Open logs
+            {{ settingsText.openLogs }}
           </button>
-          <span v-else class="text-[11px] text-slate-400">Changes apply after saving.</span>
+          <span v-else class="text-[11px] text-slate-400">{{ settingsText.unsavedHint }}</span>
           <div class="flex items-center gap-2">
             <button
               class="settings-secondary-button h-9"
               type="button"
               @click="closeSettings"
             >
-              Cancel
+              {{ settingsText.cancel }}
             </button>
             <button
               class="inline-flex h-9 min-w-24 items-center justify-center rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
               :disabled="settingsSaving"
             >
-              {{ settingsSaving ? "Saving..." : "Save changes" }}
+              {{ settingsSaving ? settingsText.saving : settingsText.saveChanges }}
             </button>
           </div>
         </div>

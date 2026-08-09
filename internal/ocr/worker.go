@@ -25,20 +25,67 @@ type Worker struct {
 	executable string
 	timeout    time.Duration
 
-	mu     sync.Mutex
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout io.Reader
-	ready  bool
+	mu           sync.Mutex
+	cmd          *exec.Cmd
+	stdin        io.WriteCloser
+	stdout       io.Reader
+	processGuard io.Closer
+	ready        bool
+	closed       bool
 
-	startMu sync.Mutex
+	// RapidOCR exposes a line-oriented request/response protocol over one
+	// stdin/stdout pair. These context-aware gates prevent two callers from
+	// consuming each other's response and avoid the goroutine leak caused by
+	// waiting on a sync.Mutex after the caller has already cancelled.
+	startGate chan struct{}
+	runGate   chan struct{}
 }
 
 func NewRapidOCRWorker(path string, timeout time.Duration) *Worker {
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
-	return &Worker{executable: path, timeout: timeout}
+	return &Worker{
+		executable: path,
+		timeout:    timeout,
+		startGate:  newWorkerGate(),
+		runGate:    newWorkerGate(),
+	}
+}
+
+func newWorkerGate() chan struct{} {
+	gate := make(chan struct{}, 1)
+	gate <- struct{}{}
+	return gate
+}
+
+func acquireWorkerGate(ctx context.Context, gate chan struct{}) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-gate:
+		return nil
+	}
+}
+
+func releaseWorkerGate(gate chan struct{}) {
+	gate <- struct{}{}
+}
+
+func (w *Worker) acquireStart(ctx context.Context) error {
+	return acquireWorkerGate(ctx, w.startGate)
+}
+
+func (w *Worker) releaseStart() {
+	releaseWorkerGate(w.startGate)
+}
+
+func (w *Worker) acquireRun(ctx context.Context) error {
+	return acquireWorkerGate(ctx, w.runGate)
+}
+
+func (w *Worker) releaseRun() {
+	releaseWorkerGate(w.runGate)
 }
 
 // SetExecutable updates the configured OCR executable path. The change
@@ -53,43 +100,41 @@ func (w *Worker) SetExecutable(path string) {
 // is safe to call concurrently: concurrent callers wait for the in-flight
 // start and return once the worker is ready.
 func (w *Worker) Start(ctx context.Context) error {
-	acquired := make(chan struct{})
-	go func() {
-		w.startMu.Lock()
-		close(acquired)
-	}()
-	select {
-	case <-acquired:
-	case <-ctx.Done():
-		return ctx.Err()
+	if err := w.acquireStart(ctx); err != nil {
+		return err
 	}
-	defer w.startMu.Unlock()
+	defer w.releaseStart()
 
 	w.mu.Lock()
+	closed := w.closed
 	alreadyReady := w.ready
 	w.mu.Unlock()
+	if closed {
+		return errors.New("ocr worker is closed")
+	}
 	if alreadyReady {
 		return nil
 	}
-	return w.startLocked(ctx)
+	return w.startProcess(ctx)
 }
 
-func (w *Worker) startLocked(ctx context.Context) error {
-	w.closeLocked()
+func (w *Worker) startProcess(ctx context.Context) error {
+	w.mu.Lock()
+	w.closeProcessLocked()
+	configuredPath := w.executable
+	w.mu.Unlock()
 
 	cwd, _ := os.Getwd()
 	executable, _ := os.Executable()
-	resolved, err := ResolveExecutablePath(w.executable, cwd, executable)
+	resolved, err := ResolveExecutablePath(configuredPath, cwd, executable)
 	if err != nil {
 		return err
 	}
 
-	cmd := newRapidOCRWorkerCommand(ctx, resolved)
+	// Startup cancellation is handled explicitly below. The child must not be
+	// tied to the short-lived warm-up context after it reports ready.
+	cmd := newRapidOCRWorkerCommand(context.Background(), resolved)
 	cmd.Dir = filepath.Dir(resolved)
-	// The worker process must outlive the startup context, so context
-	// cancellation must not kill it. Process lifecycle is managed
-	// explicitly through Close and Restart.
-	cmd.Cancel = func() error { return nil }
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -107,10 +152,26 @@ func (w *Worker) startLocked(ctx context.Context) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("ocr worker: start: %w", err)
 	}
+	guard, err := guardOCRProcess(cmd.Process)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return fmt.Errorf("ocr worker: guard process: %w", err)
+	}
 
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		_ = guard.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return errors.New("ocr worker is closed")
+	}
 	w.cmd = cmd
 	w.stdin = stdin
 	w.stdout = stdout
+	w.processGuard = guard
+	w.mu.Unlock()
 	go func() { _, _ = io.Copy(io.Discard, stderr) }()
 
 	scanner := bufio.NewScanner(stdout)
@@ -138,14 +199,19 @@ func (w *Worker) startLocked(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		w.closeLocked()
+		w.stopProcess()
 		return ctx.Err()
 	case err := <-initErr:
-		w.closeLocked()
+		w.stopProcess()
 		return err
 	case <-initDone:
 	}
 
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed || w.cmd != cmd {
+		return errors.New("ocr worker stopped during initialization")
+	}
 	w.ready = true
 	return nil
 }
@@ -162,6 +228,16 @@ func newRapidOCRWorkerCommand(ctx context.Context, resolvedExecutable string) *e
 func (w *Worker) Run(ctx context.Context, imageDataURL string) (Result, error) {
 	runCtx, cancel := w.runContext(ctx)
 	defer cancel()
+	if err := w.acquireRun(runCtx); err != nil {
+		return Result{}, err
+	}
+	restartAfterRun := false
+	defer func() {
+		w.releaseRun()
+		if restartAfterRun {
+			go w.warmAfterFailure()
+		}
+	}()
 
 	if err := w.ensureReady(runCtx); err != nil {
 		return Result{}, err
@@ -203,16 +279,19 @@ func (w *Worker) Run(ctx context.Context, imageDataURL string) (Result, error) {
 
 	select {
 	case <-runCtx.Done():
+		// A request already written to the stream cannot be abandoned safely:
+		// its late response would otherwise be consumed by the next capture.
+		// Stop it before releasing the run gate, then warm a clean worker.
+		w.stopProcess()
+		restartAfterRun = true
 		if errors.Is(runCtx.Err(), context.Canceled) {
-			// The caller canceled (e.g. the user hid the window); the
-			// process itself is healthy, so do not restart it.
 			return Result{}, runCtx.Err()
 		}
-		_ = w.restartInBackground()
 		return Result{}, fmt.Errorf("RapidOCR timed out after %s", w.timeout)
 	case out := <-resultCh:
 		if out.err != nil {
-			_ = w.restartInBackground()
+			w.stopProcess()
+			restartAfterRun = true
 			return Result{}, out.err
 		}
 		return ExtractResultFromJSON(out.data, imageWidth, imageHeight)
@@ -305,17 +384,19 @@ func (w *Worker) ensureReady(ctx context.Context) error {
 	return w.Start(ctx)
 }
 
-func (w *Worker) restartInBackground() error {
+func (w *Worker) warmAfterFailure() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return w.Restart(ctx)
+	_ = w.Start(ctx)
 }
 
 // Restart terminates the current process (if any) and starts a fresh one.
 func (w *Worker) Restart(ctx context.Context) error {
-	w.mu.Lock()
-	w.ready = false
-	w.mu.Unlock()
+	if err := w.acquireRun(ctx); err != nil {
+		return err
+	}
+	defer w.releaseRun()
+	w.stopProcess()
 	return w.Start(ctx)
 }
 
@@ -323,18 +404,29 @@ func (w *Worker) Restart(ctx context.Context) error {
 func (w *Worker) Close() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.closeLocked()
+	w.closed = true
+	w.closeProcessLocked()
 }
 
-func (w *Worker) closeLocked() {
-	if w.cmd != nil {
-		_ = w.cmd.Process.Kill()
-		_, _ = w.cmd.Process.Wait()
-		w.cmd = nil
-	}
+func (w *Worker) stopProcess() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.closeProcessLocked()
+}
+
+func (w *Worker) closeProcessLocked() {
 	if w.stdin != nil {
 		_ = w.stdin.Close()
 		w.stdin = nil
+	}
+	if w.processGuard != nil {
+		_ = w.processGuard.Close()
+		w.processGuard = nil
+	}
+	if w.cmd != nil {
+		_ = w.cmd.Process.Kill()
+		_ = w.cmd.Wait()
+		w.cmd = nil
 	}
 	w.stdout = nil
 	w.ready = false

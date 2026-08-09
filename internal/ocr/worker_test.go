@@ -1,6 +1,8 @@
 package ocr
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -63,4 +65,30 @@ func TestWorkerRunParsesImageDimensionsForBlockNormalization(t *testing.T) {
 	worker := NewRapidOCRWorker("", time.Second)
 	require.NotNil(t, worker)
 	require.Equal(t, time.Second, worker.timeout)
+}
+
+func TestWorkerRunGateSerializesRequestsAndHonorsCancellation(t *testing.T) {
+	worker := NewRapidOCRWorker("", time.Second)
+	require.NoError(t, worker.acquireRun(context.Background()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.ErrorIs(t, worker.acquireRun(ctx), context.Canceled)
+
+	worker.releaseRun()
+	require.NoError(t, worker.acquireRun(context.Background()))
+	worker.releaseRun()
+}
+
+func TestWorkerStartGateDoesNotLeakWhenWaitingContextIsCancelled(t *testing.T) {
+	worker := NewRapidOCRWorker("", time.Second)
+	require.NoError(t, worker.acquireStart(context.Background()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.True(t, errors.Is(worker.acquireStart(ctx), context.Canceled))
+
+	worker.releaseStart()
+	require.NoError(t, worker.acquireStart(context.Background()))
+	worker.releaseStart()
 }

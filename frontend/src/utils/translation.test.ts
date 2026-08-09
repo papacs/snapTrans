@@ -46,6 +46,14 @@ describe("parseTranslationOutput", () => {
     expect(translationForOCRBlock(3, block("DeepSeek V4 Pro"), parsed, 4)).toBe("");
   });
 
+  it("rejects noisy replacements that are not written in the target language", () => {
+    const toChinese = parseTranslationOutput("[1] [1] 2 LiteLLM");
+    const toEnglish = parseTranslationOutput("[1] [1] 登录");
+
+    expect(translationForOCRBlock(0, block("LiteLLM"), toChinese, 1, "to-zh")).toBe("");
+    expect(translationForOCRBlock(0, block("登录"), toEnglish, 1, "to-en")).toBe("");
+  });
+
   it("falls back to positional lines only when the line count matches the OCR block count", () => {
     const parsed = parseTranslationOutput("\u4e2d\u6027\n\u8d1f\u9762\n\u6b63\u9762");
 

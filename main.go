@@ -32,7 +32,14 @@ func main() {
 
 	app := NewApp()
 
-	runErr := wails.Run(&options.App{
+	runErr := wails.Run(newAppOptions(app))
+	if runErr != nil {
+		log.Fatal(runErr)
+	}
+}
+
+func newAppOptions(app *App) *options.App {
+	return &options.App{
 		Title:            "snapTrans",
 		Width:            1280,
 		Height:           800,
@@ -40,9 +47,10 @@ func main() {
 		AlwaysOnTop:      true,
 		StartHidden:      true,
 		DisableResize:    true,
-		BackgroundColour: &options.RGBA{R: 0, G: 0, B: 0, A: 0},
+		BackgroundColour: &options.RGBA{R: 15, G: 23, B: 42, A: 255},
 		AssetServer: &assetserver.Options{
-			Assets: assets,
+			Assets:  assets,
+			Handler: app.captureAssets,
 		},
 		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,
@@ -50,14 +58,11 @@ func main() {
 			app,
 		},
 		Windows: &wailswindows.Options{
-			WebviewIsTransparent: true,
-			WindowIsTranslucent:  true,
+			WebviewIsTransparent: false,
+			WindowIsTranslucent:  false,
 			DisableWindowIcon:    false,
-			ContentProtection:    true,
+			ContentProtection:    false,
 		},
-	})
-	if runErr != nil {
-		log.Fatal(runErr)
 	}
 }
 

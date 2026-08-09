@@ -176,8 +176,12 @@ function isTrustedReplacement(sourceText: string, translatedText: string, direct
     return false;
   }
 
+  if (!isTargetLanguageText(translatedText, direction)) {
+    return false;
+  }
+
   if (source === translated) {
-    return isTargetLanguageText(sourceText, direction);
+    return true;
   }
 
   return true;

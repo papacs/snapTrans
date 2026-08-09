@@ -9,6 +9,9 @@ import (
 	"image/draw"
 	"image/png"
 	"math"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/kbinani/screenshot"
 )
@@ -26,19 +29,46 @@ type Display struct {
 }
 
 type Result struct {
-	Image    string    `json:"image"`
-	Width    int       `json:"width"`
-	Height   int       `json:"height"`
-	OriginX  int       `json:"originX"`
-	OriginY  int       `json:"originY"`
-	Displays []Display `json:"displays"`
-	Source   string    `json:"source"`
+	Image           string        `json:"image"`
+	ImageBytes      []byte        `json:"-"`
+	Width           int           `json:"width"`
+	Height          int           `json:"height"`
+	OriginX         int           `json:"originX"`
+	OriginY         int           `json:"originY"`
+	Displays        []Display     `json:"displays"`
+	Source          string        `json:"source"`
+	Mode            string        `json:"mode,omitempty"`
+	CaptureDuration time.Duration `json:"-"`
+	EncodeDuration  time.Duration `json:"-"`
+	EncodedBytes    int           `json:"-"`
+	CompressionMode string        `json:"-"`
 }
 
 type physicalMonitor struct {
 	Rect  image.Rectangle
 	Scale float64
 }
+
+const (
+	pngDataURLPrefix = "data:image/png;base64,"
+)
+
+type pngEncoderBufferPool struct {
+	pool sync.Pool
+}
+
+func (p *pngEncoderBufferPool) Get() *png.EncoderBuffer {
+	if buffer := p.pool.Get(); buffer != nil {
+		return buffer.(*png.EncoderBuffer)
+	}
+	return new(png.EncoderBuffer)
+}
+
+func (p *pngEncoderBufferPool) Put(buffer *png.EncoderBuffer) {
+	p.pool.Put(buffer)
+}
+
+var sharedPNGEncoderBuffers pngEncoderBufferPool
 
 func AllDisplays(ctx context.Context) (Result, error) {
 	if err := ctx.Err(); err != nil {
@@ -89,44 +119,122 @@ func captureMonitors(ctx context.Context, monitors []physicalMonitor) (Result, e
 		union = union.Union(monitor.Rect)
 	}
 
-	canvas := image.NewRGBA(image.Rect(0, 0, union.Dx(), union.Dy()))
-	for _, monitor := range monitors {
+	captureStartedAt := time.Now()
+	var frame image.Image
+	if len(monitors) == 1 {
 		if err := ctx.Err(); err != nil {
 			return Result{}, err
 		}
-		img, err := screenshot.CaptureRect(monitor.Rect)
+		img, err := screenshot.CaptureRect(monitors[0].Rect)
 		if err != nil {
 			return Result{}, err
 		}
-		if len(monitors) == 1 && isBlankCapture(img) {
+		if isBlankCapture(img) {
 			return Result{}, errors.New("screen capture returned a blank image")
 		}
+		frame = img
+	} else {
+		canvas := image.NewRGBA(image.Rect(0, 0, union.Dx(), union.Dy()))
+		for _, monitor := range monitors {
+			if err := ctx.Err(); err != nil {
+				return Result{}, err
+			}
+			img, err := screenshot.CaptureRect(monitor.Rect)
+			if err != nil {
+				return Result{}, err
+			}
 
-		target := image.Rect(
-			monitor.Rect.Min.X-union.Min.X,
-			monitor.Rect.Min.Y-union.Min.Y,
-			monitor.Rect.Max.X-union.Min.X,
-			monitor.Rect.Max.Y-union.Min.Y,
-		)
-		draw.Draw(canvas, target, img, image.Point{}, draw.Src)
+			target := image.Rect(
+				monitor.Rect.Min.X-union.Min.X,
+				monitor.Rect.Min.Y-union.Min.Y,
+				monitor.Rect.Max.X-union.Min.X,
+				monitor.Rect.Max.Y-union.Min.Y,
+			)
+			draw.Draw(canvas, target, img, image.Point{}, draw.Src)
+		}
+		frame = canvas
 	}
 
 	displays := LogicalDisplays(monitors)
-
-	var buffer bytes.Buffer
-	if err := png.Encode(&buffer, canvas); err != nil {
+	captureDuration := time.Since(captureStartedAt)
+	encodeStartedAt := time.Now()
+	compressionLevel := pngCompressionLevel(frame.Bounds())
+	encoded, err := encodePNGBytesWithLevel(frame, compressionLevel)
+	if err != nil {
 		return Result{}, err
 	}
+	encodeDuration := time.Since(encodeStartedAt)
 
 	return Result{
-		Image:    "data:image/png;base64," + base64.StdEncoding.EncodeToString(buffer.Bytes()),
-		Width:    canvas.Bounds().Dx(),
-		Height:   canvas.Bounds().Dy(),
-		OriginX:  union.Min.X,
-		OriginY:  union.Min.Y,
-		Displays: displays,
-		Source:   "wails",
+		ImageBytes:      encoded,
+		Width:           union.Dx(),
+		Height:          union.Dy(),
+		OriginX:         union.Min.X,
+		OriginY:         union.Min.Y,
+		Displays:        displays,
+		Source:          "wails",
+		CaptureDuration: captureDuration,
+		EncodeDuration:  encodeDuration,
+		EncodedBytes:    len(encoded),
+		CompressionMode: pngCompressionMode(compressionLevel),
 	}, nil
+}
+
+func encodePNGDataURL(frame image.Image) (string, int, error) {
+	return encodePNGDataURLWithLevel(frame, pngCompressionLevel(frame.Bounds()))
+}
+
+func pngCompressionLevel(_ image.Rectangle) png.CompressionLevel {
+	// The WebView fetches this lossless image from the in-memory asset handler,
+	// so it never crosses the Wails JSON bridge as base64. NoCompression avoids
+	// spending up to a second deflating a frame that is consumed locally once.
+	return png.NoCompression
+}
+
+func pngCompressionMode(level png.CompressionLevel) string {
+	if level == png.NoCompression {
+		return "no-compression"
+	}
+	return "best-speed"
+}
+
+func encodePNGDataURLWithLevel(frame image.Image, level png.CompressionLevel) (string, int, error) {
+	encoded, err := encodePNGBytesWithLevel(frame, level)
+	if err != nil {
+		return "", 0, err
+	}
+
+	encodedBytes := len(encoded)
+	var dataURL strings.Builder
+	dataURL.Grow(len(pngDataURLPrefix) + base64.StdEncoding.EncodedLen(encodedBytes))
+	dataURL.WriteString(pngDataURLPrefix)
+	base64Encoder := base64.NewEncoder(base64.StdEncoding, &dataURL)
+	if _, err := base64Encoder.Write(encoded); err != nil {
+		return "", 0, err
+	}
+	if err := base64Encoder.Close(); err != nil {
+		return "", 0, err
+	}
+	return dataURL.String(), encodedBytes, nil
+}
+
+func encodePNGBytesWithLevel(frame image.Image, level png.CompressionLevel) ([]byte, error) {
+	var buffer bytes.Buffer
+	if level == png.NoCompression {
+		bounds := frame.Bounds()
+		estimatedBytes := int64(bounds.Dx())*int64(bounds.Dy())*4 + int64(bounds.Dy()) + 4096
+		if estimatedBytes > 0 && estimatedBytes <= int64(^uint(0)>>1) {
+			buffer.Grow(int(estimatedBytes))
+		}
+	}
+	encoder := png.Encoder{
+		CompressionLevel: level,
+		BufferPool:       &sharedPNGEncoderBuffers,
+	}
+	if err := encoder.Encode(&buffer, frame); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
 }
 
 func monitorForPoint(monitors []physicalMonitor, point image.Point) (physicalMonitor, bool) {

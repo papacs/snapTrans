@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	_ "embed"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -62,24 +63,34 @@ type App struct {
 	historyStore *history.Store
 	log          *logfile.Logger
 
-	trayMu      sync.Mutex
-	captureItem *systray.MenuItem
+	trayMu         sync.Mutex
+	captureItem    *systray.MenuItem
+	screenshotItem *systray.MenuItem
 
-	mu         sync.Mutex
-	cfg        config.Config
-	shortcut   *hotkeys.Registration
-	processing context.CancelFunc
-	ocrWorker  *ocr.Worker
-	trayOnce   sync.Once
+	mu                 sync.Mutex
+	cfg                config.Config
+	shortcut           *hotkeys.Registration
+	screenshotShortcut *hotkeys.Registration
+	processing         context.CancelFunc
+	ocrWorker          *ocr.Worker
+	trayOnce           sync.Once
 
-	captureOriginX  int
-	captureOriginY  int
-	captureInFlight bool
-	windowVisible   bool
+	captureOriginX   int
+	captureOriginY   int
+	captureInFlight  bool
+	windowVisible    bool
+	frontendReady    bool
+	settingsPending  bool
+	capturePrepared  bool
+	preparedOriginX  int
+	preparedOriginY  int
+	captureStartedAt time.Time
+	captureEmittedAt time.Time
+	captureAssets    *captureAssets
 }
 
 func NewApp() *App {
-	return &App{}
+	return &App{captureAssets: newCaptureAssets()}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -106,6 +117,9 @@ func (a *App) startup(ctx context.Context) {
 	a.mu.Unlock()
 
 	if err := a.registerShortcut(cfg.ShortcutKey); err != nil {
+		a.emitError("config", err, 0)
+	}
+	if err := a.registerScreenshotShortcut(cfg.ScreenshotShortcutKey); err != nil {
 		a.emitError("config", err, 0)
 	}
 
@@ -170,6 +184,10 @@ func (a *App) shutdown(_ context.Context) {
 		_ = a.shortcut.Unregister()
 		a.shortcut = nil
 	}
+	if a.screenshotShortcut != nil {
+		_ = a.screenshotShortcut.Unregister()
+		a.screenshotShortcut = nil
+	}
 	if a.processing != nil {
 		a.processing()
 		a.processing = nil
@@ -200,6 +218,45 @@ func (a *App) LoadConfig() (config.Config, error) {
 	return cfg, nil
 }
 
+// FrontendReady completes the startup handshake after Vue has registered all
+// backend event listeners. Any early settings request is delivered while the
+// native window is still hidden.
+func (a *App) FrontendReady() error {
+	openSettings := a.markFrontendReady()
+	if a.log != nil {
+		a.log.Infof("frontend ready pending_settings=%t", openSettings)
+	}
+	if openSettings {
+		a.emitSettingsOpen()
+	}
+	return nil
+}
+
+func (a *App) markFrontendReady() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.frontendReady = true
+	openSettings := a.settingsPending
+	a.settingsPending = false
+	return openSettings
+}
+
+func (a *App) requestSettingsOpen() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.frontendReady {
+		a.settingsPending = true
+		return false
+	}
+	return true
+}
+
+func (a *App) emitSettingsOpen() {
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "settings-open", map[string]string{})
+	}
+}
+
 func (a *App) SaveConfig(next config.Config) error {
 	next = next.WithDefaults()
 	if a.configStore == nil {
@@ -216,8 +273,18 @@ func (a *App) SaveConfig(next config.Config) error {
 		}
 		return fmt.Errorf("invalid shortcut %q: %w", next.ShortcutKey, err)
 	}
+	if _, _, err := hotkeys.ParseShortcut(next.ScreenshotShortcutKey); err != nil {
+		if a.log != nil {
+			a.log.Errorf("invalid screenshot shortcut %q: %v", next.ScreenshotShortcutKey, err)
+		}
+		return fmt.Errorf("invalid screenshot shortcut %q: %w", next.ScreenshotShortcutKey, err)
+	}
+	if strings.EqualFold(next.ShortcutKey, next.ScreenshotShortcutKey) {
+		return errors.New("translation and screenshot shortcuts must be different")
+	}
 
 	var registration *hotkeys.Registration
+	var screenshotRegistration *hotkeys.Registration
 	if next.ShortcutKey != current.ShortcutKey {
 		var err error
 		registration, err = hotkeys.Register(next.ShortcutKey, func() {
@@ -230,10 +297,28 @@ func (a *App) SaveConfig(next config.Config) error {
 			return fmt.Errorf("shortcut %q is unavailable: %w", next.ShortcutKey, err)
 		}
 	}
+	if next.ScreenshotShortcutKey != current.ScreenshotShortcutKey {
+		var err error
+		screenshotRegistration, err = hotkeys.Register(next.ScreenshotShortcutKey, func() {
+			_ = a.TriggerScreenshot()
+		})
+		if err != nil {
+			if registration != nil {
+				_ = registration.Unregister()
+			}
+			if a.log != nil {
+				a.log.Errorf("screenshot shortcut registration failed for %q: %v", next.ScreenshotShortcutKey, err)
+			}
+			return fmt.Errorf("screenshot shortcut %q is unavailable: %w", next.ScreenshotShortcutKey, err)
+		}
+	}
 
 	if err := a.configStore.Save(next); err != nil {
 		if registration != nil {
 			_ = registration.Unregister()
+		}
+		if screenshotRegistration != nil {
+			_ = screenshotRegistration.Unregister()
 		}
 		return err
 	}
@@ -246,23 +331,41 @@ func (a *App) SaveConfig(next config.Config) error {
 		}
 		a.shortcut = registration
 	}
+	if screenshotRegistration != nil {
+		if a.screenshotShortcut != nil {
+			_ = a.screenshotShortcut.Unregister()
+		}
+		a.screenshotShortcut = screenshotRegistration
+	}
 	a.mu.Unlock()
 
-	a.updateTrayShortcut(next.ShortcutKey)
+	a.updateTrayShortcuts(next.ShortcutKey, next.ScreenshotShortcutKey)
 	a.syncOCRWorker(next)
 	return nil
 }
 
-func (a *App) updateTrayShortcut(shortcut string) {
+func (a *App) updateTrayShortcuts(shortcut string, screenshotShortcut string) {
 	a.trayMu.Lock()
 	item := a.captureItem
+	screenshotItem := a.screenshotItem
 	a.trayMu.Unlock()
 	if item != nil {
 		item.SetTitle("Capture  " + shortcut)
 	}
+	if screenshotItem != nil {
+		screenshotItem.SetTitle("Screenshot  " + screenshotShortcut)
+	}
 }
 
 func (a *App) TriggerCapture() error {
+	return a.triggerCaptureMode("translate")
+}
+
+func (a *App) TriggerScreenshot() error {
+	return a.triggerCaptureMode("screenshot")
+}
+
+func (a *App) triggerCaptureMode(mode string) error {
 	wasVisible, started := a.beginCapture()
 	if !started {
 		return nil
@@ -270,7 +373,7 @@ func (a *App) TriggerCapture() error {
 
 	go func() {
 		defer a.finishCapture()
-		a.captureAndEmit(wasVisible)
+		a.captureAndEmit(wasVisible, mode)
 	}()
 	return nil
 }
@@ -284,6 +387,8 @@ func (a *App) beginCapture() (wasVisible bool, started bool) {
 	a.captureInFlight = true
 	wasVisible = a.windowVisible
 	a.windowVisible = false
+	a.captureStartedAt = time.Now()
+	a.captureEmittedAt = time.Time{}
 	return wasVisible, true
 }
 
@@ -301,17 +406,46 @@ func (a *App) ShowCaptureWindow() error {
 	a.mu.Lock()
 	originX := a.captureOriginX
 	originY := a.captureOriginY
+	startedAt := a.captureStartedAt
+	emittedAt := a.captureEmittedAt
 	a.mu.Unlock()
 
-	runtime.WindowUnfullscreen(a.ctx)
-	moveWindowToDisplay(a.ctx, originX, originY)
-	runtime.WindowFullscreen(a.ctx)
+	if a.shouldPrepareCaptureWindow(originX, originY) {
+		runtime.WindowUnfullscreen(a.ctx)
+		moveWindowToDisplay(a.ctx, originX, originY)
+		runtime.WindowFullscreen(a.ctx)
+	}
 	runtime.WindowSetAlwaysOnTop(a.ctx, true)
 	runtime.WindowShow(a.ctx)
 	a.mu.Lock()
 	a.windowVisible = true
 	a.mu.Unlock()
+	if a.log != nil && !startedAt.IsZero() && !emittedAt.IsZero() {
+		a.log.Infof(
+			"capture ui ready total_ms=%d bridge_decode_ms=%d",
+			time.Since(startedAt).Milliseconds(),
+			time.Since(emittedAt).Milliseconds(),
+		)
+	}
 	return nil
+}
+
+func (a *App) shouldPrepareCaptureWindow(originX int, originY int) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.capturePrepared && a.preparedOriginX == originX && a.preparedOriginY == originY {
+		return false
+	}
+	a.capturePrepared = true
+	a.preparedOriginX = originX
+	a.preparedOriginY = originY
+	return true
+}
+
+func (a *App) invalidateCaptureWindowPreparation() {
+	a.mu.Lock()
+	a.capturePrepared = false
+	a.mu.Unlock()
 }
 
 func (a *App) ProcessImage(base64Crop string, direction string, generation int) error {
@@ -334,7 +468,6 @@ func (a *App) HideWindow() error {
 	a.windowVisible = false
 	a.mu.Unlock()
 	if a.ctx != nil {
-		runtime.WindowUnfullscreen(a.ctx)
 		runtime.WindowHide(a.ctx)
 	}
 	return nil
@@ -355,6 +488,7 @@ func (a *App) ShowSettings() error {
 	}
 
 	runtime.WindowUnfullscreen(a.ctx)
+	a.invalidateCaptureWindowPreparation()
 	runtime.WindowSetAlwaysOnTop(a.ctx, true)
 	width, height := 680, 780
 	if screenHeight := availableScreenHeight(); screenHeight > 0 && height > screenHeight-48 {
@@ -365,33 +499,34 @@ func (a *App) ShowSettings() error {
 	}
 	runtime.WindowSetSize(a.ctx, width, height)
 	runtime.WindowCenter(a.ctx)
+	if !a.requestSettingsOpen() {
+		if a.log != nil {
+			a.log.Infof("settings request deferred until frontend is ready")
+		}
+		return nil
+	}
+	a.emitSettingsOpen()
+	return nil
+}
+
+// ShowSettingsWindow is called by Vue only after the settings shell has been
+// committed to the DOM, so an unrendered transparent WebView is never exposed.
+func (a *App) ShowSettingsWindow() error {
+	if a.ctx == nil {
+		return nil
+	}
+
 	runtime.WindowShow(a.ctx)
 	a.mu.Lock()
 	a.windowVisible = true
 	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "settings-open", map[string]string{})
+	if a.log != nil {
+		a.log.Infof("settings window shown after frontend render")
+	}
 	return nil
 }
 
-// GetWindowPosition returns the frameless window's current position.
-func (a *App) GetWindowPosition() (int, int, error) {
-	if a.ctx == nil {
-		return 0, 0, nil
-	}
-	x, y := runtime.WindowGetPosition(a.ctx)
-	return x, y, nil
-}
-
-// SetWindowPosition moves the frameless window to the given position.
-func (a *App) SetWindowPosition(x int, y int) error {
-	if a.ctx == nil {
-		return nil
-	}
-	runtime.WindowSetPosition(a.ctx, x, y)
-	return nil
-}
-
-func (a *App) captureAndEmit(wasVisible bool) {
+func (a *App) captureAndEmit(wasVisible bool, mode string) {
 	if a.ctx == nil {
 		return
 	}
@@ -400,7 +535,7 @@ func (a *App) captureAndEmit(wasVisible bool) {
 	a.cancelProcessing()
 	runtime.WindowHide(a.ctx)
 	if wasVisible {
-		time.Sleep(120 * time.Millisecond)
+		waitForWindowHidden()
 	}
 
 	result, err := capture.ActiveDisplay(context.Background())
@@ -421,23 +556,33 @@ func (a *App) captureAndEmit(wasVisible bool) {
 	a.captureOriginX = result.OriginX
 	a.captureOriginY = result.OriginY
 	a.mu.Unlock()
+	result.Image = a.captureAssets.Store(result.ImageBytes)
+	result.ImageBytes = nil
+	result.Mode = mode
 	if a.log != nil {
 		scale := 1.0
 		if len(result.Displays) > 0 {
 			scale = result.Displays[0].Scale
 		}
 		a.log.Infof(
-			"capture completed duration_ms=%d image=%dx%d origin=(%d,%d) scale=%.2f encoded_bytes=%d",
+			"capture completed total_ms=%d capture_ms=%d encode_ms=%d image=%dx%d origin=(%d,%d) scale=%.2f png_mode=%s png_bytes=%d payload_bytes=%d",
 			time.Since(startedAt).Milliseconds(),
+			result.CaptureDuration.Milliseconds(),
+			result.EncodeDuration.Milliseconds(),
 			result.Width,
 			result.Height,
 			result.OriginX,
 			result.OriginY,
 			scale,
+			result.CompressionMode,
+			result.EncodedBytes,
 			len(result.Image),
 		)
 	}
 
+	a.mu.Lock()
+	a.captureEmittedAt = time.Now()
+	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "capture-start", result)
 }
 
@@ -455,6 +600,7 @@ func (a *App) onTrayReady() {
 	systray.SetTooltip("snapTrans screenshot translator")
 
 	captureItem := systray.AddMenuItem("Capture  Alt+Q", "Start screenshot translation")
+	screenshotItem := systray.AddMenuItem("Screenshot  Alt+W", "Capture and annotate an image")
 	settingsItem := systray.AddMenuItem("Settings", "Open settings")
 	systray.AddSeparator()
 	quitItem := systray.AddMenuItem("Quit", "Exit snapTrans")
@@ -463,8 +609,10 @@ func (a *App) onTrayReady() {
 	cfg := a.cfg
 	a.mu.Unlock()
 	captureItem.SetTitle("Capture  " + cfg.ShortcutKey)
+	screenshotItem.SetTitle("Screenshot  " + cfg.ScreenshotShortcutKey)
 	a.trayMu.Lock()
 	a.captureItem = captureItem
+	a.screenshotItem = screenshotItem
 	a.trayMu.Unlock()
 
 	go func() {
@@ -472,6 +620,8 @@ func (a *App) onTrayReady() {
 			select {
 			case <-captureItem.ClickedCh:
 				_ = a.TriggerCapture()
+			case <-screenshotItem.ClickedCh:
+				_ = a.TriggerScreenshot()
 			case <-settingsItem.ClickedCh:
 				_ = a.ShowSettings()
 			case <-quitItem.ClickedCh:
@@ -514,11 +664,26 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 		Blocks:     result.Blocks,
 	})
 	runtime.EventsEmit(a.ctx, "translation-start", sentinelPayload{Generation: generation})
-	if translated, ok := translator.TryFastTranslation(result.Text, direction); ok {
+	translationStartedAt := time.Now()
+	var firstTokenOnce sync.Once
+	emitTranslationToken := func(token string) {
+		firstTokenOnce.Do(func() {
+			if a.log != nil {
+				a.log.Infof(
+					"generation=%d first_token_ms=%d translation_wait_ms=%d",
+					generation,
+					time.Since(startedAt).Milliseconds(),
+					time.Since(translationStartedAt).Milliseconds(),
+				)
+			}
+		})
 		runtime.EventsEmit(a.ctx, "translation-token", translationTokenPayload{
 			Generation: generation,
-			Token:      translated,
+			Token:      token,
 		})
+	}
+	if translated, ok := translator.TryFastTranslation(result.Text, direction); ok {
+		emitTranslationToken(translated)
 		runtime.EventsEmit(a.ctx, "translation-done", sentinelPayload{Generation: generation})
 		a.saveHistory(result.Text, translated, string(direction))
 		return
@@ -534,10 +699,7 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 	})
 	err = client.Translate(ctx, result.Text, direction, func(token string) {
 		translated.WriteString(token)
-		runtime.EventsEmit(a.ctx, "translation-token", translationTokenPayload{
-			Generation: generation,
-			Token:      token,
-		})
+		emitTranslationToken(token)
 	})
 	if err != nil {
 		a.emitError("translation", err, generation)
@@ -562,7 +724,7 @@ func (a *App) saveHistory(source string, translated string, direction string) {
 
 func (a *App) GetHistory() ([]history.Entry, error) {
 	if a.historyStore == nil {
-		return nil, nil
+		return []history.Entry{}, nil
 	}
 	return a.historyStore.List()
 }
@@ -592,10 +754,11 @@ func (a *App) TestConnection() error {
 }
 
 type EnvironmentStatus struct {
-	OCRReady         bool   `json:"ocrReady"`
-	OCRDetail        string `json:"ocrDetail"`
-	APIKeyConfigured bool   `json:"apiKeyConfigured"`
-	Shortcut         string `json:"shortcut"`
+	OCRReady           bool   `json:"ocrReady"`
+	OCRDetail          string `json:"ocrDetail"`
+	APIKeyConfigured   bool   `json:"apiKeyConfigured"`
+	Shortcut           string `json:"shortcut"`
+	ScreenshotShortcut string `json:"screenshotShortcut"`
 }
 
 const autostartValueName = "snapTrans"
@@ -642,8 +805,9 @@ func (a *App) GetEnvironmentStatus() EnvironmentStatus {
 	a.mu.Unlock()
 
 	status := EnvironmentStatus{
-		APIKeyConfigured: strings.TrimSpace(cfg.APIKey) != "",
-		Shortcut:         cfg.ShortcutKey,
+		APIKeyConfigured:   strings.TrimSpace(cfg.APIKey) != "",
+		Shortcut:           cfg.ShortcutKey,
+		ScreenshotShortcut: cfg.ScreenshotShortcutKey,
 	}
 
 	cwd, _ := os.Getwd()
@@ -678,6 +842,61 @@ func (a *App) registerShortcut(shortcut string) error {
 	}
 	a.shortcut = registration
 	return nil
+}
+
+func (a *App) registerScreenshotShortcut(shortcut string) error {
+	if shortcut == "" {
+		shortcut = config.Default().ScreenshotShortcutKey
+	}
+
+	registration, err := hotkeys.Register(shortcut, func() {
+		_ = a.TriggerScreenshot()
+	})
+	if err != nil {
+		return err
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.screenshotShortcut != nil {
+		_ = a.screenshotShortcut.Unregister()
+	}
+	a.screenshotShortcut = registration
+	return nil
+}
+
+// SaveScreenshot opens the native Windows save dialog and writes a PNG.
+func (a *App) SaveScreenshot(dataURL string) (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("application window is not ready")
+	}
+	encoded, ok := strings.CutPrefix(dataURL, "data:image/png;base64,")
+	if !ok {
+		return "", errors.New("screenshot must be a PNG data URL")
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", fmt.Errorf("decode screenshot: %w", err)
+	}
+	if len(data) == 0 || len(data) > 64*1024*1024 {
+		return "", errors.New("screenshot data is empty or too large")
+	}
+
+	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "Save screenshot",
+		DefaultFilename: "snapTrans-" + time.Now().Format("20060102-150405") + ".png",
+		Filters:         []runtime.FileFilter{{DisplayName: "PNG image (*.png)", Pattern: "*.png"}},
+	})
+	if err != nil || path == "" {
+		return path, err
+	}
+	if filepath.Ext(path) == "" {
+		path += ".png"
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 func (a *App) cancelProcessing() {

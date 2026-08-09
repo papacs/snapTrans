@@ -1,6 +1,7 @@
 package history
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -55,13 +56,27 @@ func TestListSurvivesMissingFile(t *testing.T) {
 	entries, err := store.List()
 
 	require.NoError(t, err)
-	require.Nil(t, entries)
+	require.NotNil(t, entries)
+	require.Empty(t, entries)
 }
 
 func TestNilStoreIsNoOp(t *testing.T) {
 	require.NoError(t, (*Store)(nil).Add("a", "b", "to-zh"))
 	entries, err := (*Store)(nil).List()
 	require.NoError(t, err)
-	require.Nil(t, entries)
+	require.NotNil(t, entries)
+	require.Empty(t, entries)
 	require.NoError(t, (*Store)(nil).Clear())
+}
+
+func TestListNormalizesJSONNullToEmptyList(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.json")
+	require.NoError(t, os.WriteFile(path, []byte("null"), 0o600))
+	store := NewStore(path, 5)
+
+	entries, err := store.List()
+
+	require.NoError(t, err)
+	require.NotNil(t, entries)
+	require.Empty(t, entries)
 }

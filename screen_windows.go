@@ -12,11 +12,19 @@ import (
 
 var (
 	user32 = windows.NewLazySystemDLL("user32.dll")
+	dwmapi = windows.NewLazySystemDLL("dwmapi.dll")
 
 	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
 	procMonitorFromRect  = user32.NewProc("MonitorFromRect")
 	procGetMonitorInfoW  = user32.NewProc("GetMonitorInfoW")
+	procDwmFlush         = dwmapi.NewProc("DwmFlush")
 )
+
+// waitForWindowHidden waits for the compositor to apply WindowHide before
+// capturing. This replaces a fixed 120 ms delay with at most one DWM frame.
+func waitForWindowHidden() {
+	_, _, _ = procDwmFlush.Call()
+}
 
 const (
 	smCyScreen              = 1

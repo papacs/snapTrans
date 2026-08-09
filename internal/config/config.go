@@ -11,7 +11,9 @@ import (
 )
 
 type Config struct {
+	UILanguage             string `json:"uiLanguage"`
 	ShortcutKey            string `json:"shortcutKey"`
+	ScreenshotShortcutKey  string `json:"screenshotShortcutKey"`
 	APIKey                 string `json:"apiKey"`
 	BaseURL                string `json:"baseURL"`
 	Model                  string `json:"model"`
@@ -27,25 +29,29 @@ type Config struct {
 // persistedConfig accepts both the current generic LLM fields and the
 // DeepSeek-specific fields written by versions before LiteLLM support.
 type persistedConfig struct {
+	UILanguage             string `json:"uiLanguage"`
 	ShortcutKey            string `json:"shortcutKey"`
+	ScreenshotShortcutKey  string `json:"screenshotShortcutKey"`
 	APIKey                 string `json:"apiKey"`
 	BaseURL                string `json:"baseURL"`
 	Model                  string `json:"model"`
 	DeepSeekAPIKey         string `json:"deepSeekAPIKey"`
 	DeepSeekBaseURL        string `json:"deepSeekBaseURL"`
 	DeepSeekModel          string `json:"deepSeekModel"`
-	RapidOCRPath           string    `json:"rapidOCRPath"`
-	RapidOCRTimeoutSeconds int       `json:"rapidOCRTimeoutSeconds"`
-	AutoDirection          *bool     `json:"autoDirection"`
-	SystemPrompt           string    `json:"systemPrompt"`
-	Glossary               string    `json:"glossary"`
-	PersistentOCR          *bool     `json:"persistentOCR"`
-	AutoCopy               *bool     `json:"autoCopy"`
+	RapidOCRPath           string `json:"rapidOCRPath"`
+	RapidOCRTimeoutSeconds int    `json:"rapidOCRTimeoutSeconds"`
+	AutoDirection          *bool  `json:"autoDirection"`
+	SystemPrompt           string `json:"systemPrompt"`
+	Glossary               string `json:"glossary"`
+	PersistentOCR          *bool  `json:"persistentOCR"`
+	AutoCopy               *bool  `json:"autoCopy"`
 }
 
 func (p persistedConfig) Config() Config {
 	return Config{
+		UILanguage:             p.UILanguage,
 		ShortcutKey:            p.ShortcutKey,
+		ScreenshotShortcutKey:  p.ScreenshotShortcutKey,
 		APIKey:                 firstNonEmpty(p.APIKey, p.DeepSeekAPIKey),
 		BaseURL:                firstNonEmpty(p.BaseURL, p.DeepSeekBaseURL),
 		Model:                  firstNonEmpty(p.Model, p.DeepSeekModel),
@@ -66,7 +72,9 @@ type Store struct {
 
 func Default() Config {
 	return Config{
+		UILanguage:             "zh-CN",
 		ShortcutKey:            "Alt+Q",
+		ScreenshotShortcutKey:  "Alt+W",
 		BaseURL:                "https://api.deepseek.com",
 		Model:                  "deepseek-chat",
 		RapidOCRPath:           "./RapidOCR-json_v0.2.0",
@@ -143,8 +151,14 @@ func (s *Store) Save(cfg Config) error {
 
 func (c Config) WithDefaults() Config {
 	defaults := Default()
+	if c.UILanguage != "zh-CN" && c.UILanguage != "en" {
+		c.UILanguage = defaults.UILanguage
+	}
 	if strings.TrimSpace(c.ShortcutKey) == "" {
 		c.ShortcutKey = defaults.ShortcutKey
+	}
+	if strings.TrimSpace(c.ScreenshotShortcutKey) == "" {
+		c.ScreenshotShortcutKey = defaults.ScreenshotShortcutKey
 	}
 	if strings.TrimSpace(c.BaseURL) == "" {
 		c.BaseURL = defaults.BaseURL
@@ -212,6 +226,9 @@ func applyEnvFallback(cfg *Config, env map[string]string) {
 	if cfg.ShortcutKey == "" {
 		cfg.ShortcutKey = env["SNAPTRANS_SHORTCUT"]
 	}
+	if cfg.ScreenshotShortcutKey == "" {
+		cfg.ScreenshotShortcutKey = env["SNAPTRANS_SCREENSHOT_SHORTCUT"]
+	}
 	if cfg.RapidOCRTimeoutSeconds <= 0 && env["RAPIDOCR_TIMEOUT_SECONDS"] != "" {
 		if parsed, err := strconv.Atoi(env["RAPIDOCR_TIMEOUT_SECONDS"]); err == nil {
 			cfg.RapidOCRTimeoutSeconds = parsed
@@ -245,6 +262,9 @@ func applyEnvOverrides(cfg *Config, env map[string]string) {
 	}
 	if env["SNAPTRANS_SHORTCUT"] != "" {
 		cfg.ShortcutKey = env["SNAPTRANS_SHORTCUT"]
+	}
+	if env["SNAPTRANS_SCREENSHOT_SHORTCUT"] != "" {
+		cfg.ScreenshotShortcutKey = env["SNAPTRANS_SCREENSHOT_SHORTCUT"]
 	}
 	if env["RAPIDOCR_TIMEOUT_SECONDS"] != "" {
 		if parsed, err := strconv.Atoi(env["RAPIDOCR_TIMEOUT_SECONDS"]); err == nil {

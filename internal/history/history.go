@@ -65,7 +65,7 @@ func (s *Store) Add(source string, translation string, direction string) error {
 // List returns the stored entries, most recent first.
 func (s *Store) List() ([]Entry, error) {
 	if s == nil || s.path == "" {
-		return nil, nil
+		return []Entry{}, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -90,7 +90,7 @@ func (s *Store) loadLocked() ([]Entry, error) {
 	raw, err := os.ReadFile(s.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+			return []Entry{}, nil
 		}
 		return nil, err
 	}
@@ -98,6 +98,9 @@ func (s *Store) loadLocked() ([]Entry, error) {
 	var entries []Entry
 	if err := json.Unmarshal(raw, &entries); err != nil {
 		return nil, fmt.Errorf("history: parse %s: %w", s.path, err)
+	}
+	if entries == nil {
+		entries = []Entry{}
 	}
 	return entries, nil
 }

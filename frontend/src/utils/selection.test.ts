@@ -11,6 +11,7 @@ import {
   sampleCanvasColor,
 	sampleCanvasForegroundColor,
 	selectionBadgePosition,
+  shouldUseFlowTranslationLayout,
   translationPaletteForColor,
   translationPaletteForLuminance,
   wrapTranslationText
@@ -183,6 +184,79 @@ describe("mapOCRBlockToSelection", () => {
         height: 24
       })
     ).toBeLessThanOrEqual(17);
+  });
+});
+
+describe("shouldUseFlowTranslationLayout", () => {
+  it("keeps dense navigation and form controls in their original rows", () => {
+    const blocks = [
+      { text: "All Models", x: 0.01, y: 0.04, width: 0.07, height: 0.08 },
+      { text: "Add Model", x: 0.09, y: 0.04, width: 0.07, height: 0.08 },
+      { text: "LLM Credentials", x: 0.17, y: 0.04, width: 0.12, height: 0.08 },
+      { text: "Pass-Through Endpoints", x: 0.3, y: 0.04, width: 0.16, height: 0.08 },
+      { text: "Health Status", x: 0.47, y: 0.04, width: 0.1, height: 0.08 },
+      { text: "Model Retry Settings", x: 0.58, y: 0.04, width: 0.14, height: 0.08 },
+      {
+        text: "To access these models: Create a Virtual Key without selecting a team on the Virtual Keys page",
+        x: 0.02,
+        y: 0.58,
+        width: 0.78,
+        height: 0.12
+      }
+    ];
+
+    expect(shouldUseFlowTranslationLayout(blocks)).toBe(false);
+  });
+
+  it("uses flow layout for paragraph-like rows", () => {
+    const blocks = [
+      {
+        text: "The space of AI-assisted coding is evolving rapidly.",
+        x: 0.02,
+        y: 0.04,
+        width: 0.82,
+        height: 0.12
+      },
+      {
+        text: "Each day, this pipeline reviews new discussions and records the results.",
+        x: 0.02,
+        y: 0.22,
+        width: 0.88,
+        height: 0.12
+      }
+    ];
+
+    expect(shouldUseFlowTranslationLayout(blocks)).toBe(true);
+  });
+
+  it("keeps vertically stacked form labels and helper text in place", () => {
+    const blocks = [
+      { text: "LiteLLM", x: 0.38, y: 0.09, width: 0.12, height: 0.05 },
+      { text: "Login", x: 0.41, y: 0.17, width: 0.07, height: 0.04 },
+      { text: "Access your LiteLLM Admin UI.", x: 0.36, y: 0.23, width: 0.2, height: 0.03 },
+      { text: "Default Credentials", x: 0.3, y: 0.31, width: 0.15, height: 0.04 },
+      {
+        text: "By default, Username is admin and Password is your set LiteLLM Proxy MASTER_KEY",
+        x: 0.3,
+        y: 0.37,
+        width: 0.34,
+        height: 0.07
+      },
+      {
+        text: "Need to setup UI credentials or SSO? Check the documentation.",
+        x: 0.3,
+        y: 0.48,
+        width: 0.3,
+        height: 0.06
+      },
+      { text: "Username", x: 0.25, y: 0.58, width: 0.08, height: 0.03 },
+      { text: "admin", x: 0.26, y: 0.63, width: 0.06, height: 0.03 },
+      { text: "Password", x: 0.25, y: 0.7, width: 0.08, height: 0.03 },
+      { text: "Login", x: 0.42, y: 0.8, width: 0.05, height: 0.04 },
+      { text: "Login with SSO", x: 0.38, y: 0.89, width: 0.13, height: 0.04 }
+    ];
+
+    expect(shouldUseFlowTranslationLayout(blocks)).toBe(false);
   });
 });
 

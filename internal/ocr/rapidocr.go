@@ -94,13 +94,13 @@ func (r *RapidOCR) ExtractResult(ctx context.Context, imageDataURL string) (Resu
 
 	startedAt := time.Now()
 	cmd := NewRapidOCRCommand(runCtx, resolvedExecutable, tempPath)
-	output, err := cmd.CombinedOutput()
+	output, err := combinedOutputGuarded(cmd)
 	if err != nil && runCtx.Err() == nil && time.Since(startedAt) < 3*time.Second {
 		// The documented v0.2.0 argument shape is --image_path=. If the
 		// first attempt failed fast (likely an unknown option error),
 		// retry once with that shape.
 		altCmd := NewRapidOCRCommandWithImagePathArg(runCtx, resolvedExecutable, tempPath)
-		output, err = altCmd.CombinedOutput()
+		output, err = combinedOutputGuarded(altCmd)
 	}
 	if runCtx.Err() != nil {
 		return Result{}, fmt.Errorf("RapidOCR timed out after %s", r.Timeout)
@@ -110,6 +110,25 @@ func (r *RapidOCR) ExtractResult(ctx context.Context, imageDataURL string) (Resu
 	}
 
 	return ExtractResultFromJSON(output, imageWidth, imageHeight)
+}
+
+func combinedOutputGuarded(cmd *exec.Cmd) ([]byte, error) {
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err := cmd.Start(); err != nil {
+		return output.Bytes(), err
+	}
+
+	guard, err := guardOCRProcess(cmd.Process)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return output.Bytes(), fmt.Errorf("guard OCR process: %w", err)
+	}
+	waitErr := cmd.Wait()
+	_ = guard.Close()
+	return output.Bytes(), waitErr
 }
 
 func NewRapidOCRCommand(ctx context.Context, resolvedExecutable string, imagePath string) *exec.Cmd {

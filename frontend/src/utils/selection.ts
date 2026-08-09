@@ -210,6 +210,32 @@ export function normalizeResultBox(selection: Rect, viewport: Size): Rect {
 }
 
 export function cropCanvasToDataUrl(canvas: HTMLCanvasElement, imageRect: Rect): string {
+	return createCroppedCanvas(canvas, imageRect).toDataURL("image/png");
+}
+
+export async function cropCanvasToDataUrlAsync(
+	canvas: HTMLCanvasElement,
+	imageRect: Rect
+): Promise<string> {
+	const target = createCroppedCanvas(canvas, imageRect);
+	if (typeof target.toBlob !== "function") {
+		return target.toDataURL("image/png");
+	}
+
+	const blob = await new Promise<Blob>((resolve, reject) => {
+		target.toBlob((encoded) => {
+			if (encoded) {
+				resolve(encoded);
+				return;
+			}
+			reject(new Error("Failed to encode selected image"));
+		}, "image/png");
+	});
+
+	return blobToDataUrl(blob);
+}
+
+function createCroppedCanvas(canvas: HTMLCanvasElement, imageRect: Rect): HTMLCanvasElement {
   const scale = ocrScaleForRect(imageRect);
   const target = document.createElement("canvas");
   target.width = Math.max(1, Math.round(imageRect.width * scale));
@@ -234,7 +260,22 @@ export function cropCanvasToDataUrl(canvas: HTMLCanvasElement, imageRect: Rect):
     target.height
   );
 
-  return target.toDataURL("image/png");
+	return target;
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onerror = () => reject(reader.error ?? new Error("Failed to read selected image"));
+		reader.onload = () => {
+			if (typeof reader.result === "string") {
+				resolve(reader.result);
+				return;
+			}
+			reject(new Error("Failed to read selected image"));
+		};
+		reader.readAsDataURL(blob);
+	});
 }
 
 export function ocrScaleForRect(imageRect: Rect): number {
@@ -267,12 +308,65 @@ export function shouldUseFlowTranslationLayout(blocks: OCRBlock[]): boolean {
     return false;
   }
 
+  // Navigation bars, toolbars, tables, and form grids often contain one
+  // long help sentence next to several compact controls. Treating that as
+  // prose makes the anchored layout serialize same-row controls vertically,
+  // which visibly shifts every translation below its source label.
+  if (hasDenseCompactRow(textBlocks)) {
+    return false;
+  }
+
+  // Settings pages and forms can contain one or two long help messages among
+  // many short labels. Those labels belong to independent controls, so a
+  // prose layout would turn them into full-width rows and cover nearby UI.
+  if (hasStackedCompactControls(textBlocks)) {
+    return false;
+  }
+
   const longBlocks = textBlocks.filter((block) => normalizedTextLength(block.text) >= 32);
   const wideTextBlocks = textBlocks.filter(
     (block) => block.width >= 0.42 && normalizedTextLength(block.text) >= 18
   );
 
   return wideTextBlocks.length >= 1 || longBlocks.length >= 2 || (textBlocks.length >= 6 && longBlocks.length >= 1);
+}
+
+function hasDenseCompactRow(blocks: OCRBlock[]): boolean {
+  const compact = blocks.filter(
+    (block) => block.width <= 0.24 && normalizedTextLength(block.text) <= 28
+  );
+  return compact.some(
+    (anchor) => compact.filter((candidate) => blocksShareVisualRow(anchor, candidate)).length >= 3
+  );
+}
+
+function hasStackedCompactControls(blocks: OCRBlock[]): boolean {
+  if (blocks.length < 6) {
+    return false;
+  }
+
+  const compactLabels = blocks.filter(
+    (block) => block.width <= 0.24 && normalizedTextLength(block.text) <= 28
+  );
+  const longBlocks = blocks.filter((block) => normalizedTextLength(block.text) >= 32);
+
+  return (
+    compactLabels.length >= 4 &&
+    compactLabels.length >= Math.ceil(blocks.length * 0.5) &&
+    longBlocks.length <= Math.max(2, Math.floor(blocks.length * 0.3))
+  );
+}
+
+function blocksShareVisualRow(left: OCRBlock, right: OCRBlock): boolean {
+  const overlap = Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y);
+  const minimumHeight = Math.max(0.001, Math.min(left.height, right.height));
+  if (overlap >= minimumHeight * 0.35) {
+    return true;
+  }
+
+  const leftCenter = left.y + left.height / 2;
+  const rightCenter = right.y + right.height / 2;
+  return Math.abs(leftCenter - rightCenter) <= minimumHeight * 0.55;
 }
 
 export function fontSizeForOCRBlock(block: OCRBlock, selectionHeight: number): number {

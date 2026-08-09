@@ -1,252 +1,255 @@
+<div align="center">
+
 # snapTrans
 
-snapTrans 是一个极简 Windows 截图翻译工具。
-snapTrans is a minimalist Windows screenshot translation tool.
+**面向 Windows 的轻量级截图翻译与截图标注工具**
 
-目标体验很直接：按下全局快捷键，拖出选区，松开鼠标，然后在原屏幕区域上直接流式显示翻译结果。鼠标松开后不再出现确认按钮。
-The intended experience is direct: press the global shortcut, draw a selection box, release the mouse, and watch the translation stream over the original screen area. No confirmation button appears after mouse release.
+按下快捷键，框选屏幕区域；松开鼠标后立即 OCR，并在原位置流式显示翻译结果。
 
-## 直接使用 / Direct Use
+[![Windows](https://img.shields.io/badge/platform-Windows_10%2F11-0078D4?logo=windows11&logoColor=white)](https://www.microsoft.com/windows/)
+[![Wails](https://img.shields.io/badge/Wails-v2-DF0000?logo=wails&logoColor=white)](https://wails.io/)
+[![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Vue](https://img.shields.io/badge/Vue-3-42B883?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 
-仓库已经包含可直接运行的 Windows 产物：
-This repository includes a runnable Windows build:
+[快速开始](#-快速开始) · [核心功能](#-核心功能) · [配置说明](#%EF%B8%8F-配置说明) · [本地开发](#-本地开发) · [项目架构](#%EF%B8%8F-项目架构)
+
+</div>
+
+---
+
+## ✨ 为什么选择 snapTrans
+
+snapTrans 将“截图、识别、翻译、阅读”压缩成一次自然的鼠标动作。它不会在框选完成后弹出确认窗口，也不会打断当前工作流。
+
+| 工作模式 | 默认快捷键 | 交互体验 |
+| --- | --- | --- |
+| 截图翻译 | <kbd>Alt</kbd> + <kbd>Q</kbd> | 冻结屏幕 → 拖出选区 → 松开鼠标 → 原位流式翻译 |
+| 截图涂鸦 | <kbd>Alt</kbd> + <kbd>W</kbd> | 冻结屏幕 → 拖出选区 → 标注 → 复制或保存 PNG |
+
+> 两套快捷键互相独立。截图翻译始终保持“松手即翻译”，截图涂鸦则在选区旁显示紧凑工具栏。
+
+## 🚀 核心功能
+
+### 即时截图翻译
+
+- **本地 OCR**：通过 RapidOCR 在本机完成文字识别。
+- **原位覆盖**：译文直接显示在截图选区上，不需要切换窗口。
+- **流式响应**：兼容 DeepSeek、LiteLLM 及其他 OpenAI-compatible API。
+- **智能排版**：根据 OCR 文本块位置，在表格、表单和长文本之间自动选择合适布局。
+- **自动方向**：自动判断中译英或英译中，也可以针对当前结果手动反向翻译。
+- **高 DPI 支持**：处理多显示器、缩放比例和物理像素映射，减少选区偏移。
+
+### 微信式截图涂鸦
+
+- 矩形、椭圆、实心箭头、自由画笔
+- 马赛克、文字、表情标注
+- 自定义标注颜色与撤销
+- 完成后复制到剪贴板，或通过 Windows 原生对话框保存 PNG
+- 工具栏自动贴合选区并避让屏幕边缘
+
+### 桌面体验
+
+- 全局快捷键可视化录入
+- Windows 系统托盘：`Capture`、`Screenshot`、`Settings`、`Quit`
+- RapidOCR 常驻预热，失败时自动回退到单次调用
+- 最近 50 条翻译历史
+- 自动复制、开机自启、连接测试和本地诊断日志
+- 中英文设置界面与单实例保护
+
+## 📦 快速开始
+
+### 运行已构建版本
+
+Windows 发布目录应保持如下结构：
 
 ```text
 build/bin/
-  snapTrans.exe
-  RapidOCR-json_v0.2.0/
-    RapidOCR-json.exe
-    models/
+├── snapTrans.exe
+└── RapidOCR-json_v0.2.0/
+    ├── RapidOCR-json.exe
+    └── models/
 ```
 
-快速启动：
-Quick start:
+1. 运行 `build/bin/snapTrans.exe`，应用会进入系统托盘。
+2. 右键托盘图标，打开 `Settings`。
+3. 配置 API Key、Base URL 和模型名称。
+4. 确认 RapidOCR 路径，保存设置。
+5. 按 <kbd>Alt</kbd> + <kbd>Q</kbd> 截图翻译，或按 <kbd>Alt</kbd> + <kbd>W</kbd> 截图涂鸦。
 
-1. 双击或运行 `build/bin/snapTrans.exe`。
-   Run `build/bin/snapTrans.exe`.
-2. 程序默认进入托盘，右键托盘图标打开 `Settings`。
-   The app starts in the system tray. Right-click the tray icon and open `Settings`.
-3. 填入 LiteLLM Virtual Key、API Base URL（通常以 `/v1` 结尾）和模型名，保持 `RapidOCR Path` 为默认值 `./RapidOCR-json_v0.2.0`。
-   Fill the LiteLLM Virtual Key, API Base URL (usually ending in `/v1`), Model, and keep `RapidOCR Path` as `./RapidOCR-json_v0.2.0`.
-4. 保存后按默认快捷键 `Alt+Q` 开始截图翻译。
-   Save and press the default shortcut `Alt+Q` to capture and translate.
+RapidOCR 路径既可以填写文件夹，也可以填写完整可执行文件路径：
 
-默认 OCR 路径会按顺序检查当前工作目录、`snapTrans.exe` 所在目录，以及从 `build/bin` 运行时对应的项目根目录。因此只要 `RapidOCR-json_v0.2.0` 放在 `snapTrans.exe` 旁边，默认配置即可工作。
-The default OCR path checks the current working directory, the directory containing `snapTrans.exe`, and the project root when running from `build/bin`. Keeping `RapidOCR-json_v0.2.0` next to `snapTrans.exe` works with the default configuration.
-
-不要提交真实 API key。配置会保存到当前用户的系统配置目录中。
-Do not commit real API keys. Settings are saved in the current user's OS config directory.
-
-## 从源码运行 / Run From Source
-
-环境要求：
-Requirements:
-
-- Windows 10/11
-- Go 1.21+
-- Wails v2 CLI
-- Node.js 22+ and npm
-- LiteLLM Virtual Key or another OpenAI-compatible API key
-
-安装前端依赖：
-Install frontend dependencies:
-
-```powershell
-cd frontend
-npm install
+```text
+./RapidOCR-json_v0.2.0
+D:/Tools/RapidOCR-json_v0.2.0
+D:/Tools/RapidOCR-json_v0.2.0/RapidOCR-json.exe
 ```
 
-可选：复制环境变量示例，便于开发时从 `.env` 读取配置。
-Optional: copy the environment example for local development.
+## ⚙️ 配置说明
 
-```powershell
-cd E:\workspace\snapTrans
-Copy-Item .env.sample .env
-```
+默认配置与当前代码保持一致：
 
-编辑 `.env` 并填入自己的 key：
-Edit `.env` and fill your own key:
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| 截图翻译快捷键 | `Alt+Q` | 松开鼠标后立即开始 OCR 和翻译 |
+| 截图涂鸦快捷键 | `Alt+W` | 松开鼠标后进入标注模式 |
+| API Base URL | `https://api.deepseek.com` | 支持 OpenAI-compatible 服务 |
+| 模型 | `deepseek-chat` | 可替换为服务商暴露的模型 ID |
+| RapidOCR 路径 | `./RapidOCR-json_v0.2.0` | 支持文件夹或 EXE 路径 |
+| OCR 超时 | `15s` | 单次识别最大等待时间 |
+| 自动识别方向 | 开启 | 根据 OCR 文本自动选择翻译方向 |
+| OCR 常驻预热 | 开启 | 降低第一次及后续识别延迟 |
+
+设置会保存到当前用户的系统配置目录。开发环境也可以通过根目录 `.env` 提供配置：
 
 ```dotenv
-LLM_API_KEY=your_litellm_virtual_key
-LLM_BASE_URL=https://your-litellm-host/v1
-LLM_MODEL=gemini/gemini-3.5-flash-lite
+LLM_API_KEY=your_api_key
+LLM_BASE_URL=https://your-openai-compatible-host/v1
+LLM_MODEL=your-model-id
+
 RAPIDOCR_EXE_PATH=./RapidOCR-json_v0.2.0
 RAPIDOCR_TIMEOUT_SECONDS=15
+
 SNAPTRANS_SHORTCUT=Alt+Q
+SNAPTRANS_SCREENSHOT_SHORTCUT=Alt+W
 SNAPTRANS_AUTO_DIRECTION=true
 SNAPTRANS_PERSISTENT_OCR=true
 SNAPTRANS_AUTO_COPY=false
 ```
 
-构建前端并运行测试：
-Build and test:
+> 请勿提交真实 API Key、`.env`、OCR 二进制文件或本地配置。
+
+## 🛠 本地开发
+
+### 环境要求
+
+- Windows 10/11
+- Go 1.22+
+- Node.js 22+ 与 npm
+- Wails v2 CLI
+- RapidOCR-json v0.2.0
+- DeepSeek、LiteLLM 或其他 OpenAI-compatible API 凭据
+
+### 安装与启动
 
 ```powershell
+git clone https://github.com/papacs/snapTrans.git
+cd snapTrans
+
+Copy-Item .env.sample .env
+
 cd frontend
-npm test
-npm run build
-
+npm install
 cd ..
-go test ./...
-```
 
-开发模式：
-Desktop development:
-
-```powershell
 wails dev
 ```
 
-生产构建：
-Production build:
-
-```powershell
-wails build
-```
-
-## 前端预览 / Frontend-Only Preview
-
-如果还没有安装 Wails，也可以用模拟截图和流式响应预览前端：
-If Wails is not installed yet, the frontend can still be previewed with a simulated capture and streamed response:
+仅预览前端界面：
 
 ```powershell
 cd frontend
 npm run dev
 ```
 
-打开 Vite URL，点击右上角的 `Capture` 按钮。
-Open the Vite URL and use the `Capture` button in the top-right corner.
+浏览器预览模式会生成模拟截图和流式翻译事件，不依赖 Wails 或本地 OCR。
 
-## 配置 / Configuration
-
-默认配置：
-Defaults:
-
-```text
-Shortcut: Alt+Q
-LLM API Base URL: https://your-litellm-host/v1
-LLM Model: gemini/gemini-3.5-flash-lite
-RapidOCR Path: ./RapidOCR-json_v0.2.0
-RapidOCR Timeout: 15 seconds
-```
-
-配置来源：
-Configuration sources:
-
-- Settings 窗口保存到用户配置目录。
-  Settings window saves to the user's config directory.
-- `.env` 仅用于本地开发兜底，并被 git 忽略。
-  `.env` is only a local development fallback and is ignored by git.
-- `.env.sample` 可以提交，真实 `.env` 不要提交。
-  `.env.sample` can be committed; real `.env` files must not be committed.
-
-## OCR Binary
-
-RapidOCR 发布包必须保持 `RapidOCR-json.exe` 和 `models` 文件夹在一起。
-The RapidOCR release must keep `RapidOCR-json.exe` and the `models` folder together.
-
-推荐布局：
-Recommended layout:
-
-```text
-build/bin/
-  snapTrans.exe
-  RapidOCR-json_v0.2.0/
-    RapidOCR-json.exe
-    models/
-```
-
-也支持将 `RapidOCR Path` 设置为文件夹或可执行文件：
-`RapidOCR Path` can point to either the folder or the executable:
-
-```text
-./RapidOCR-json_v0.2.0
-E:/workspace/snapTrans/build/bin/RapidOCR-json_v0.2.0
-E:/workspace/snapTrans/build/bin/RapidOCR-json_v0.2.0/RapidOCR-json.exe
-```
-
-OCR 封装会在 RapidOCR 可执行文件目录下运行命令，这样可以正确找到同级 `models` 文件夹。
-The OCR wrapper runs the command from the RapidOCR executable directory so the adjacent `models` folder can be found.
-
-## 快捷键 / Shortcut
-
-默认快捷键是 `Alt+Q`。Settings 窗口可以保存快捷键字符串，后端支持常见组合，例如 `Alt+Q`、`Ctrl+Shift+S` 和 `Alt+Space`。
-The default shortcut is `Alt+Q`. The Settings window can save a shortcut string, and the backend parses common combinations such as `Alt+Q`, `Ctrl+Shift+S`, and `Alt+Space`.
-
-## 托盘与取消 / Tray And Cancellation
-
-应用启动后默认隐藏，并添加 Windows 托盘菜单，包含 `Capture`、`Settings` 和 `Quit`。截图过程中可以按 `Esc` 或右键取消，并回到隐藏托盘状态。
-The app starts hidden and adds a Windows tray menu with `Capture`, `Settings`, and `Quit`. During capture, press `Esc` or right-click to cancel and return to the hidden tray state.
-
-## 更多功能 / Additional Features
-
-- **单实例 / Single instance**: 重复启动会提示已有实例，避免热键与托盘冲突。
-  Starting a second instance shows a message box instead of duplicating the tray and hotkey.
-- **常驻 OCR / Persistent OCR**: RapidOCR 以 stdin 循环模式常驻运行并随应用预热，显著降低每次截图的冷启动延迟；失败时自动回退到单次调用。常驻期间任务管理器里可见一个 `RapidOCR-json.exe` 进程，退出应用时自动关闭；可在设置中关闭常驻以省内存。
-  RapidOCR runs as a persistent stdin-loop worker and warms up at startup; failures fall back to one-shot invocations. While resident, one `RapidOCR-json.exe` process is visible in Task Manager and exits with the app; the setting can disable residency to save memory.
-- **自动方向 / Auto direction**: 默认按 OCR 文本自动选择翻译方向（中文为主 → 译英，否则译中），可在设置中关闭；手动反向在本次结果内保持，下次截图恢复自动。
-  The translation direction is detected from the OCR text by default; the reverse button overrides it for the current result.
-- **翻译历史 / History**: 最近 50 条翻译保存在设置窗口，可复制或清空。
-  The latest 50 translations are shown in Settings and can be copied or cleared.
-- **测试连接 / Test connection**: 设置页一键校验 API key、Base URL 与模型。
-  One-click validation of the LLM endpoint in Settings.
-- **快捷键录制 / Shortcut recorder**: 设置页点击 Record 后直接按键生成快捷键字符串。
-  Press the Record button, then the desired key combination.
-- **启动自检 / Environment status**: 设置页显示 OCR 可执行文件与 API key 状态徽章。
-  Settings shows OCR and API key readiness badges.
-- **开机自启 / Autostart**: 设置页开关注册到注册表 Run 键。
-  Start with Windows is managed through the registry Run key.
-- **自定义提示词与术语表 / Custom prompt & glossary**: 可选地为翻译模型追加指令和术语对照表。
-  Optional extra instructions and a source->target glossary for the model.
-- **自动复制 / Auto-copy**: 设置中开启后，翻译完成自动复制结果到剪贴板。
-  When enabled in Settings, the translation result is copied to the clipboard automatically.
-- **本地日志 / Logs**: 错误写入用户配置目录 `logs/snaptrans.log`（无遥测），包含各阶段耗时。
-  Errors and per-stage timings are logged locally without any telemetry.
-
-## 架构 / Architecture
-
-- `app.go`: Wails 绑定方法和工作流事件。
-- `internal/config`: 本地配置和 `.env` fallback。
-- `internal/capture`: 屏幕截图、PNG data URL 编码和按显示器 DPI 的坐标元数据。
-- `internal/hotkeys`: 全局快捷键注册。
-- `internal/ocr`: RapidOCR 常驻 worker（stdin 循环）与单次调用封装、JSON 文本提取。
-- `internal/translator`: OpenAI-compatible streaming translation (LiteLLM supported)。
-- `internal/history`: 翻译历史持久化。
-- `internal/autostart`: Windows 注册表开机自启。
-- `internal/logfile`: 本地诊断日志。
-- `internal/singleinstance`: 单实例互斥。
-- `frontend/src/services/backend.ts`: Wails bridge 和浏览器 fallback。
-- `frontend/src/utils/selection.ts`: CSS 到图片坐标映射（含多显示器 DPI 缩放）、裁剪和翻译排版辅助函数。
-- `frontend/src/utils/shortcut.ts`: 快捷键录制解析。
-
-## 验证 / Verification
-
-前端测试、类型检查和构建：
-Frontend tests, type check, and build:
+### 构建
 
 ```powershell
+cd frontend
+npm run build
+cd ..
+
+wails build
+```
+
+## ✅ 质量验证
+
+```powershell
+# 前端测试、类型检查与生产构建
 cd frontend
 npm test
 npm run typecheck
 npm run build
-```
 
-后端测试：
-Backend tests:
-
-```powershell
+# Go 后端测试
+cd ..
 go test ./...
 ```
 
-桌面开发运行：
-Desktop dev run:
+重点测试范围包括：
 
-```powershell
-wails dev
+- DPI 与截图选区坐标映射
+- 截图/翻译状态切换和过期事件隔离
+- OCR 输出解析、常驻 worker 与回退策略
+- 配置迁移、双快捷键和历史记录
+- 翻译布局、流式输出与截图标注几何
+
+## 🏗️ 项目架构
+
+```text
+snapTrans/
+├── app.go                         # Wails 绑定、工作流、托盘与快捷键
+├── screen_windows.go              # Windows 窗口/显示器能力
+├── internal/
+│   ├── capture/                   # 屏幕捕获、DPI 与显示器元数据
+│   ├── config/                    # 用户配置、默认值与环境变量
+│   ├── hotkeys/                   # 全局快捷键注册
+│   ├── ocr/                       # RapidOCR worker、解析与回退
+│   ├── translator/                # OpenAI-compatible 流式翻译
+│   ├── history/                   # 本地翻译历史
+│   ├── autostart/                 # Windows 开机自启
+│   ├── logfile/                   # 本地诊断日志
+│   └── singleinstance/            # 单实例保护
+└── frontend/src/
+    ├── App.vue                    # 捕获、翻译和设置主状态机
+    ├── components/                # 截图标注等独立组件
+    ├── services/backend.ts        # Wails 调用边界与浏览器 fallback
+    ├── utils/selection.ts         # 坐标映射、裁剪与翻译布局
+    └── utils/annotations.ts       # 标注几何与 Canvas 渲染
 ```
 
-## 开发待办 / Development TODOs
+核心数据流：
 
-详见 `docs/TODO.md`。
-See `docs/TODO.md`.
+```text
+全局快捷键
+   ↓
+冻结当前显示器 → 框选区域 → 本地 RapidOCR
+   ↓                           ↓
+截图涂鸦 / 复制 / 保存        仅发送识别后的文本
+                               ↓
+                     OpenAI-compatible 流式翻译
+                               ↓
+                         原屏幕区域覆盖显示
+```
+
+## 🔐 隐私与安全
+
+- 截图和 OCR 处理保留在本机；翻译服务仅接收 OCR 提取出的文本。
+- API Key 保存在用户本地配置中，不应写入源码或提交到 Git。
+- snapTrans 不包含遥测；错误和耗时只写入本地日志。
+- 发布包需要由使用者自行准备 RapidOCR 程序与模型文件。
+
+## 🤝 参与贡献
+
+欢迎提交 Issue 和 Pull Request。修改代码时请优先保证：
+
+1. 松开鼠标后立即翻译，不增加确认步骤。
+2. DPI、多显示器和坐标映射保持正确。
+3. 前后端调用统一通过明确边界，并为状态转换和解析行为补充测试。
+4. 不提交 API Key、OCR 二进制、生成构建产物或本地配置。
+
+更多开发约定请查看 [AGENTS.md](AGENTS.md)，待办事项请查看 [docs/TODO.md](docs/TODO.md)。
+
+## 📄 License
+
+本项目基于 [MIT License](LICENSE) 开源。
+
+---
+
+<div align="center">
+
+**snapTrans — capture less, understand faster.**
+
+</div>

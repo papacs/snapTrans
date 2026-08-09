@@ -1,11 +1,21 @@
 package translator
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	openai "github.com/sashabaranov/go-openai"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRetryStreamStartErrorOnlyRetriesEOFBeforeFirstToken(t *testing.T) {
+	require.True(t, shouldRetryStreamStartError("", errors.New(`Post "https://example.test/chat/completions": EOF`)))
+	require.True(t, shouldRetryStreamStartError("", errors.New("unexpected EOF")))
+	require.False(t, shouldRetryStreamStartError("partial", errors.New("unexpected EOF")))
+	require.False(t, shouldRetryStreamStartError("", context.Canceled))
+	require.False(t, shouldRetryStreamStartError("", errors.New("401 unauthorized")))
+}
 
 func TestBuildTranslationRequestNumbersOCRLinesAndForbidsReadinessReplies(t *testing.T) {
 	request := buildTranslationRequest("deepseek-chat", "Neutral\nNegative\nPositive", DirectionToChinese, "", "")

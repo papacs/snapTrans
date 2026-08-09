@@ -6,7 +6,9 @@ const backendMocks = vi.hoisted(() => {
   type Listener = (payload: unknown) => void;
   const listeners = new Map<string, Set<Listener>>();
   const defaultConfig = {
+    uiLanguage: "zh-CN" as const,
     shortcutKey: "Alt+Q",
+    screenshotShortcutKey: "Alt+W",
     apiKey: "",
     baseURL: "https://api.deepseek.com",
     model: "deepseek-chat",
@@ -31,11 +33,15 @@ const backendMocks = vi.hoisted(() => {
     emit,
     copyImageDataUrl: vi.fn(async () => {}),
     copyText: vi.fn(async () => {}),
+    frontendReady: vi.fn(async () => {}),
+    getHistory: vi.fn(async () => []),
     hideWindow: vi.fn(async () => {}),
     isDesktop: false,
     loadConfig: vi.fn(async () => ({ ...defaultConfig })),
     processImage: vi.fn(async (_image: string, _direction: string, _generation: number) => {}),
+    saveScreenshot: vi.fn(async () => "capture.png"),
     showCaptureWindow: vi.fn(async () => {}),
+    showSettingsWindow: vi.fn(async () => {}),
     triggerCapture: vi.fn(async () => {
       emit("capture-start", {
         image: "data:image/png;base64,ZmFrZQ==",
@@ -45,6 +51,17 @@ const backendMocks = vi.hoisted(() => {
         originY: 0,
         source: "browser"
       });
+    }),
+    triggerScreenshot: vi.fn(async () => {
+      emit("capture-start", {
+        image: "data:image/png;base64,ZmFrZQ==",
+        width: 800,
+        height: 600,
+        originX: 0,
+        originY: 0,
+        source: "browser",
+        mode: "screenshot"
+      });
     })
   };
 });
@@ -53,6 +70,8 @@ vi.mock("./services/backend", () => ({
   copyImageDataUrl: backendMocks.copyImageDataUrl,
   copyText: backendMocks.copyText,
   defaultConfig: backendMocks.defaultConfig,
+  frontendReady: backendMocks.frontendReady,
+  getHistory: backendMocks.getHistory,
   hasWailsBackend: () => backendMocks.isDesktop,
   hideWindow: backendMocks.hideWindow,
   loadConfig: backendMocks.loadConfig,
@@ -63,9 +82,12 @@ vi.mock("./services/backend", () => ({
     return () => listeners.delete(callback);
   },
   processImage: backendMocks.processImage,
+  saveScreenshot: backendMocks.saveScreenshot,
   saveConfig: vi.fn(async () => {}),
   showCaptureWindow: backendMocks.showCaptureWindow,
-  triggerCapture: backendMocks.triggerCapture
+  showSettingsWindow: backendMocks.showSettingsWindow,
+  triggerCapture: backendMocks.triggerCapture,
+  triggerScreenshot: backendMocks.triggerScreenshot
 }));
 
 class MockImage {
@@ -79,6 +101,38 @@ class MockImage {
   }
 }
 
+class ControlledImage {
+  naturalWidth = 800;
+  naturalHeight = 600;
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  source = "";
+
+  set src(value: string) {
+    this.source = value;
+    controlledImages.push(this);
+  }
+
+  resolve(): void {
+    this.onload?.();
+  }
+}
+
+class MockFileReader {
+	result: string | ArrayBuffer | null = null;
+	error: DOMException | null = null;
+	onload: (() => void) | null = null;
+	onerror: (() => void) | null = null;
+
+	readAsDataURL(_blob: Blob): void {
+		this.result = "data:image/png;base64,c2VsZWN0aW9u";
+		queueMicrotask(() => this.onload?.());
+	}
+}
+
+const controlledImages: ControlledImage[] = [];
+let drawImageMock: ReturnType<typeof vi.fn>;
+
 function stylePx(style: string | undefined, property: string): number {
   const match = new RegExp(`${property}:\\s*(-?\\d+(?:\\.\\d+)?)px`).exec(style ?? "");
   return match ? Number.parseFloat(match[1]) : Number.NaN;
@@ -90,12 +144,19 @@ describe("App capture cancellation", () => {
     backendMocks.hideWindow.mockClear();
     backendMocks.copyImageDataUrl.mockClear();
     backendMocks.copyText.mockClear();
+    backendMocks.frontendReady.mockClear();
+    backendMocks.getHistory.mockClear();
     backendMocks.isDesktop = false;
     backendMocks.processImage.mockClear();
+    backendMocks.saveScreenshot.mockClear();
     backendMocks.showCaptureWindow.mockClear();
+    backendMocks.showSettingsWindow.mockClear();
     backendMocks.triggerCapture.mockClear();
     backendMocks.loadConfig.mockClear();
+    controlledImages.length = 0;
+    drawImageMock = vi.fn();
     vi.stubGlobal("Image", MockImage);
+		vi.stubGlobal("FileReader", MockFileReader);
     const getImageData = vi.fn((x: number, _y: number, width: number) => {
       const textColor =
         x > 150 && width > 500
@@ -115,14 +176,23 @@ describe("App capture cancellation", () => {
     });
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
       clearRect: vi.fn(),
-      drawImage: vi.fn(),
+      drawImage: drawImageMock,
       fillRect: vi.fn(),
       fillText: vi.fn(),
+      beginPath: vi.fn(),
+      ellipse: vi.fn(),
       getImageData,
+      lineTo: vi.fn(),
       measureText: vi.fn((text: string) => ({ width: text.length * 16 })),
+      moveTo: vi.fn(),
       restore: vi.fn(),
-      save: vi.fn()
+      save: vi.fn(),
+      stroke: vi.fn(),
+      strokeRect: vi.fn()
     } as unknown as CanvasRenderingContext2D);
+		vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => {
+			callback(new Blob(["selection"], { type: "image/png" }));
+		});
     vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,c2VsZWN0aW9u");
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
       x: 0,
@@ -174,6 +244,83 @@ describe("App capture cancellation", () => {
     expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
   });
 
+  it("opens the annotation toolbar for screenshot mode and copies the edited image", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    backendMocks.emit("capture-start", {
+      image: "data:image/png;base64,ZmFrZQ==",
+      width: 800,
+      height: 600,
+      originX: 0,
+      originY: 0,
+      source: "browser",
+      mode: "screenshot"
+    });
+    await flushPromises();
+
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { button: 0, clientX: 80, clientY: 70 });
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 520, clientY: 360 }));
+    window.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 520, clientY: 360 }));
+    await flushPromises();
+
+    expect(wrapper.find("[data-testid='screenshot-toolbar']").exists()).toBe(true);
+    expect(backendMocks.processImage).not.toHaveBeenCalled();
+
+    await wrapper.find("[data-testid='annotation-rectangle']").trigger("click");
+    const editor = wrapper.find("[data-testid='screenshot-editor'] canvas");
+    await editor.trigger("mousedown", { button: 0, clientX: 120, clientY: 120 });
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 260, clientY: 220 }));
+    window.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 260, clientY: 220 }));
+    await wrapper.find("[data-testid='screenshot-complete']").trigger("click");
+    await flushPromises();
+
+    expect(backendMocks.copyImageDataUrl).toHaveBeenCalledWith("data:image/png;base64,c2VsZWN0aW9u");
+    expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores an older screenshot that finishes loading after a newer capture", async () => {
+    vi.stubGlobal("Image", ControlledImage);
+    mount(App);
+    await flushPromises();
+
+    const olderPayload = {
+      image: "data:image/png;base64,b2xkZXI=",
+      width: 800,
+      height: 600,
+      originX: 0,
+      originY: 0,
+      source: "desktop"
+    };
+    const newerPayload = {
+      ...olderPayload,
+      image: "data:image/png;base64,bmV3ZXI="
+    };
+
+    backendMocks.emit("capture-start", olderPayload);
+    await flushPromises();
+    expect(controlledImages).toHaveLength(1);
+
+    backendMocks.emit("capture-start", newerPayload);
+    await flushPromises();
+
+    expect(controlledImages).toHaveLength(2);
+    const [olderImage, newerImage] = controlledImages;
+    newerImage.resolve();
+    await flushPromises();
+
+    expect(drawImageMock).toHaveBeenCalledTimes(1);
+    expect(drawImageMock.mock.calls[0]?.[0]).toBe(newerImage);
+    expect(backendMocks.showCaptureWindow).toHaveBeenCalledTimes(1);
+
+    olderImage.resolve();
+    await flushPromises();
+
+    expect(drawImageMock).toHaveBeenCalledTimes(1);
+    expect(backendMocks.showCaptureWindow).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps drawing when the pointer leaves the capture surface and shows the clamped size", async () => {
     const wrapper = mount(App);
     await flushPromises();
@@ -192,6 +339,32 @@ describe("App capture cancellation", () => {
     await flushPromises();
 
     expect(backendMocks.processImage).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows OCR feedback before the selected PNG finishes encoding", async () => {
+    let finishEncoding: (() => void) | undefined;
+    const toBlob = vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => {
+      finishEncoding = () => callback(new Blob(["selection"], { type: "image/png" }));
+    });
+
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { button: 0, clientX: 100, clientY: 100 });
+    window.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 620, clientY: 420 }));
+    await flushPromises();
+
+    expect(wrapper.find("[data-testid='result-panel']").text()).toContain("OCR...");
+    expect(toBlob).toHaveBeenCalledTimes(1);
+    expect(backendMocks.processImage).not.toHaveBeenCalled();
+
+    finishEncoding?.();
+		await vi.waitFor(() => {
+			expect(backendMocks.processImage).toHaveBeenCalledTimes(1);
+		});
   });
 
   it("ignores translation events from the previous capture after a new selection starts", async () => {
@@ -219,6 +392,7 @@ describe("App capture cancellation", () => {
 
     backendMocks.emit("translation-token", { generation: 1, token: "STALE_RESULT" });
     backendMocks.emit("translation-token", { generation: 2, token: "CURRENT_RESULT" });
+    backendMocks.emit("translation-done", { generation: 2 });
     await flushPromises();
 
     expect(wrapper.text()).not.toContain("STALE_RESULT");
@@ -255,6 +429,87 @@ describe("App capture cancellation", () => {
     expect(wrapper.find("[data-testid='settings-footer']").exists()).toBe(true);
   });
 
+  it("opens settings in Chinese and can switch the page to English", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("设置");
+    expect(wrapper.text()).toContain("AI 服务");
+    expect(wrapper.text()).toContain("保存更改");
+
+    await wrapper.find("[data-testid='locale-en']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Settings");
+    expect(wrapper.text()).toContain("AI service");
+    expect(wrapper.text()).toContain("Save changes");
+  });
+
+  it("uses a native Wails drag region for the settings title bar", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find("[data-testid='settings-drag-region']").attributes("style")).toContain(
+      "--wails-draggable: drag"
+    );
+    expect(wrapper.find("[data-testid='locale-en']").attributes("style")).toContain(
+      "--wails-draggable: no-drag"
+    );
+  });
+
+  it("treats a null desktop history payload as an empty list", async () => {
+    backendMocks.getHistory.mockResolvedValueOnce(null as never);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find("[data-testid='settings-shell']").exists()).toBe(true);
+    expect(wrapper.text()).toContain("\u6682\u65e0\u7ffb\u8bd1\u8bb0\u5f55\u3002");
+  });
+
+  it("handles a settings event while the initial config is still loading", async () => {
+    let resolveConfig!: (config: typeof backendMocks.defaultConfig) => void;
+    backendMocks.loadConfig.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveConfig = resolve;
+        })
+    );
+
+    const wrapper = mount(App);
+    await vi.waitFor(() => expect(backendMocks.loadConfig).toHaveBeenCalledTimes(1));
+    backendMocks.emit("settings-open", {});
+    resolveConfig({ ...backendMocks.defaultConfig });
+    await flushPromises();
+
+    expect(wrapper.find("[data-testid='settings-shell']").exists()).toBe(true);
+  });
+
+  it("shows the desktop settings window only after the settings shell renders", async () => {
+    backendMocks.isDesktop = true;
+    const wrapper = mount(App);
+    await flushPromises();
+
+    let settingsRenderedWhenShown = false;
+    backendMocks.showSettingsWindow.mockImplementationOnce(async () => {
+      settingsRenderedWhenShown = wrapper.find("[data-testid='settings-shell']").exists();
+    });
+
+    backendMocks.emit("settings-open", {});
+    await flushPromises();
+
+    expect(backendMocks.showSettingsWindow).toHaveBeenCalledTimes(1);
+    expect(settingsRenderedWhenShown).toBe(true);
+  });
+
   it("shows a translating placeholder while waiting for the first streamed token", async () => {
     const wrapper = mount(App);
     await flushPromises();
@@ -271,6 +526,64 @@ describe("App capture cancellation", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("Translating...");
+  });
+
+  it("batches streamed translation fragments into one animation-frame update", async () => {
+    const frames: FrameRequestCallback[] = [];
+    const requestFrame = vi.fn((callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.stubGlobal("requestAnimationFrame", requestFrame);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 20, clientY: 20 });
+    await captureLayer.trigger("mousemove", { clientX: 420, clientY: 80 });
+    await captureLayer.trigger("mouseup", { clientX: 420, clientY: 80 });
+    await flushPromises();
+
+    backendMocks.emit("translation-token", { generation: 1, token: "[1] 流式" });
+    backendMocks.emit("translation-token", { generation: 1, token: "翻译" });
+    await flushPromises();
+
+    expect(requestFrame).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).not.toContain("流式翻译");
+
+    frames.shift()?.(16);
+    await flushPromises();
+    expect(wrapper.text()).toContain("流式翻译");
+  });
+
+  it("expands a thin result selection for a long translation error", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 80, clientY: 70 });
+    await captureLayer.trigger("mousemove", { clientX: 500, clientY: 102 });
+    await captureLayer.trigger("mouseup", { clientX: 500, clientY: 102 });
+    await flushPromises();
+
+    backendMocks.emit("ocr-result", {
+      generation: 1,
+      blocks: [{ text: "Every key authenticates requests to the gateway", x: 0, y: 0, width: 0.96, height: 0.7 }]
+    });
+    backendMocks.emit("workflow-error", {
+      generation: 1,
+      stage: "translation",
+      message: 'Post "https://litellm.example/v1/chat/completions": EOF'
+    });
+    await flushPromises();
+
+    const resultPanel = wrapper.find("[data-testid='result-panel']");
+    expect(stylePx(resultPanel.attributes("style"), "height")).toBeGreaterThanOrEqual(112);
+    expect(wrapper.find("[data-testid='result-error']").classes()).toContain("break-words");
   });
 
   it("does not show a full-screen mask before the user starts drawing", async () => {
@@ -348,6 +661,103 @@ describe("App capture cancellation", () => {
     expect(labels[2].attributes("style")).toContain("box-shadow: none");
     expect(wrapper.find("button[aria-label='Copy translated screenshot']").exists()).toBe(true);
   });
+
+	it("keeps dense navigation translations on the source row", async () => {
+		const wrapper = mount(App);
+		await flushPromises();
+
+		await wrapper.find("button[aria-label='Capture']").trigger("click");
+		await flushPromises();
+		const captureLayer = wrapper.find("section.cursor-crosshair");
+		await captureLayer.trigger("mousedown", { clientX: 20, clientY: 80 });
+		await captureLayer.trigger("mousemove", { clientX: 780, clientY: 480 });
+		await captureLayer.trigger("mouseup", { clientX: 780, clientY: 480 });
+		await flushPromises();
+
+		backendMocks.emit("ocr-result", {
+			generation: 1,
+			blocks: [
+				{ text: "All Models", x: 0.01, y: 0.04, width: 0.08, height: 0.08 },
+				{ text: "Add Model", x: 0.11, y: 0.04, width: 0.08, height: 0.08 },
+				{ text: "LLM Credentials", x: 0.21, y: 0.04, width: 0.13, height: 0.08 },
+				{ text: "Health Status", x: 0.36, y: 0.04, width: 0.11, height: 0.08 },
+				{ text: "Model Retry Settings", x: 0.49, y: 0.04, width: 0.16, height: 0.08 },
+				{
+					text: "To access these models: Create a Virtual Key without selecting a team on the Virtual Keys page",
+					x: 0.02,
+					y: 0.58,
+					width: 0.78,
+					height: 0.12
+				}
+			]
+		});
+		backendMocks.emit("translation-token", {
+			generation: 1,
+			token: "[1] 所有模型\n[2] 添加模型\n[3] 大语言模型凭证\n[4] 健康状态\n[5] 模型重试设置\n[6] 要访问这些模型，请在虚拟密钥页面创建一个未选择团队的虚拟密钥"
+		});
+		backendMocks.emit("translation-done", { generation: 1 });
+		await flushPromises();
+
+		const labels = wrapper.findAll("[data-testid='ocr-block']");
+		expect(labels).toHaveLength(6);
+		expect(wrapper.findAll("[data-testid='translation-line']")).toHaveLength(0);
+		const firstRowTops = labels.slice(0, 5).map((label) => stylePx(label.attributes("style"), "top"));
+		expect(new Set(firstRowTops)).toEqual(new Set([16]));
+	});
+
+	it("keeps a login form translation inside each source text box", async () => {
+		const wrapper = mount(App);
+		await flushPromises();
+
+		await wrapper.find("button[aria-label='Capture']").trigger("click");
+		await flushPromises();
+		const captureLayer = wrapper.find("section.cursor-crosshair");
+		await captureLayer.trigger("mousedown", { clientX: 8, clientY: 8 });
+		await captureLayer.trigger("mousemove", { clientX: 792, clientY: 592 });
+		await captureLayer.trigger("mouseup", { clientX: 792, clientY: 592 });
+		await flushPromises();
+
+		backendMocks.emit("ocr-result", {
+			generation: 1,
+			blocks: [
+				{ text: "LiteLLM", x: 0.38, y: 0.09, width: 0.12, height: 0.05 },
+				{ text: "Login", x: 0.41, y: 0.17, width: 0.07, height: 0.04 },
+				{ text: "Access your LiteLLM Admin UI.", x: 0.36, y: 0.23, width: 0.2, height: 0.03 },
+				{ text: "Default Credentials", x: 0.3, y: 0.31, width: 0.15, height: 0.04 },
+				{
+					text: "By default, Username is admin and Password is your set LiteLLM Proxy MASTER_KEY",
+					x: 0.3,
+					y: 0.37,
+					width: 0.34,
+					height: 0.07
+				},
+				{
+					text: "Need to setup UI credentials or SSO? Check the documentation.",
+					x: 0.3,
+					y: 0.48,
+					width: 0.3,
+					height: 0.06
+				},
+				{ text: "Username", x: 0.25, y: 0.58, width: 0.08, height: 0.03 },
+				{ text: "admin", x: 0.26, y: 0.63, width: 0.06, height: 0.03 },
+				{ text: "Password", x: 0.25, y: 0.7, width: 0.08, height: 0.03 },
+				{ text: "Login", x: 0.42, y: 0.8, width: 0.05, height: 0.04 },
+				{ text: "Login with SSO", x: 0.38, y: 0.89, width: 0.13, height: 0.04 }
+			]
+		});
+		backendMocks.emit("translation-token", {
+			generation: 1,
+			token: "[1] [1] 2 LiteLLM\n[2] 登录\n[3] 访问您的 LiteLLM 管理界面。\n[4] 默认凭据\n[5] 默认情况下，用户名为 admin，密码为您设置的 LiteLLM Proxy MASTER_KEY\n[6] 需要设置界面凭据或 SSO？请查看文档。\n[7] 用户名\n[8] admin\n[9] 密码\n[10] 登录\n[11] 使用 SSO 登录"
+		});
+		backendMocks.emit("translation-done", { generation: 1 });
+		await flushPromises();
+
+		const labels = wrapper.findAll("[data-testid='ocr-block']");
+		expect(wrapper.findAll("[data-testid='translation-line']")).toHaveLength(0);
+		expect(wrapper.findAll("[data-testid='translation-cover']")).toHaveLength(0);
+		expect(labels.map((label) => label.text())).not.toContain("[1] 2 LiteLLM");
+		expect(labels.find((label) => label.text() === "登录")?.attributes("style")).toContain("width: 55px");
+	});
 
   it("renders only trusted translated OCR replacements and drops leaked delimiters", async () => {
     const wrapper = mount(App);
