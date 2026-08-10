@@ -200,10 +200,12 @@ func (session *ManualScrollCapture) Finish() (Result, error) {
 func (session *ManualScrollCapture) Cancel() {}
 
 type verticalStitcher struct {
-	frames      []*image.RGBA
-	advances    []int
-	totalHeight int
-	maxPixels   int64
+	frames        []*image.RGBA
+	advances      []int
+	totalHeight   int
+	observedFrame *image.RGBA
+	observedTop   int
+	maxPixels     int64
 }
 
 func newVerticalStitcher(first image.Image, maxPixels int64) (*verticalStitcher, error) {
@@ -215,9 +217,11 @@ func newVerticalStitcher(first image.Image, maxPixels int64) (*verticalStitcher,
 		return nil, errors.New("scrolling capture exceeds the image size limit")
 	}
 	return &verticalStitcher{
-		frames:      []*image.RGBA{normalized},
-		totalHeight: normalized.Bounds().Dy(),
-		maxPixels:   maxPixels,
+		frames:        []*image.RGBA{normalized},
+		totalHeight:   normalized.Bounds().Dy(),
+		observedFrame: normalized,
+		observedTop:   0,
+		maxPixels:     maxPixels,
 	}, nil
 }
 
@@ -226,42 +230,60 @@ func (stitcher *verticalStitcher) frameCount() int {
 }
 
 func (stitcher *verticalStitcher) addManual(next image.Image) bool {
-	last := stitcher.frames[len(stitcher.frames)-1]
+	observed := stitcher.observedFrame
 	normalized := rgbaImage(next)
-	if last.Bounds().Dx() != normalized.Bounds().Dx() || last.Bounds().Dy() != normalized.Bounds().Dy() {
+	if observed.Bounds().Dx() != normalized.Bounds().Dx() || observed.Bounds().Dy() != normalized.Bounds().Dy() {
 		return false
 	}
 	// A stationary screen, including one with a small fixed controller overlay,
 	// is not a new frame. The row-trimmed comparison ignores that overlay.
-	if sampledDifference(last, normalized, 0) <= 2.2 ||
-		stationaryFeatureMatchRatio(last, normalized) >= 0.42 {
+	if sampledDifference(observed, normalized, 0) <= 2.2 ||
+		stationaryFeatureMatchRatio(observed, normalized) >= 0.42 {
+		stitcher.observedFrame = normalized
 		return false
 	}
 
-	advance, score, ok := verticalAdvance(last, normalized)
-	if !ok || score > 24 {
+	forwardAdvance, forwardScore, forwardFound := verticalAdvance(observed, normalized)
+	reverseAdvance, reverseScore, reverseFound := verticalAdvance(normalized, observed)
+	forwardOK := forwardFound && forwardScore <= 24
+	reverseOK := reverseFound && reverseScore <= 24
+	movingDown := forwardOK
+	if !forwardOK && !reverseOK {
 		return false
 	}
 	// Compare direction with all sampled rows. The trimmed overlap score above
 	// tolerates sticky or animated regions, but it can make repeated table rows
 	// look equally plausible in both directions. Full-row scoring retains the
 	// timestamps and text that distinguish a real upward move.
-	reverseAdvance, reverseScore, reverseOK := verticalAdvance(normalized, last)
-	if reverseOK && reverseScore <= 24 {
-		forwardDirectionScore := directionalDifference(last, normalized, advance)
-		reverseDirectionScore := directionalDifference(normalized, last, reverseAdvance)
-		if reverseDirectionScore+2 < forwardDirectionScore {
-			return false
-		}
+	if forwardOK && reverseOK {
+		forwardDirectionScore := directionalDifference(observed, normalized, forwardAdvance)
+		reverseDirectionScore := directionalDifference(normalized, observed, reverseAdvance)
+		movingDown = reverseDirectionScore+2 >= forwardDirectionScore
 	}
-	width := last.Bounds().Dx()
-	if int64(width)*int64(stitcher.totalHeight+advance) > stitcher.maxPixels ||
-		stitcher.totalHeight+advance > maxCanvasHeight {
+
+	if !movingDown {
+		stitcher.observedTop = maxInt(0, stitcher.observedTop-reverseAdvance)
+		stitcher.observedFrame = normalized
+		return false
+	}
+
+	nextTop := stitcher.observedTop + forwardAdvance
+	nextBottom := nextTop + normalized.Bounds().Dy()
+	stitcher.observedTop = nextTop
+	stitcher.observedFrame = normalized
+	if nextBottom <= stitcher.totalHeight {
+		return false
+	}
+
+	extension := nextBottom - stitcher.totalHeight
+	width := observed.Bounds().Dx()
+	if int64(width)*int64(stitcher.totalHeight+extension) > stitcher.maxPixels ||
+		stitcher.totalHeight+extension > maxCanvasHeight {
 		return false
 	}
 	stitcher.frames = append(stitcher.frames, normalized)
-	stitcher.advances = append(stitcher.advances, advance)
-	stitcher.totalHeight += advance
+	stitcher.advances = append(stitcher.advances, extension)
+	stitcher.totalHeight += extension
 	return true
 }
 

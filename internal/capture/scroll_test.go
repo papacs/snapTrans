@@ -71,6 +71,28 @@ func TestVerticalStitcherRejectsUpwardScrollAndResumeWithinCapturedContent(t *te
 	require.Equal(t, 140, stitcher.image().Bounds().Dy())
 }
 
+func TestVerticalStitcherTracksRejectedUpwardFramesBeforeReturningDownward(t *testing.T) {
+	content := patternedScrollContent(48, 260)
+	first := content.SubImage(image.Rect(0, 0, 48, 100))
+	stitcher, err := newVerticalStitcher(first, 1_000_000)
+	require.NoError(t, err)
+
+	require.True(t, stitcher.addManual(content.SubImage(image.Rect(0, 60, 48, 160))))
+	require.True(t, stitcher.addManual(content.SubImage(image.Rect(0, 120, 48, 220))))
+	require.Equal(t, 120, stitcher.observedTop)
+
+	require.False(t, stitcher.addManual(content.SubImage(image.Rect(0, 90, 48, 190))))
+	require.Equal(t, 90, stitcher.observedTop)
+	require.False(t, stitcher.addManual(content.SubImage(image.Rect(0, 105, 48, 205))))
+	require.Equal(t, 105, stitcher.observedTop)
+	require.False(t, stitcher.addManual(content.SubImage(image.Rect(0, 120, 48, 220))))
+	require.Equal(t, 120, stitcher.observedTop)
+
+	require.True(t, stitcher.addManual(content.SubImage(image.Rect(0, 135, 48, 235))))
+	require.Equal(t, 235, stitcher.image().Bounds().Dy())
+	assertSamePixels(t, content.SubImage(image.Rect(0, 0, 48, 235)), stitcher.image())
+}
+
 func TestVerticalStitcherAcceptsDownwardScrollWhenRepeatedRowsAreDirectionallyAmbiguous(t *testing.T) {
 	content := alternatingRepeatedRowsContent(100, 260)
 	first := content.SubImage(image.Rect(0, 80, 100, 180))
