@@ -420,6 +420,13 @@ const showsTranslatedOverlay = computed(
   () => hasTranslatedOverlay.value && phase.value !== "error"
 );
 
+const preservesSourcePreview = computed(
+  () =>
+    showsTranslatedOverlay.value ||
+    phase.value === "processing" ||
+    (phase.value === "streaming" && !translationText.value)
+);
+
 const selectionStyle = computed(() => {
   const rect = selection.value;
   if (!rect) {
@@ -1482,7 +1489,7 @@ async function saveSettings(): Promise<void> {
       data-testid="result-panel"
       class="absolute z-20 overflow-visible transition-[height,top,box-shadow,background-color] duration-100 ease-out"
       :class="
-        showsTranslatedOverlay
+        preservesSourcePreview
           ? 'rounded-md border-2 border-emerald-400 shadow-[0_0_0_1px_rgba(255,255,255,0.70),0_8px_28px_rgba(16,185,129,0.18)]'
           : 'rounded-md border border-white/70 bg-white/92 p-2 shadow-[0_10px_36px_rgba(15,23,42,0.26)] ring-1 ring-slate-900/5 backdrop-blur-[2px] dark:border-slate-700/70 dark:bg-zinc-950/92'
       "
@@ -1529,14 +1536,17 @@ async function saveSettings(): Promise<void> {
       </template>
 
       <template v-else>
-        <div v-if="phase === 'processing'" class="flex h-full items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+        <div
+          v-if="phase === 'processing'"
+          class="absolute left-0 top-0 inline-flex h-7 items-center gap-2 rounded bg-white/95 px-2 text-xs text-slate-700 shadow-sm dark:bg-zinc-950/95 dark:text-slate-200"
+        >
           <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
           <span>OCR...</span>
         </div>
 
         <div
           v-else-if="phase === 'streaming' && !translationText"
-          class="flex h-full items-center gap-3 text-sm text-slate-700 dark:text-slate-200"
+          class="absolute left-0 top-0 inline-flex h-7 items-center gap-2 rounded bg-white/95 px-2 text-xs text-slate-700 shadow-sm dark:bg-zinc-950/95 dark:text-slate-200"
         >
           <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
           <span>Translating...</span>

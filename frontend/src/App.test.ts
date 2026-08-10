@@ -329,6 +329,34 @@ describe("App capture cancellation", () => {
     expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the native capture visible beneath the screenshot annotation layer", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    backendMocks.emit("capture-start", {
+      image: "data:image/png;base64,ZmFrZQ==",
+      width: 800,
+      height: 600,
+      originX: 0,
+      originY: 0,
+      source: "browser",
+      mode: "screenshot"
+    });
+    await flushPromises();
+
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { button: 0, clientX: 80, clientY: 70 });
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 520, clientY: 360 }));
+    window.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 520, clientY: 360 }));
+    await flushPromises();
+
+    const viewport = wrapper.find("[data-testid='screenshot-viewport']");
+    const annotationCanvas = viewport.find("canvas");
+    expect(viewport.classes()).not.toContain("bg-white");
+    expect(annotationCanvas.classes()).toContain("bg-transparent");
+    expect(drawImageMock).toHaveBeenCalledTimes(4);
+  });
+
   it("keeps a live full preview while observing user-driven scrolling", async () => {
     vi.useFakeTimers();
     const wrapper = mount(App);
@@ -495,6 +523,10 @@ describe("App capture cancellation", () => {
     expect(wrapper.find("[data-testid='result-panel']").text()).toContain("OCR...");
     expect(toBlob).toHaveBeenCalledTimes(1);
     expect(backendMocks.processImage).not.toHaveBeenCalled();
+
+    const resultPanel = wrapper.find("[data-testid='result-panel']");
+    expect(resultPanel.classes()).not.toContain("backdrop-blur-[2px]");
+    expect(resultPanel.classes()).not.toContain("bg-white/92");
 
     finishEncoding?.();
 		await vi.waitFor(() => {

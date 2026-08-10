@@ -433,8 +433,7 @@ function detachDrawingListeners(): void {
 
 function redraw(): void {
   const editor = editorCanvasRef.value;
-  const source = baseCanvas;
-  if (!editor || !source) {
+  if (!editor) {
     return;
   }
   const context = editor.getContext("2d");
@@ -442,7 +441,6 @@ function redraw(): void {
     return;
   }
   context.clearRect(0, 0, editor.width, editor.height);
-  context.drawImage(source, 0, 0);
   const visible = currentAnnotation.value
     ? [...annotations.value, currentAnnotation.value]
     : annotations.value;
@@ -499,8 +497,26 @@ function onEditorKeyDown(event: KeyboardEvent): void {
 
 
 function exportDataUrl(): string {
-  redraw();
-  return editorCanvasRef.value?.toDataURL("image/png") ?? "";
+  const editor = editorCanvasRef.value;
+  const source = baseCanvas;
+  if (!editor || !source) {
+    return "";
+  }
+
+  const target = document.createElement("canvas");
+  target.width = editor.width;
+  target.height = editor.height;
+  const context = target.getContext("2d");
+  if (!context) {
+    return "";
+  }
+
+  context.drawImage(source, 0, 0);
+  const visible = currentAnnotation.value
+    ? [...annotations.value, currentAnnotation.value]
+    : annotations.value;
+  renderAnnotations(context, visible, pixelatedCanvas ?? undefined);
+  return target.toDataURL("image/png");
 }
 
 function complete(): void {
@@ -586,13 +602,13 @@ function clamp(value: number, min: number, max: number): number {
 
   <section v-else class="absolute inset-0 z-30 select-none" data-testid="screenshot-editor" @contextmenu.prevent="emit('cancel')">
     <div
-      class="absolute overflow-hidden border-2 border-emerald-400 bg-white shadow-[0_0_0_9999px_rgba(2,6,23,0.42),0_0_0_1px_rgba(255,255,255,0.95)]"
+      class="absolute overflow-hidden border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(2,6,23,0.42),0_0_0_1px_rgba(255,255,255,0.95)]"
       :style="editorStyle"
       data-testid="screenshot-viewport"
     >
       <canvas
         ref="editorCanvasRef"
-        class="block h-auto w-full cursor-crosshair bg-white"
+        class="block h-auto w-full cursor-crosshair bg-transparent"
         :class="startingScroll ? 'pointer-events-none' : ''"
         @mousedown="onMouseDown"
       />
