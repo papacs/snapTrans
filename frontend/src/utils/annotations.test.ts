@@ -3,14 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import { renderAnnotation, toolbarPosition } from "./annotations";
 
 describe("toolbarPosition", () => {
-  it("places the toolbar below the selection when space is available", () => {
+  it("right-aligns the toolbar below the selection when space is available", () => {
     expect(
       toolbarPosition(
-        { x: 120, y: 80, width: 400, height: 220 },
+        { x: 120, y: 80, width: 600, height: 220 },
         { width: 1000, height: 700 },
         { width: 560, height: 48 }
       )
-    ).toEqual({ x: 120, y: 312 });
+    ).toEqual({ x: 160, y: 312 });
   });
 
   it("moves the toolbar above a selection near the bottom edge", () => {
@@ -20,7 +20,17 @@ describe("toolbarPosition", () => {
         { width: 1000, height: 700 },
         { width: 560, height: 48 }
       )
-    ).toEqual({ x: 432, y: 440 });
+    ).toEqual({ x: 400, y: 440 });
+  });
+
+  it("keeps the toolbar inside the right edge of the viewport", () => {
+    expect(
+      toolbarPosition(
+        { x: 900, y: 80, width: 220, height: 220 },
+        { width: 1000, height: 700 },
+        { width: 360, height: 48 }
+      )
+    ).toEqual({ x: 632, y: 312 });
   });
 });
 

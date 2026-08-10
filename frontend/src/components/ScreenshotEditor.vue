@@ -3,8 +3,10 @@ import {
   ArrowUpRight,
   Check,
   Circle,
+  ChevronsDown,
   Download,
   Grid3X3,
+  LoaderCircle,
   Pencil,
   Smile,
   Square,
@@ -14,7 +16,16 @@ import {
 } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 
-import type { CapturePayload } from "../services/backend";
+import {
+  beginScrollingScreenshot,
+  cancelScrollingScreenshot,
+  finishScrollingScreenshot,
+  showCaptureWindow,
+  stepScrollingScreenshot,
+  type CapturePayload,
+  type ManualScrollStatus,
+  type ScrollCaptureRegion
+} from "../services/backend";
 import {
   createPixelatedCanvas,
   renderAnnotations,
@@ -43,9 +54,24 @@ const color = ref("#ff4d4f");
 const annotations = ref<Annotation[]>([]);
 const currentAnnotation = ref<Annotation | null>(null);
 const textDraft = ref<{ point: Point; value: string } | null>(null);
+const startingScroll = ref(false);
+const manualScrolling = ref(false);
+const finishingScroll = ref(false);
+const scrollNotice = ref("");
+const scrollProgress = ref<ManualScrollStatus>({ frames: 1, width: 0, height: 0 });
+const currentFrameImage = ref("");
+const stitchedPreviewImage = ref("");
+const scrollStepPending = ref(false);
 let baseCanvas: HTMLCanvasElement | null = null;
 let pixelatedCanvas: HTMLCanvasElement | null = null;
 let drawing = false;
+let disposed = false;
+let scrollPollTimer: number | null = null;
+
+const SCROLL_POLL_INTERVAL_MS = 180;
+
+const TOOLBAR_WIDTH = 556;
+const TOOLBAR_HEIGHT = 48;
 
 const editorStyle = computed(() => ({
   left: `${props.rect.x}px`,
@@ -58,9 +84,34 @@ const toolbarStyle = computed(() => {
   const point = toolbarPosition(
     props.rect,
     { width: window.innerWidth, height: window.innerHeight },
-    { width: Math.min(612, window.innerWidth - 16), height: 52 }
+    { width: Math.min(TOOLBAR_WIDTH, window.innerWidth - 16), height: TOOLBAR_HEIGHT }
   );
   return { left: `${point.x}px`, top: `${point.y}px`, maxWidth: "calc(100vw - 16px)" };
+});
+
+const manualToolbarStyle = computed(() => {
+  const point = toolbarPosition(
+    props.rect,
+    { width: window.innerWidth, height: window.innerHeight },
+    { width: 104, height: 48 }
+  );
+  return { left: `${point.x}px`, top: `${point.y}px` };
+});
+
+const previewPanelStyle = computed(() => {
+  const gap = 12;
+  const padding = 8;
+  const width = Math.min(220, Math.max(150, window.innerWidth * 0.18));
+  const height = Math.min(420, Math.max(220, props.rect.height));
+  const right = props.rect.x + props.rect.width + gap;
+  const left = props.rect.x - width - gap;
+  const x = right + width <= window.innerWidth - padding
+    ? right
+    : left >= padding
+      ? left
+      : clamp(props.rect.x + props.rect.width - width - padding, padding, window.innerWidth - width - padding);
+  const y = clamp(props.rect.y, padding, Math.max(padding, window.innerHeight - height - padding));
+  return { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` };
 });
 
 const textDraftStyle = computed(() => {
@@ -69,9 +120,10 @@ const textDraftStyle = computed(() => {
   if (!draft || !canvas) {
     return {};
   }
+  const bounds = canvas.getBoundingClientRect();
   return {
-    left: `${props.rect.x + (draft.point.x / canvas.width) * props.rect.width}px`,
-    top: `${props.rect.y + (draft.point.y / canvas.height) * props.rect.height}px`,
+    left: `${bounds.left + (draft.point.x / canvas.width) * bounds.width}px`,
+    top: `${bounds.top + (draft.point.y / canvas.height) * bounds.height}px`,
     color: color.value
   };
 });
@@ -92,10 +144,17 @@ const toolButtons: Array<{
 
 onMounted(() => {
   prepareCanvas();
+  window.addEventListener("keydown", onEditorKeyDown);
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
+  stopScrollPolling();
+  if (manualScrolling.value || startingScroll.value) {
+    void cancelScrollingScreenshot();
+  }
   detachDrawingListeners();
+  window.removeEventListener("keydown", onEditorKeyDown);
 });
 
 function prepareCanvas(): void {
@@ -140,7 +199,8 @@ function canvasScale(): number {
   if (!canvas) {
     return 1;
   }
-  return Math.max(1, (canvas.width / props.rect.width + canvas.height / props.rect.height) / 2);
+  const bounds = canvas.getBoundingClientRect();
+  return Math.max(1, (canvas.width / bounds.width + canvas.height / bounds.height) / 2);
 }
 
 function canvasPoint(event: MouseEvent): Point {
@@ -156,7 +216,7 @@ function canvasPoint(event: MouseEvent): Point {
 }
 
 function onMouseDown(event: MouseEvent): void {
-  if (event.button !== 0) {
+  if (event.button !== 0 || startingScroll.value) {
     return;
   }
   event.preventDefault();
@@ -200,6 +260,142 @@ function onMouseDown(event: MouseEvent): void {
   }
   window.addEventListener("mousemove", onMouseMove);
   window.addEventListener("mouseup", onMouseUp);
+}
+
+async function captureDownwardScroll(): Promise<void> {
+  const editor = editorCanvasRef.value;
+  if (!editor || startingScroll.value || manualScrolling.value || annotations.value.length > 0) {
+    return;
+  }
+  const sourceBounds = props.sourceCanvas.getBoundingClientRect();
+  const imageRect = mapCssRectToImageRect(
+    props.rect,
+    { width: sourceBounds.width, height: sourceBounds.height },
+    { width: props.sourceCanvas.width, height: props.sourceCanvas.height },
+    props.capture.displays
+  );
+  const regionX = Math.round((props.capture.originX ?? 0) + imageRect.x);
+  const regionY = Math.round((props.capture.originY ?? 0) + imageRect.y);
+
+  startingScroll.value = true;
+  const captureRegion: ScrollCaptureRegion = {
+    x: regionX,
+    y: regionY,
+    width: imageRect.width,
+    height: imageRect.height
+  };
+  manualScrolling.value = true;
+  scrollNotice.value = "";
+  scrollProgress.value = { frames: 1, width: imageRect.width, height: imageRect.height };
+  currentFrameImage.value = baseCanvas?.toDataURL("image/png") ?? "";
+  stitchedPreviewImage.value = currentFrameImage.value;
+  await nextTick();
+
+  try {
+    scrollProgress.value = await beginScrollingScreenshot(captureRegion);
+    scheduleScrollPoll(120);
+    if (disposed || !manualScrolling.value) {
+      await cancelScrollingScreenshot();
+      return;
+    }
+  } catch (error) {
+    manualScrolling.value = false;
+    scrollNotice.value = error instanceof Error ? error.message : "滚动截图失败";
+    if (!disposed) {
+      await nextTick();
+      await showCaptureWindow();
+    }
+  } finally {
+    startingScroll.value = false;
+  }
+}
+
+function stopScrollPolling(): void {
+  if (scrollPollTimer !== null) {
+    window.clearTimeout(scrollPollTimer);
+    scrollPollTimer = null;
+  }
+}
+
+function scheduleScrollPoll(delay = SCROLL_POLL_INTERVAL_MS): void {
+  stopScrollPolling();
+  if (disposed || !manualScrolling.value || finishingScroll.value) {
+    return;
+  }
+  scrollPollTimer = window.setTimeout(() => {
+    scrollPollTimer = null;
+    void pollScrollingCapture();
+  }, delay);
+}
+
+async function pollScrollingCapture(): Promise<void> {
+  if (disposed || !manualScrolling.value || startingScroll.value || finishingScroll.value || scrollStepPending.value) {
+    scheduleScrollPoll();
+    return;
+  }
+
+  scrollStepPending.value = true;
+  let pollingFailed = false;
+  try {
+    const result = await stepScrollingScreenshot();
+    scrollProgress.value = { frames: result.frames, width: result.width, height: result.height };
+    if (result.appended && result.currentImage && result.previewImage) {
+      await Promise.all([preloadImage(result.currentImage), preloadImage(result.previewImage)]);
+      currentFrameImage.value = result.currentImage;
+      stitchedPreviewImage.value = result.previewImage;
+      scrollNotice.value = "";
+    }
+  } catch (error) {
+    pollingFailed = true;
+    scrollNotice.value = error instanceof Error ? error.message : "滚动画面采集失败";
+  } finally {
+    scrollStepPending.value = false;
+    if (!pollingFailed) {
+      scheduleScrollPoll();
+    }
+  }
+}
+
+function preloadImage(source: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("滚动截图预览加载失败"));
+    image.src = source;
+  });
+}
+
+async function finishManualScrollingCapture(): Promise<void> {
+  if (!manualScrolling.value || finishingScroll.value) {
+    return;
+  }
+  finishingScroll.value = true;
+  stopScrollPolling();
+  try {
+    const result = await finishScrollingScreenshot();
+    manualScrolling.value = false;
+    emit("complete", result.image);
+  } catch (error) {
+    manualScrolling.value = false;
+    scrollNotice.value = error instanceof Error ? error.message : "滚动截图失败";
+    if (!disposed) {
+      await nextTick();
+      await showCaptureWindow();
+    }
+  } finally {
+    finishingScroll.value = false;
+  }
+}
+
+async function cancelManualScrollingCapture(): Promise<void> {
+  if (!manualScrolling.value && !startingScroll.value) {
+    return;
+  }
+  manualScrolling.value = false;
+  stopScrollPolling();
+  startingScroll.value = false;
+  await cancelScrollingScreenshot();
+  emit("cancel");
 }
 
 function onMouseMove(event: MouseEvent): void {
@@ -275,6 +471,32 @@ function undo(): void {
   annotations.value.pop();
   redraw();
 }
+function onEditorKeyDown(event: KeyboardEvent): void {
+  if (
+    event.key.toLowerCase() !== "z" ||
+    (!event.ctrlKey && !event.metaKey) ||
+    event.shiftKey ||
+    event.altKey ||
+    annotations.value.length === 0 ||
+    textDraft.value !== null ||
+    manualScrolling.value
+  ) {
+    return;
+  }
+
+  const target = event.target;
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+  undo();
+}
+
 
 function exportDataUrl(): string {
   redraw();
@@ -301,13 +523,80 @@ function clamp(value: number, min: number, max: number): number {
 </script>
 
 <template>
-  <section class="absolute inset-0 z-30 select-none" data-testid="screenshot-editor" @contextmenu.prevent="emit('cancel')">
-    <canvas
-      ref="editorCanvasRef"
-      class="absolute cursor-crosshair border-2 border-emerald-400 bg-white shadow-[0_0_0_9999px_rgba(2,6,23,0.42),0_0_0_1px_rgba(255,255,255,0.95)]"
+  <section
+    v-if="manualScrolling"
+    class="fixed inset-0 z-[90] select-none text-slate-900"
+    data-testid="manual-scroll-controller"
+    @contextmenu.prevent="cancelManualScrollingCapture"
+  >
+    <div
+      class="absolute overflow-hidden border-2 border-emerald-400 bg-white shadow-[0_0_0_9999px_rgba(2,6,23,0.48),0_0_0_1px_rgba(255,255,255,0.95)]"
       :style="editorStyle"
-      @mousedown="onMouseDown"
-    />
+      data-testid="manual-scroll-current"
+    >
+      <img :src="currentFrameImage" class="h-full w-full object-fill" alt="当前滚动画面" draggable="false" />
+    </div>
+
+    <aside
+      class="absolute flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/98 p-2.5 shadow-[0_16px_40px_rgba(15,23,42,0.34)] backdrop-blur"
+      :style="previewPanelStyle"
+      data-testid="manual-scroll-preview"
+      @wheel.stop
+    >
+      <div class="mb-2 flex items-center justify-between gap-2 px-0.5">
+        <span class="text-xs font-semibold text-slate-700">完整长图预览</span>
+        <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">{{ scrollProgress.frames }} 帧</span>
+      </div>
+      <div class="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg bg-slate-100 p-1">
+        <img :src="stitchedPreviewImage" class="max-h-full max-w-full object-contain" alt="完整滚动截图预览" draggable="false" />
+      <div class="mb-2 px-0.5 text-[10px] leading-4 text-slate-500">在选区内使用原窗口滚轮或滚动条，右侧会自动更新预览</div>
+      </div>
+      <div class="mt-2 truncate px-0.5 text-[10px] text-slate-500">{{ scrollProgress.width }} × {{ scrollProgress.height }}</div>
+    </aside>
+
+    <div
+      class="absolute flex h-12 items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-2 shadow-[0_8px_24px_rgba(15,23,42,0.28)]"
+      :style="manualToolbarStyle"
+    >
+      <button
+        class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-rose-500 transition hover:bg-rose-50"
+        type="button"
+        title="取消滚动截图"
+        aria-label="取消滚动截图"
+        data-testid="manual-scroll-cancel"
+        @click="cancelManualScrollingCapture"
+      >
+        <X class="h-5 w-5" aria-hidden="true" />
+      </button>
+      <span class="mx-1 h-6 w-px bg-slate-200" />
+      <button
+        class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-emerald-500 transition hover:bg-emerald-50 disabled:opacity-40"
+        type="button"
+        title="完成滚动截图"
+        aria-label="完成滚动截图"
+        :disabled="startingScroll || finishingScroll"
+        data-testid="manual-scroll-complete"
+        @click="finishManualScrollingCapture"
+      >
+        <LoaderCircle v-if="finishingScroll" class="h-5 w-5 animate-spin" aria-hidden="true" />
+        <Check v-else class="h-5 w-5" aria-hidden="true" />
+      </button>
+    </div>
+  </section>
+
+  <section v-else class="absolute inset-0 z-30 select-none" data-testid="screenshot-editor" @contextmenu.prevent="emit('cancel')">
+    <div
+      class="absolute overflow-hidden border-2 border-emerald-400 bg-white shadow-[0_0_0_9999px_rgba(2,6,23,0.42),0_0_0_1px_rgba(255,255,255,0.95)]"
+      :style="editorStyle"
+      data-testid="screenshot-viewport"
+    >
+      <canvas
+        ref="editorCanvasRef"
+        class="block h-auto w-full cursor-crosshair bg-white"
+        :class="startingScroll ? 'pointer-events-none' : ''"
+        @mousedown="onMouseDown"
+      />
+    </div>
 
     <input
       v-if="textDraft"
@@ -324,7 +613,7 @@ function clamp(value: number, min: number, max: number): number {
     />
 
     <div
-      class="absolute z-50 flex h-[52px] items-center gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white/98 px-2 shadow-[0_12px_36px_rgba(15,23,42,0.30)] backdrop-blur"
+      class="absolute z-50 flex h-12 items-center gap-1 overflow-x-auto rounded-[10px] border border-slate-200 bg-white px-2 shadow-[0_8px_24px_rgba(15,23,42,0.24)]"
       :style="toolbarStyle"
       data-testid="screenshot-toolbar"
       @mousedown.stop
@@ -334,7 +623,7 @@ function clamp(value: number, min: number, max: number): number {
         v-for="item in toolButtons"
         :key="item.tool"
         class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition"
-        :class="activeTool === item.tool ? 'bg-emerald-100 text-emerald-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'"
+        :class="activeTool === item.tool ? 'bg-slate-100 text-slate-950' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-950'"
         type="button"
         :title="item.label"
         :aria-label="item.label"
@@ -345,6 +634,17 @@ function clamp(value: number, min: number, max: number): number {
       </button>
 
       <span class="mx-1 h-6 w-px shrink-0 bg-slate-200" />
+      <button
+        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-35"
+        type="button"
+        :title="annotations.length > 0 ? '请先撤销标注，再进行滚动截图' : '向下滚动截图'"
+        aria-label="向下滚动截图"
+        :disabled="startingScroll || annotations.length > 0"
+        data-testid="screenshot-scroll-down"
+        @click="captureDownwardScroll"
+      >
+        <ChevronsDown class="h-[18px] w-[18px]" :class="startingScroll ? 'animate-pulse' : ''" aria-hidden="true" />
+      </button>
       <label class="relative h-8 w-8 shrink-0 cursor-pointer overflow-hidden rounded-full border-2 border-white shadow ring-1 ring-slate-300" title="颜色">
         <span class="absolute inset-0" :style="{ backgroundColor: color }" />
         <input v-model="color" class="absolute inset-0 cursor-pointer opacity-0" type="color" aria-label="标注颜色" />
@@ -383,7 +683,7 @@ function clamp(value: number, min: number, max: number): number {
         <X class="h-[19px] w-[19px]" aria-hidden="true" />
       </button>
       <button
-        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-white shadow-sm transition hover:bg-emerald-600"
+        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-emerald-500 transition hover:bg-emerald-50 hover:text-emerald-600"
         type="button"
         title="完成并复制"
         aria-label="完成并复制"
@@ -392,6 +692,15 @@ function clamp(value: number, min: number, max: number): number {
       >
         <Check class="h-5 w-5" aria-hidden="true" />
       </button>
+    </div>
+
+    <div
+      v-if="scrollNotice"
+      class="absolute z-50 rounded-lg bg-slate-950/85 px-3 py-1.5 text-xs font-medium text-white shadow-lg"
+      :style="{ left: `${props.rect.x + 8}px`, top: `${props.rect.y + 8}px` }"
+      data-testid="scroll-capture-status"
+    >
+      {{ scrollNotice }}
     </div>
   </section>
 </template>

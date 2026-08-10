@@ -4,7 +4,10 @@ import type {
   EnvironmentStatus,
   GenerationEvent,
   HistoryEntry,
+  ManualScrollStatus,
   OCRResultEvent,
+  ScrollCaptureRegion,
+  ScrollCaptureStepResult,
   TranslationDirection,
   TranslationDirectionEvent,
   TranslationTokenEvent,
@@ -22,6 +25,10 @@ declare global {
           TriggerCapture: () => Promise<void>;
           TriggerScreenshot: () => Promise<void>;
           ShowCaptureWindow: () => Promise<void>;
+          BeginScrollingScreenshot: (region: ScrollCaptureRegion) => Promise<ManualScrollStatus>;
+          StepScrollingScreenshot: () => Promise<ScrollCaptureStepResult>;
+          FinishScrollingScreenshot: () => Promise<CapturePayload>;
+          CancelScrollingScreenshot: () => Promise<void>;
           ProcessImage: (base64Crop: string, direction: TranslationDirection, generation?: number) => Promise<void>;
           HideWindow: () => Promise<void>;
           QuitApp: () => Promise<void>;

@@ -32,6 +32,30 @@ const backendMocks = vi.hoisted(() => {
     listeners,
     emit,
     copyImageDataUrl: vi.fn(async () => {}),
+    beginScrollingScreenshot: vi.fn(async () => ({
+      frames: 1,
+      width: 440,
+      height: 290
+    })),
+    stepScrollingScreenshot: vi.fn(async () => ({
+      currentImage: "data:image/png;base64,Y3VycmVudA==",
+      previewImage: "data:image/png;base64,cHJldmlldw==",
+      frames: 2,
+      width: 440,
+      height: 580,
+      appended: true
+    })),
+    finishScrollingScreenshot: vi.fn(async () => ({
+      image: "data:image/png;base64,bG9uZw==",
+      width: 440,
+      height: 870,
+      originX: 80,
+      originY: 70,
+      source: "browser" as const,
+      mode: "screenshot" as const,
+      scrollFrames: 3
+    })),
+    cancelScrollingScreenshot: vi.fn(async () => {}),
     copyText: vi.fn(async () => {}),
     frontendReady: vi.fn(async () => {}),
     getHistory: vi.fn(async () => []),
@@ -67,10 +91,13 @@ const backendMocks = vi.hoisted(() => {
 });
 
 vi.mock("./services/backend", () => ({
+  beginScrollingScreenshot: backendMocks.beginScrollingScreenshot,
+  cancelScrollingScreenshot: backendMocks.cancelScrollingScreenshot,
   copyImageDataUrl: backendMocks.copyImageDataUrl,
   copyText: backendMocks.copyText,
   defaultConfig: backendMocks.defaultConfig,
   frontendReady: backendMocks.frontendReady,
+  finishScrollingScreenshot: backendMocks.finishScrollingScreenshot,
   getHistory: backendMocks.getHistory,
   hasWailsBackend: () => backendMocks.isDesktop,
   hideWindow: backendMocks.hideWindow,
@@ -86,6 +113,7 @@ vi.mock("./services/backend", () => ({
   saveConfig: vi.fn(async () => {}),
   showCaptureWindow: backendMocks.showCaptureWindow,
   showSettingsWindow: backendMocks.showSettingsWindow,
+  stepScrollingScreenshot: backendMocks.stepScrollingScreenshot,
   triggerCapture: backendMocks.triggerCapture,
   triggerScreenshot: backendMocks.triggerScreenshot
 }));
@@ -143,6 +171,10 @@ describe("App capture cancellation", () => {
     backendMocks.listeners.clear();
     backendMocks.hideWindow.mockClear();
     backendMocks.copyImageDataUrl.mockClear();
+    backendMocks.beginScrollingScreenshot.mockClear();
+    backendMocks.cancelScrollingScreenshot.mockClear();
+    backendMocks.finishScrollingScreenshot.mockClear();
+    backendMocks.stepScrollingScreenshot.mockClear();
     backendMocks.copyText.mockClear();
     backendMocks.frontendReady.mockClear();
     backendMocks.getHistory.mockClear();
@@ -208,6 +240,7 @@ describe("App capture cancellation", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -244,7 +277,7 @@ describe("App capture cancellation", () => {
     expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
   });
 
-  it("opens the annotation toolbar for screenshot mode and copies the edited image", async () => {
+  it("supports Ctrl+Z in the screenshot annotation toolbar and copies the image", async () => {
     const wrapper = mount(App);
     await flushPromises();
 
@@ -273,10 +306,112 @@ describe("App capture cancellation", () => {
     await editor.trigger("mousedown", { button: 0, clientX: 120, clientY: 120 });
     window.dispatchEvent(new MouseEvent("mousemove", { clientX: 260, clientY: 220 }));
     window.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 260, clientY: 220 }));
+    await flushPromises();
+    const undoButton = wrapper.find("[data-testid='annotation-undo']");
+    expect((undoButton.element as HTMLButtonElement).disabled).toBe(false);
+
+    const undoEvent = new KeyboardEvent("keydown", {
+      key: "z",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true
+    });
+    window.dispatchEvent(undoEvent);
+    await flushPromises();
+
+    expect(undoEvent.defaultPrevented).toBe(true);
+    expect((undoButton.element as HTMLButtonElement).disabled).toBe(true);
+
     await wrapper.find("[data-testid='screenshot-complete']").trigger("click");
     await flushPromises();
 
     expect(backendMocks.copyImageDataUrl).toHaveBeenCalledWith("data:image/png;base64,c2VsZWN0aW9u");
+    expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a live full preview while observing user-driven scrolling", async () => {
+    vi.useFakeTimers();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    backendMocks.emit("capture-start", {
+      image: "data:image/png;base64,ZmFrZQ==",
+      width: 800,
+      height: 600,
+      originX: 100,
+      originY: 200,
+      source: "browser",
+      mode: "screenshot"
+    });
+    await flushPromises();
+
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { button: 0, clientX: 80, clientY: 70 });
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 520, clientY: 360 }));
+    window.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 520, clientY: 360 }));
+    await flushPromises();
+
+    await wrapper.find("[data-testid='screenshot-scroll-down']").trigger("click");
+    await flushPromises();
+
+    expect(backendMocks.beginScrollingScreenshot).toHaveBeenCalledWith({
+      x: 180,
+      y: 270,
+      width: 440,
+      height: 290
+    });
+    expect(wrapper.find("[data-testid='manual-scroll-controller']").exists()).toBe(true);
+    expect(wrapper.find("[data-testid='manual-scroll-current']").exists()).toBe(true);
+    expect(wrapper.find("[data-testid='manual-scroll-preview']").exists()).toBe(true);
+
+    const showCallsBeforePoll = backendMocks.showCaptureWindow.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(120);
+    await flushPromises();
+
+    expect(backendMocks.stepScrollingScreenshot).toHaveBeenCalledWith();
+    expect(backendMocks.showCaptureWindow).toHaveBeenCalledTimes(showCallsBeforePoll);
+    expect(wrapper.find("[data-testid='manual-scroll-preview']").text()).toContain("2 帧");
+    expect(wrapper.find("img[alt='当前滚动画面']").attributes("src")).toContain("Y3VycmVudA==");
+    expect(wrapper.find("img[alt='完整滚动截图预览']").attributes("src")).toContain("cHJldmlldw==");
+
+    await wrapper.find("[data-testid='manual-scroll-complete']").trigger("click");
+    await flushPromises();
+
+    expect(backendMocks.finishScrollingScreenshot).toHaveBeenCalledTimes(1);
+    expect(backendMocks.copyImageDataUrl).toHaveBeenCalledWith("data:image/png;base64,bG9uZw==");
+    expect(wrapper.find("[data-testid='manual-scroll-controller']").exists()).toBe(false);
+    expect(wrapper.find("[data-testid='screenshot-editor']").exists()).toBe(false);
+    expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels the manual scrolling session from its floating controller", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    backendMocks.emit("capture-start", {
+      image: "data:image/png;base64,ZmFrZQ==",
+      width: 800,
+      height: 600,
+      originX: 0,
+      originY: 0,
+      source: "browser",
+      mode: "screenshot"
+    });
+    await flushPromises();
+
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { button: 0, clientX: 80, clientY: 70 });
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 520, clientY: 360 }));
+    window.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 520, clientY: 360 }));
+    await flushPromises();
+
+    await wrapper.find("[data-testid='screenshot-scroll-down']").trigger("click");
+    await flushPromises();
+    await wrapper.find("[data-testid='manual-scroll-cancel']").trigger("click");
+    await flushPromises();
+
+    expect(backendMocks.cancelScrollingScreenshot).toHaveBeenCalledTimes(1);
+    expect(wrapper.find("[data-testid='manual-scroll-controller']").exists()).toBe(false);
     expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
   });
 

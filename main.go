@@ -61,7 +61,7 @@ func newAppOptions(app *App) *options.App {
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
 			DisableWindowIcon:    false,
-			ContentProtection:    false,
+			ContentProtection:    true,
 		},
 	}
 }

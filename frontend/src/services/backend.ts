@@ -23,6 +23,30 @@ export interface CapturePayload {
   displays?: DisplayInfo[];
   source?: "wails" | "browser";
   mode?: "translate" | "screenshot";
+  scrollFrames?: number;
+}
+
+export interface ScrollCaptureRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ManualScrollStatus {
+  frames: number;
+  width: number;
+  height: number;
+  error?: string;
+}
+
+export interface ScrollCaptureStepResult {
+  currentImage: string;
+  previewImage: string;
+  frames: number;
+  width: number;
+  height: number;
+  appended: boolean;
 }
 
 export interface DisplayInfo {
@@ -202,6 +226,55 @@ export async function showCaptureWindow(): Promise<void> {
   if (hasWailsBackend()) {
     await window.go!.main!.App!.ShowCaptureWindow();
   }
+}
+
+let fallbackScrollRegion: ScrollCaptureRegion | null = null;
+let fallbackScrollFrames = 1;
+
+export async function beginScrollingScreenshot(region: ScrollCaptureRegion): Promise<ManualScrollStatus> {
+  if (hasWailsBackend()) {
+    return window.go!.main!.App!.BeginScrollingScreenshot(region);
+  }
+
+  fallbackScrollRegion = region;
+  fallbackScrollFrames = 1;
+  return { frames: 1, width: region.width, height: region.height };
+}
+
+export async function stepScrollingScreenshot(): Promise<ScrollCaptureStepResult> {
+  if (hasWailsBackend()) {
+    return window.go!.main!.App!.StepScrollingScreenshot();
+  }
+  if (!fallbackScrollRegion) {
+    throw new Error("no scrolling capture is active");
+  }
+  return {
+    currentImage: "",
+    previewImage: "",
+    frames: fallbackScrollFrames,
+    width: fallbackScrollRegion.width,
+    height: fallbackScrollRegion.height,
+    appended: false
+  };
+}
+
+export async function finishScrollingScreenshot(): Promise<CapturePayload> {
+  if (hasWailsBackend()) {
+    return window.go!.main!.App!.FinishScrollingScreenshot();
+  }
+  if (!fallbackScrollRegion) {
+    throw new Error("no scrolling capture is active");
+  }
+  const result = createFallbackScrollingCapture(fallbackScrollRegion);
+  fallbackScrollRegion = null;
+  return result;
+}
+
+export async function cancelScrollingScreenshot(): Promise<void> {
+  if (hasWailsBackend()) {
+    await window.go!.main!.App!.CancelScrollingScreenshot();
+  }
+  fallbackScrollRegion = null;
 }
 
 export async function showSettingsWindow(): Promise<void> {
@@ -396,6 +469,40 @@ function createFallbackCapture(mode: "translate" | "screenshot"): CapturePayload
     originY: 0,
     source: "browser",
     mode
+  };
+}
+
+function createFallbackScrollingCapture(region: ScrollCaptureRegion, frames = 3): CapturePayload {
+  const width = Math.max(32, Math.round(region.width));
+  const viewportHeight = Math.max(32, Math.round(region.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = viewportHeight * frames;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Canvas 2D context is unavailable");
+  }
+
+  context.fillStyle = "#f8fafc";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  for (let section = 0; section < 6; section += 1) {
+    const top = section * (canvas.height / 6);
+    context.fillStyle = section % 2 === 0 ? "#e2e8f0" : "#d1fae5";
+    context.fillRect(0, top, canvas.width, canvas.height / 6);
+    context.fillStyle = "#0f172a";
+    context.font = `${Math.max(14, Math.round(width * 0.035))}px Segoe UI, sans-serif`;
+    context.fillText(`Scrolling screenshot section ${section + 1}`, 20, top + 42);
+  }
+
+  return {
+    image: canvas.toDataURL("image/png"),
+    width: canvas.width,
+    height: canvas.height,
+    originX: region.x,
+    originY: region.y,
+    source: "browser",
+    mode: "screenshot",
+    scrollFrames: frames
   };
 }
 

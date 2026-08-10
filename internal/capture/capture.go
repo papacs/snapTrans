@@ -38,6 +38,7 @@ type Result struct {
 	Displays        []Display     `json:"displays"`
 	Source          string        `json:"source"`
 	Mode            string        `json:"mode,omitempty"`
+	ScrollFrames    int           `json:"scrollFrames,omitempty"`
 	CaptureDuration time.Duration `json:"-"`
 	EncodeDuration  time.Duration `json:"-"`
 	EncodedBytes    int           `json:"-"`

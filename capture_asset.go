@@ -28,8 +28,11 @@ func (assets *captureAssets) Store(image []byte) string {
 	assets.nextID++
 	id := assets.nextID
 	assets.images[id] = image
-	if id > 3 {
-		delete(assets.images, id-3)
+	// Manual scrolling capture stores a current frame and a stitched preview
+	// per wheel gesture. Keep enough versions for the WebView to finish decoding
+	// a preceding gesture while the next one is already being processed.
+	if id > 8 {
+		delete(assets.images, id-8)
 	}
 	return fmt.Sprintf("%s?v=%d", captureAssetPath, id)
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"image"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -87,6 +88,8 @@ type App struct {
 	captureStartedAt time.Time
 	captureEmittedAt time.Time
 	captureAssets    *captureAssets
+	scrollCapture    *capture.ManualScrollCapture
+	scrollOverlay    uintptr
 }
 
 func NewApp() *App {
@@ -191,6 +194,12 @@ func (a *App) shutdown(_ context.Context) {
 	if a.processing != nil {
 		a.processing()
 		a.processing = nil
+	}
+	if a.scrollCapture != nil {
+		a.scrollCapture.Cancel()
+		a.scrollCapture = nil
+		restoreManualScrollOverlay(a.scrollOverlay)
+		a.scrollOverlay = 0
 	}
 	if a.ocrWorker != nil {
 		a.ocrWorker.Close()
@@ -365,6 +374,178 @@ func (a *App) TriggerScreenshot() error {
 	return a.triggerCaptureMode("screenshot")
 }
 
+type ScrollCaptureRequest struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+type ScrollCaptureStepResult struct {
+	CurrentImage string `json:"currentImage"`
+	PreviewImage string `json:"previewImage"`
+	Frames       int    `json:"frames"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+	Appended     bool   `json:"appended"`
+}
+
+// BeginScrollingScreenshot captures the initial frame while the overlay is
+// hidden, then cuts an input hole over the selection. The real window receives
+// user input while the remaining overlay shows the stitched preview.
+func (a *App) BeginScrollingScreenshot(request ScrollCaptureRequest) (capture.ManualScrollStatus, error) {
+	if a.ctx == nil {
+		return capture.ManualScrollStatus{}, errors.New("scrolling capture requires the desktop app")
+	}
+	overlay, err := manualScrollOverlayWindow()
+	if err != nil {
+		return capture.ManualScrollStatus{}, err
+	}
+
+	if request.Width < 32 || request.Height < 32 || request.Width > 16384 || request.Height > 16384 ||
+		request.X < -1_000_000 || request.X > 1_000_000 || request.Y < -1_000_000 || request.Y > 1_000_000 {
+		return capture.ManualScrollStatus{}, errors.New("invalid scrolling capture region")
+	}
+
+	a.mu.Lock()
+	if a.captureInFlight {
+		a.mu.Unlock()
+		return capture.ManualScrollStatus{}, errors.New("another capture is already running")
+	}
+	a.captureInFlight = true
+	wasVisible := a.windowVisible
+	a.windowVisible = false
+	a.mu.Unlock()
+
+	runtime.WindowHide(a.ctx)
+	if wasVisible {
+		waitForWindowHidden()
+	}
+
+	rect := image.Rect(request.X, request.Y, request.X+request.Width, request.Y+request.Height)
+	target, err := findManualScrollTarget(rect)
+	if err != nil {
+		a.finishCapture()
+		return capture.ManualScrollStatus{}, err
+	}
+	session, err := capture.StartManualScrollCaptureWithSource(
+		context.Background(),
+		rect,
+		capture.ManualScrollOptions{},
+		func(frameRect image.Rectangle) (image.Image, error) {
+			return captureManualScrollRegion(target.window, frameRect)
+		},
+	)
+	if err != nil {
+		a.finishCapture()
+		return capture.ManualScrollStatus{}, err
+	}
+
+	if err := applyManualScrollHole(overlay, rect); err != nil {
+		session.Cancel()
+		a.finishCapture()
+		return capture.ManualScrollStatus{}, err
+	}
+
+	a.mu.Lock()
+	a.scrollCapture = session
+	a.scrollOverlay = overlay
+	a.windowVisible = true
+	a.mu.Unlock()
+	runtime.WindowSetAlwaysOnTop(a.ctx, true)
+	runtime.WindowShow(a.ctx)
+	return session.Status(), nil
+}
+
+// StepScrollingScreenshot observes the real window exposed through the overlay
+// hole. User wheel and scrollbar input goes directly to that window.
+func (a *App) StepScrollingScreenshot() (ScrollCaptureStepResult, error) {
+	a.mu.Lock()
+	session := a.scrollCapture
+	a.mu.Unlock()
+	if session == nil {
+		return ScrollCaptureStepResult{}, errors.New("no scrolling capture is active")
+	}
+
+	snapshot, err := session.CaptureNext()
+	if err != nil {
+		return ScrollCaptureStepResult{}, err
+	}
+	result := ScrollCaptureStepResult{
+		Frames:   snapshot.Frames,
+		Width:    snapshot.Width,
+		Height:   snapshot.Height,
+		Appended: snapshot.Appended,
+	}
+	if len(snapshot.CurrentImageBytes) > 0 {
+		result.CurrentImage = a.captureAssets.Store(snapshot.CurrentImageBytes)
+	}
+	if len(snapshot.PreviewImageBytes) > 0 {
+		result.PreviewImage = a.captureAssets.Store(snapshot.PreviewImageBytes)
+	}
+	return result, nil
+}
+
+func (a *App) FinishScrollingScreenshot() (capture.Result, error) {
+	session, overlay := a.takeScrollCapture()
+	if session == nil {
+		return capture.Result{}, errors.New("no scrolling capture is active")
+	}
+	if _, err := session.CaptureNext(); err != nil {
+		a.finishScrollingCaptureWindow(overlay)
+		return capture.Result{}, err
+	}
+
+	result, err := session.Finish()
+	a.finishScrollingCaptureWindow(overlay)
+	if err != nil {
+		return capture.Result{}, err
+	}
+	result.Image = a.captureAssets.Store(result.ImageBytes)
+	result.ImageBytes = nil
+	if a.log != nil {
+		a.log.Infof(
+			"manual scrolling capture completed frames=%d image=%dx%d png_bytes=%d",
+			result.ScrollFrames,
+			result.Width,
+			result.Height,
+			result.EncodedBytes,
+		)
+	}
+	return result, nil
+}
+
+func (a *App) CancelScrollingScreenshot() error {
+	session, overlay := a.takeScrollCapture()
+	if session == nil {
+		return nil
+	}
+	session.Cancel()
+	a.finishScrollingCaptureWindow(overlay)
+	return nil
+}
+
+func (a *App) takeScrollCapture() (*capture.ManualScrollCapture, uintptr) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	session := a.scrollCapture
+	overlay := a.scrollOverlay
+	a.scrollCapture = nil
+	a.scrollOverlay = 0
+	return session, overlay
+}
+
+func (a *App) finishScrollingCaptureWindow(overlay uintptr) {
+	restoreManualScrollOverlay(overlay)
+	a.finishCapture()
+	if a.ctx != nil {
+		runtime.WindowHide(a.ctx)
+	}
+	a.mu.Lock()
+	a.windowVisible = false
+	a.mu.Unlock()
+}
+
 func (a *App) triggerCaptureMode(mode string) error {
 	wasVisible, started := a.beginCapture()
 	if !started {
@@ -463,6 +644,12 @@ func (a *App) ProcessImage(base64Crop string, direction string, generation int) 
 }
 
 func (a *App) HideWindow() error {
+	session, overlay := a.takeScrollCapture()
+	if session != nil {
+		session.Cancel()
+		a.finishCapture()
+	}
+	restoreManualScrollOverlay(overlay)
 	a.cancelProcessing()
 	a.mu.Lock()
 	a.windowVisible = false
