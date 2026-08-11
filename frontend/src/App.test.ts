@@ -7,6 +7,7 @@ const backendMocks = vi.hoisted(() => {
   const listeners = new Map<string, Set<Listener>>();
   const defaultConfig = {
     uiLanguage: "zh-CN" as const,
+    theme: "light" as const,
     shortcutKey: "Alt+Q",
     screenshotShortcutKey: "Alt+W",
     apiKey: "",
@@ -650,6 +651,26 @@ describe("App capture cancellation", () => {
     expect(wrapper.find("[data-testid='settings-scroll']").exists()).toBe(true);
     expect(wrapper.findAll("[data-testid='settings-section']")).toHaveLength(4);
     expect(wrapper.find("[data-testid='settings-footer']").exists()).toBe(true);
+  });
+
+  it("switches the settings theme and keeps the API key masked without a reveal control", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+
+    const themeToggle = wrapper.find("[data-testid='theme-toggle']");
+    expect(wrapper.find("main").classes()).not.toContain("dark");
+    expect(themeToggle.attributes("aria-pressed")).toBe("false");
+    expect(wrapper.find("[data-testid='api-key-input']").attributes("type")).toBe("password");
+    expect(wrapper.find("button[aria-label='Show API key']").exists()).toBe(false);
+
+    await themeToggle.trigger("click");
+
+    expect(wrapper.find("main").classes()).toContain("dark");
+    expect(themeToggle.attributes("aria-pressed")).toBe("true");
+    expect(themeToggle.attributes("aria-label")).toBe("\u5207\u6362\u4e3a\u6d45\u8272\u4e3b\u9898");
   });
 
   it("opens settings in Chinese and can switch the page to English", async () => {

@@ -6,6 +6,8 @@ export interface SettingsMessages {
   close: string;
   chinese: string;
   english: string;
+  useLightTheme: string;
+  useDarkTheme: string;
   aiService: string;
   aiServiceDescription: string;
   ocr: string;
@@ -15,8 +17,6 @@ export interface SettingsMessages {
   configured: string;
   missingAPIKey: string;
   apiKeyPlaceholder: string;
-  showAPIKey: string;
-  hideAPIKey: string;
   baseURL: string;
   baseURLHelp: string;
   model: string;
@@ -77,6 +77,8 @@ const english: SettingsMessages = {
   close: "Close settings",
   chinese: "\u4e2d\u6587",
   english: "EN",
+  useLightTheme: "Switch to light theme",
+  useDarkTheme: "Switch to dark theme",
   aiService: "AI service",
   aiServiceDescription: "Connect DeepSeek, LiteLLM, or another OpenAI-compatible provider.",
   ocr: "OCR",
@@ -86,8 +88,6 @@ const english: SettingsMessages = {
   configured: "configured",
   missingAPIKey: "missing - set it below",
   apiKeyPlaceholder: "Enter your API key",
-  showAPIKey: "Show API key",
-  hideAPIKey: "Hide API key",
   baseURL: "Base URL",
   baseURLHelp: "OpenAI-compatible endpoints usually end with /v1.",
   model: "Model",
@@ -142,6 +142,8 @@ const chinese: SettingsMessages = {
   close: "\u5173\u95ed\u8bbe\u7f6e",
   chinese: "\u4e2d\u6587",
   english: "EN",
+  useLightTheme: "\u5207\u6362\u4e3a\u6d45\u8272\u4e3b\u9898",
+  useDarkTheme: "\u5207\u6362\u4e3a\u6697\u8272\u4e3b\u9898",
   aiService: "AI \u670d\u52a1",
   aiServiceDescription: "\u8fde\u63a5 DeepSeek\u3001LiteLLM \u6216\u5176\u4ed6 OpenAI \u517c\u5bb9\u670d\u52a1\u3002",
   ocr: "OCR",
@@ -151,8 +153,6 @@ const chinese: SettingsMessages = {
   configured: "\u5df2\u914d\u7f6e",
   missingAPIKey: "\u672a\u914d\u7f6e\uff0c\u8bf7\u5728\u4e0b\u65b9\u586b\u5199",
   apiKeyPlaceholder: "\u8bf7\u8f93\u5165 API \u5bc6\u94a5",
-  showAPIKey: "\u663e\u793a API \u5bc6\u94a5",
-  hideAPIKey: "\u9690\u85cf API \u5bc6\u94a5",
   baseURL: "\u63a5\u53e3\u5730\u5740",
   baseURLHelp: "OpenAI \u517c\u5bb9\u63a5\u53e3\u901a\u5e38\u4ee5 /v1 \u7ed3\u5c3e\u3002",
   model: "\u6a21\u578b",

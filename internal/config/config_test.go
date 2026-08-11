@@ -104,6 +104,32 @@ func TestWithDefaultsNormalizesUnsupportedUILanguage(t *testing.T) {
 	require.Equal(t, "zh-CN", cfg.WithDefaults().UILanguage)
 }
 
+func TestLoadDefaultsThemeToLightWhenMissing(t *testing.T) {
+	temp := t.TempDir()
+	configPath := filepath.Join(temp, "config.json")
+	require.NoError(t, os.WriteFile(configPath, []byte(`{"shortcutKey":"Alt+Q"}`), 0o600))
+
+	cfg, err := NewStoreAt(configPath, filepath.Join(temp, ".env")).Load()
+
+	require.NoError(t, err)
+	require.Equal(t, "light", cfg.Theme)
+}
+
+func TestThemeRoundTripsAndInvalidValuesUseLight(t *testing.T) {
+	temp := t.TempDir()
+	store := NewStoreAt(filepath.Join(temp, "config.json"), filepath.Join(temp, ".env"))
+
+	expected := Default()
+	expected.Theme = "dark"
+	require.NoError(t, store.Save(expected))
+	actual, err := store.Load()
+
+	require.NoError(t, err)
+	require.Equal(t, "dark", actual.Theme)
+	expected.Theme = "sepia"
+	require.Equal(t, "light", expected.WithDefaults().Theme)
+}
+
 func TestLoadHonorsSavedAutoDirectionFalse(t *testing.T) {
 	temp := t.TempDir()
 	configPath := filepath.Join(temp, "config.json")

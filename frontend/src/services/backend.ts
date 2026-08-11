@@ -1,5 +1,6 @@
 export interface AppConfig {
   uiLanguage: "zh-CN" | "en";
+  theme: "light" | "dark";
   shortcutKey: string;
   screenshotShortcutKey: string;
   apiKey: string;
@@ -130,6 +131,7 @@ const fallbackListeners = new Map<EventName, Set<Listener<unknown>>>();
 
 export const defaultConfig: AppConfig = {
   uiLanguage: "zh-CN",
+  theme: "light",
   shortcutKey: "Alt+Q",
   screenshotShortcutKey: "Alt+W",
   apiKey: "",
@@ -185,7 +187,8 @@ function normalizeLoadedConfig(loaded: Partial<AppConfig> | null | undefined): A
   return {
     ...defaultConfig,
     ...loaded,
-    uiLanguage: loaded?.uiLanguage === "en" ? "en" : "zh-CN"
+    uiLanguage: loaded?.uiLanguage === "en" ? "en" : "zh-CN",
+    theme: loaded?.theme === "dark" ? "dark" : "light"
   };
 }
 

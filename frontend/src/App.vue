@@ -5,16 +5,16 @@ import {
   Check,
   Copy,
   Cpu,
-  Eye,
-  EyeOff,
   FolderOpen,
   History,
   Image as ImageIcon,
   Keyboard,
   Languages,
+  Moon,
   RefreshCw,
   Settings,
   Sparkles,
+  Sun,
   X
 } from "lucide-vue-next";
 import MarkdownIt from "markdown-it";
@@ -141,7 +141,6 @@ const envStatus = ref<EnvironmentStatus | null>(null);
 const autoStartEnabled = ref(false);
 const autoStartTouched = ref(false);
 const appVersion = ref("");
-const showAPIKey = ref(false);
 const copied = ref(false);
 const copiedImage = ref(false);
 const isDesktop = hasWailsBackend();
@@ -160,6 +159,10 @@ watch(
 
 function setSettingsLocale(locale: SettingsLocale): void {
   config.uiLanguage = locale;
+}
+
+function toggleTheme(): void {
+  config.theme = config.theme === "dark" ? "light" : "dark";
 }
 
 let pendingTranslationText = "";
@@ -1397,7 +1400,8 @@ async function saveSettings(): Promise<void> {
 
 <template>
   <main
-    class="relative h-full w-full overflow-hidden bg-transparent text-slate-950 dark:text-slate-50"
+    class="relative h-full w-full overflow-hidden bg-transparent"
+    :class="config.theme === 'dark' ? 'dark text-slate-50' : 'text-slate-950'"
     @mousedown="onMainMouseDown"
     @contextmenu="onMainContextMenu"
   >
@@ -1669,6 +1673,19 @@ async function saveSettings(): Promise<void> {
             class="flex items-center gap-2"
             style="--wails-draggable: no-drag"
           >
+            <button
+              data-testid="theme-toggle"
+              class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500 ring-1 ring-slate-200/80 transition hover:text-slate-900 dark:bg-zinc-900 dark:text-slate-400 dark:ring-zinc-800 dark:hover:text-white"
+              style="--wails-draggable: no-drag"
+              type="button"
+              :title="config.theme === 'dark' ? settingsText.useLightTheme : settingsText.useDarkTheme"
+              :aria-label="config.theme === 'dark' ? settingsText.useLightTheme : settingsText.useDarkTheme"
+              :aria-pressed="config.theme === 'dark'"
+              @click="toggleTheme"
+            >
+              <Sun v-if="config.theme === 'dark'" class="h-4 w-4" aria-hidden="true" />
+              <Moon v-else class="h-4 w-4" aria-hidden="true" />
+            </button>
             <div class="flex h-8 items-center rounded-lg bg-slate-100 p-0.5 ring-1 ring-slate-200/80 dark:bg-zinc-900 dark:ring-zinc-800">
               <button
                 data-testid="locale-zh"
@@ -1748,25 +1765,14 @@ async function saveSettings(): Promise<void> {
 
         <label class="settings-field">
           <span class="settings-label">{{ settingsText.apiKey }}</span>
-          <span class="relative block">
-            <input
-              v-model="config.apiKey"
-              class="settings-input pr-11"
-              :type="showAPIKey ? 'text' : 'password'"
-              autocomplete="off"
-              :placeholder="settingsText.apiKeyPlaceholder"
-            />
-            <button
-              class="absolute inset-y-0 right-1 inline-flex w-9 items-center justify-center rounded-md text-slate-400 transition hover:text-slate-700 dark:hover:text-slate-200"
-              type="button"
-              :title="showAPIKey ? settingsText.hideAPIKey : settingsText.showAPIKey"
-              :aria-label="showAPIKey ? settingsText.hideAPIKey : settingsText.showAPIKey"
-              @click="showAPIKey = !showAPIKey"
-            >
-              <EyeOff v-if="showAPIKey" class="h-4 w-4" aria-hidden="true" />
-              <Eye v-else class="h-4 w-4" aria-hidden="true" />
-            </button>
-          </span>
+          <input
+            v-model="config.apiKey"
+            data-testid="api-key-input"
+            class="settings-input"
+            type="password"
+            autocomplete="off"
+            :placeholder="settingsText.apiKeyPlaceholder"
+          />
         </label>
 
         <div class="mt-4 grid gap-4 sm:grid-cols-2">

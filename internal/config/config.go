@@ -12,6 +12,7 @@ import (
 
 type Config struct {
 	UILanguage             string `json:"uiLanguage"`
+	Theme                  string `json:"theme"`
 	ShortcutKey            string `json:"shortcutKey"`
 	ScreenshotShortcutKey  string `json:"screenshotShortcutKey"`
 	APIKey                 string `json:"apiKey"`
@@ -30,6 +31,7 @@ type Config struct {
 // DeepSeek-specific fields written by versions before LiteLLM support.
 type persistedConfig struct {
 	UILanguage             string `json:"uiLanguage"`
+	Theme                  string `json:"theme"`
 	ShortcutKey            string `json:"shortcutKey"`
 	ScreenshotShortcutKey  string `json:"screenshotShortcutKey"`
 	APIKey                 string `json:"apiKey"`
@@ -50,6 +52,7 @@ type persistedConfig struct {
 func (p persistedConfig) Config() Config {
 	return Config{
 		UILanguage:             p.UILanguage,
+		Theme:                  p.Theme,
 		ShortcutKey:            p.ShortcutKey,
 		ScreenshotShortcutKey:  p.ScreenshotShortcutKey,
 		APIKey:                 firstNonEmpty(p.APIKey, p.DeepSeekAPIKey),
@@ -73,6 +76,7 @@ type Store struct {
 func Default() Config {
 	return Config{
 		UILanguage:             "zh-CN",
+		Theme:                  "light",
 		ShortcutKey:            "Alt+Q",
 		ScreenshotShortcutKey:  "Alt+W",
 		BaseURL:                "https://api.deepseek.com",
@@ -153,6 +157,9 @@ func (c Config) WithDefaults() Config {
 	defaults := Default()
 	if c.UILanguage != "zh-CN" && c.UILanguage != "en" {
 		c.UILanguage = defaults.UILanguage
+	}
+	if c.Theme != "light" && c.Theme != "dark" {
+		c.Theme = defaults.Theme
 	}
 	if strings.TrimSpace(c.ShortcutKey) == "" {
 		c.ShortcutKey = defaults.ShortcutKey
