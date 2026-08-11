@@ -296,6 +296,22 @@ export async function processImage(
   void streamFallbackTranslation(direction, generation);
 }
 
+export async function extractText(base64Image: string): Promise<OCRResultPayload> {
+  if (hasWailsBackend()) {
+    const result = await window.go!.main!.App!.ExtractText(base64Image);
+    return {
+      text: typeof result?.text === "string" ? result.text : "",
+      blocks: Array.isArray(result?.blocks) ? result.blocks : []
+    };
+  }
+
+  await delay(220);
+  return {
+    text: "Browser preview: extracted screenshot text can be edited and copied here.",
+    blocks: []
+  };
+}
+
 export async function hideWindow(): Promise<void> {
   if (hasWailsBackend()) {
     await window.go!.main!.App!.HideWindow();

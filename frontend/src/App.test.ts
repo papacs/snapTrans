@@ -57,6 +57,10 @@ const backendMocks = vi.hoisted(() => {
     })),
     cancelScrollingScreenshot: vi.fn(async () => {}),
     copyText: vi.fn(async () => {}),
+    extractText: vi.fn(async () => ({
+      text: "\u622a\u56fe\u91cc\u7684\u6587\u5b57\u53ef\u4ee5\u7f16\u8f91\u548c\u590d\u5236\u3002",
+      blocks: []
+    })),
     frontendReady: vi.fn(async () => {}),
     getHistory: vi.fn(async () => []),
     hideWindow: vi.fn(async () => {}),
@@ -95,6 +99,7 @@ vi.mock("./services/backend", () => ({
   cancelScrollingScreenshot: backendMocks.cancelScrollingScreenshot,
   copyImageDataUrl: backendMocks.copyImageDataUrl,
   copyText: backendMocks.copyText,
+  extractText: backendMocks.extractText,
   defaultConfig: backendMocks.defaultConfig,
   frontendReady: backendMocks.frontendReady,
   finishScrollingScreenshot: backendMocks.finishScrollingScreenshot,
@@ -176,6 +181,7 @@ describe("App capture cancellation", () => {
     backendMocks.finishScrollingScreenshot.mockClear();
     backendMocks.stepScrollingScreenshot.mockClear();
     backendMocks.copyText.mockClear();
+    backendMocks.extractText.mockClear();
     backendMocks.frontendReady.mockClear();
     backendMocks.getHistory.mockClear();
     backendMocks.isDesktop = false;
@@ -327,6 +333,56 @@ describe("App capture cancellation", () => {
 
     expect(backendMocks.copyImageDataUrl).toHaveBeenCalledWith("data:image/png;base64,c2VsZWN0aW9u");
     expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("extracts screenshot text into an editable side panel and copies the edited text", async () => {
+    let finishExtraction!: () => void;
+    backendMocks.extractText.mockImplementationOnce(() => new Promise((resolve) => {
+      finishExtraction = () => resolve({ text: "\u622a\u56fe\u91cc\u7684\u6587\u5b57\u53ef\u4ee5\u7f16\u8f91\u548c\u590d\u5236\u3002", blocks: [] });
+    }));
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    backendMocks.emit("capture-start", {
+      image: "data:image/png;base64,ZmFrZQ==",
+      width: 800,
+      height: 600,
+      originX: 0,
+      originY: 0,
+      source: "browser",
+      mode: "screenshot"
+    });
+    await flushPromises();
+
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { button: 0, clientX: 80, clientY: 70 });
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 520, clientY: 360 }));
+    window.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 520, clientY: 360 }));
+    await flushPromises();
+
+    await wrapper.find("[data-testid='screenshot-extract-text']").trigger("click");
+    await flushPromises();
+    const panel = wrapper.find("[data-testid='text-extraction-panel']");
+    const textarea = panel.find("textarea");
+    expect(panel.exists()).toBe(true);
+    expect(panel.find("[data-testid='text-extraction-loading']").exists()).toBe(true);
+    expect((textarea.element as HTMLTextAreaElement).disabled).toBe(true);
+
+    finishExtraction();
+    await flushPromises();
+    expect(panel.find("[data-testid='text-extraction-loading']").exists()).toBe(false);
+    expect((textarea.element as HTMLTextAreaElement).disabled).toBe(false);
+
+    expect(backendMocks.extractText).toHaveBeenCalledWith("data:image/png;base64,c2VsZWN0aW9u");
+    expect(backendMocks.processImage).not.toHaveBeenCalled();
+    expect((textarea.element as HTMLTextAreaElement).value).toBe("\u622a\u56fe\u91cc\u7684\u6587\u5b57\u53ef\u4ee5\u7f16\u8f91\u548c\u590d\u5236\u3002");
+
+    await textarea.setValue("\u7f16\u8f91\u540e\u7684\u8bc6\u522b\u6587\u5b57");
+    await panel.find("[data-testid='copy-extracted-text']").trigger("click");
+    await flushPromises();
+
+    expect(backendMocks.copyText).toHaveBeenCalledWith("\u7f16\u8f91\u540e\u7684\u8bc6\u522b\u6587\u5b57");
   });
 
   it("keeps the native capture visible beneath the screenshot annotation layer", async () => {
@@ -692,7 +748,34 @@ describe("App capture cancellation", () => {
     backendMocks.emit("translation-start", { generation: 1 });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Translating...");
+    const progress = wrapper.find("[data-testid='translation-progress']");
+    const card = wrapper.find("[data-testid='translation-progress-card']");
+    expect(progress.text()).toContain("Translating...");
+    expect(progress.classes()).toEqual(expect.arrayContaining(["absolute", "inset-0", "items-center", "justify-center"]));
+    expect(card.classes()).toEqual(expect.arrayContaining(["min-h-24", "min-w-32"]));
+  });
+
+  it("shrinks a dense plain translation to the selected region without a scrollbar", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { clientX: 20, clientY: 20 });
+    await captureLayer.trigger("mousemove", { clientX: 260, clientY: 74 });
+    await captureLayer.trigger("mouseup", { clientX: 260, clientY: 74 });
+    await flushPromises();
+
+    backendMocks.emit("translation-token", { generation: 1, token: "\u8fd9\u662f\u4e00\u4e2a\u5185\u5bb9\u8f83\u5bc6\u96c6\u7684\u7ffb\u8bd1\u7ed3\u679c\uff0c\u9700\u8981\u6839\u636e\u9009\u533a\u5bbd\u5ea6\u548c\u9ad8\u5ea6\u81ea\u52a8\u8c03\u6574\u5b57\u53f7\uff0c\u4fdd\u8bc1\u8bd1\u6587\u90fd\u80fd\u5728\u533a\u57df\u5185\u5b8c\u6574\u663e\u793a\u3002" });
+    backendMocks.emit("translation-done", { generation: 1 });
+    await flushPromises();
+
+    const result = wrapper.find("[data-testid='translation-result']");
+    const fontSize = stylePx(result.attributes("style"), "font-size");
+    expect(fontSize).toBeLessThan(19);
+    expect(result.classes()).toContain("overflow-hidden");
+    expect(result.classes()).not.toContain("overflow-y-auto");
   });
 
   it("batches streamed translation fragments into one animation-frame update", async () => {

@@ -58,6 +58,7 @@ import {
 import {
   clampPointToBounds,
   cropCanvasToDataUrlAsync,
+  fitTranslationFontSize,
   fontSizeForTranslationBlock,
   isUsableSelection,
   mapCssRectToImageRect,
@@ -266,10 +267,20 @@ const resultTextStyle = computed(() => {
     return {};
   }
 
-  const fontSize = Math.max(14, Math.min(22, Math.round(rect.height * 0.36)));
+  const box = normalizeResultBox(rect, viewport);
+  const preferredFontSize = Math.max(14, Math.min(22, Math.round(box.height * 0.36)));
+  const availableRect = {
+    x: 0,
+    y: 0,
+    width: Math.max(1, box.width - 20),
+    height: Math.max(1, box.height - 16)
+  };
+  const fontSize = cleanTranslationText.value
+    ? fitTranslationFontSize(cleanTranslationText.value, availableRect, preferredFontSize, 1.3)
+    : preferredFontSize;
   return {
     fontSize: `${fontSize}px`,
-    lineHeight: `${Math.round(fontSize * 1.45)}px`
+    lineHeight: `${Math.round(fontSize * 1.3)}px`
   };
 });
 
@@ -290,6 +301,10 @@ const resultActionsStyle = computed(() => {
 });
 
 const isResultBusy = computed(() => phase.value === "processing" || phase.value === "streaming");
+const showsResultProgress = computed(
+  () => phase.value === "processing" || (phase.value === "streaming" && !translationText.value)
+);
+const resultProgressLabel = computed(() => phase.value === "processing" ? "OCR..." : "Translating...");
 
 const reverseDirectionTitle = computed(() =>
   translationDirection.value === "to-zh" ? "Reverse: translate Chinese to English" : "Reverse: translate English to Chinese"
@@ -1120,8 +1135,8 @@ function fitAnchoredTranslationBlock(
 
   const hasHangingIndent = shouldUseHangingIndent(text);
   const minimumFontSize = hasHangingIndent
-    ? Math.max(12, Math.round(baseFontSize * 0.56))
-    : Math.max(13, Math.round(baseFontSize * 0.72));
+    ? Math.max(8, Math.round(baseFontSize * 0.48))
+    : Math.max(8, Math.round(baseFontSize * 0.6));
   const targetBottom = Math.max(top + mapped.height, Math.min(selectionHeight, nextOriginalTop));
   const targetHeight = Math.max(mapped.height, targetBottom - top - ANCHORED_TRANSLATION_BLOCK_GAP);
   let selected = measureAnchoredTranslationBlock(text, mapped, width, baseFontSize);
@@ -1495,35 +1510,33 @@ async function saveSettings(): Promise<void> {
       "
       :style="resultStyle"
     >
+      <div
+        v-if="showsResultProgress"
+        data-testid="translation-progress"
+        class="pointer-events-none absolute inset-0 z-30 flex items-center justify-center"
+      >
+        <div
+          data-testid="translation-progress-card"
+          class="flex min-h-24 min-w-32 flex-col items-center justify-center rounded-xl bg-slate-950/85 px-5 py-4 text-white shadow-[0_12px_36px_rgba(15,23,42,0.34)] backdrop-blur-sm dark:bg-zinc-100/90 dark:text-zinc-950"
+        >
+          <span class="h-8 w-8 animate-spin rounded-full border-[3px] border-emerald-400 border-t-transparent" />
+          <span class="mt-3 text-sm font-medium">{{ resultProgressLabel }}</span>
+        </div>
+      </div>
+
       <template v-if="hasFlowTranslationLayout && phase !== 'error'">
         <div
-          v-if="phase === 'processing' || (phase === 'streaming' && !translationText)"
-          class="absolute left-0 top-0 inline-flex h-7 items-center gap-2 rounded bg-white/90 px-2 text-xs text-slate-700 shadow-sm backdrop-blur dark:bg-zinc-950/90 dark:text-slate-200"
+          v-for="block in anchoredTranslationBlocks"
+          :key="block.key"
+          class="absolute"
+          :style="block.style"
+          :data-testid="block.testId"
         >
-          <span class="h-3 w-3 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
-          <span>{{ phase === "processing" ? "OCR..." : "Translating..." }}</span>
+          {{ block.text }}
         </div>
-        <template v-else>
-          <div
-            v-for="block in anchoredTranslationBlocks"
-            :key="block.key"
-            class="absolute"
-            :style="block.style"
-            :data-testid="block.testId"
-          >
-            {{ block.text }}
-          </div>
-        </template>
       </template>
 
       <template v-else-if="hasOCRBlockLayout && phase !== 'error'">
-        <div
-          v-if="phase === 'streaming' && !translationText"
-          class="absolute left-0 top-0 inline-flex h-7 items-center gap-2 rounded bg-white/90 px-2 text-xs text-slate-700 shadow-sm backdrop-blur dark:bg-zinc-950/90 dark:text-slate-200"
-        >
-          <span class="h-3 w-3 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
-          <span>Translating...</span>
-        </div>
         <div
           v-for="block in inlineOCRBlocks"
           :key="block.key"
@@ -1537,23 +1550,7 @@ async function saveSettings(): Promise<void> {
 
       <template v-else>
         <div
-          v-if="phase === 'processing'"
-          class="absolute left-0 top-0 inline-flex h-7 items-center gap-2 rounded bg-white/95 px-2 text-xs text-slate-700 shadow-sm dark:bg-zinc-950/95 dark:text-slate-200"
-        >
-          <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
-          <span>OCR...</span>
-        </div>
-
-        <div
-          v-else-if="phase === 'streaming' && !translationText"
-          class="absolute left-0 top-0 inline-flex h-7 items-center gap-2 rounded bg-white/95 px-2 text-xs text-slate-700 shadow-sm dark:bg-zinc-950/95 dark:text-slate-200"
-        >
-          <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
-          <span>Translating...</span>
-        </div>
-
-        <div
-          v-else-if="phase === 'error'"
+          v-if="phase === 'error'"
           data-testid="result-error"
           class="flex h-full flex-col gap-2 overflow-y-auto overflow-x-hidden break-words whitespace-pre-wrap text-sm leading-6 text-rose-700 dark:text-rose-300"
         >
@@ -1586,7 +1583,8 @@ async function saveSettings(): Promise<void> {
 
         <div
           v-else
-          class="markdown-body h-full overflow-y-auto overflow-x-hidden break-words pr-1 text-slate-950 dark:text-slate-100"
+          data-testid="translation-result"
+          class="markdown-body h-full overflow-hidden break-words pr-1 text-slate-950 dark:text-slate-100"
           :style="resultTextStyle"
           v-html="renderedTranslation"
         />

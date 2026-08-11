@@ -374,15 +374,42 @@ export function fontSizeForOCRBlock(block: OCRBlock, selectionHeight: number): n
   return Math.max(11, Math.min(22, Math.round(blockHeight * 0.95)));
 }
 
+export function fitTranslationFontSize(
+  text: string,
+  rect: Rect,
+  preferredFontSize: number,
+  lineHeightRatio = 1.3,
+  minimumFontSize = 8
+): number {
+  const minimum = Math.max(6, Math.round(minimumFontSize));
+  const maximum = Math.max(minimum, Math.round(preferredFontSize));
+  const availableWidth = Math.max(1, rect.width);
+  const availableHeight = Math.max(1, rect.height);
+  const paragraphs = text.split(/\r?\n/);
+
+  for (let fontSize = maximum; fontSize >= minimum; fontSize -= 1) {
+    const lineCount = paragraphs.reduce(
+      (total, paragraph) =>
+        total + (paragraph.trim() ? wrapTranslationText(paragraph, fontSize, availableWidth).length : 1),
+      0
+    );
+    const textHeight = lineCount * Math.round(fontSize * lineHeightRatio);
+    if (textHeight <= availableHeight) {
+      return fontSize;
+    }
+  }
+
+  return minimum;
+}
+
 export function fontSizeForTranslationBlock(text: string, rect: Rect): number {
   const trimmed = text.trim();
   const charCount = Math.max(1, Array.from(trimmed).length);
   const lengthDamping = charCount > 6 ? 0.82 : 1;
   const heightLimit = rect.height * 0.84 * lengthDamping;
-  const widthLimit = rect.width / Math.max(2, charCount * 1.15);
-  const size = Math.min(heightLimit, widthLimit, 20);
+  const preferredSize = Math.min(heightLimit, 20);
 
-  return Math.max(10, Math.round(size));
+  return fitTranslationFontSize(trimmed, rect, preferredSize, 1.12);
 }
 
 export function wrapTranslationText(text: string, fontSize: number, width: number): string[] {

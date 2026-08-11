@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	clampPointToBounds,
+	fitTranslationFontSize,
 	fontSizeForOCRBlock,
   fontSizeForTranslationBlock,
   mapCssRectToImageRect,
@@ -184,6 +185,17 @@ describe("mapOCRBlockToSelection", () => {
         height: 24
       })
     ).toBeLessThanOrEqual(17);
+  });
+
+  it("shrinks wrapped translations until they fit the available region height", () => {
+    const text = "\u8fd9\u662f\u4e00\u4e2a\u5185\u5bb9\u8f83\u5bc6\u96c6\u7684\u7ffb\u8bd1\u7ed3\u679c\uff0c\u9700\u8981\u540c\u65f6\u53c2\u8003\u9009\u533a\u7684\u5bbd\u5ea6\u548c\u9ad8\u5ea6\u6765\u81ea\u52a8\u7f29\u5c0f\u5b57\u4f53\uff0c\u907f\u514d\u5185\u5bb9\u88ab\u906e\u6321\u6216\u51fa\u73b0\u6eda\u52a8\u6761\u3002";
+    const rect = { x: 0, y: 0, width: 240, height: 54 };
+    const fontSize = fitTranslationFontSize(text, rect, 20, 1.3);
+    const lineHeight = Math.round(fontSize * 1.3);
+    const wrappedHeight = wrapTranslationText(text, fontSize, rect.width).length * lineHeight;
+
+    expect(fontSize).toBeLessThan(20);
+    expect(wrappedHeight).toBeLessThanOrEqual(rect.height);
   });
 });
 

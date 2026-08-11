@@ -6,6 +6,7 @@ import type {
   HistoryEntry,
   ManualScrollStatus,
   OCRResultEvent,
+  OCRResultPayload,
   ScrollCaptureRegion,
   ScrollCaptureStepResult,
   TranslationDirection,
@@ -30,6 +31,7 @@ declare global {
           FinishScrollingScreenshot: () => Promise<CapturePayload>;
           CancelScrollingScreenshot: () => Promise<void>;
           ProcessImage: (base64Crop: string, direction: TranslationDirection, generation?: number) => Promise<void>;
+          ExtractText: (base64Image: string) => Promise<OCRResultPayload>;
           HideWindow: () => Promise<void>;
           QuitApp: () => Promise<void>;
           ShowSettings: () => Promise<void>;

@@ -2,12 +2,14 @@
 import {
   ArrowUpRight,
   Check,
+  Copy,
   Circle,
   ChevronsDown,
   Download,
   Grid3X3,
   LoaderCircle,
   Pencil,
+  ScanText,
   Smile,
   Square,
   Type,
@@ -19,6 +21,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   beginScrollingScreenshot,
   cancelScrollingScreenshot,
+  copyText,
+  extractText,
   finishScrollingScreenshot,
   showCaptureWindow,
   stepScrollingScreenshot,
@@ -62,6 +66,14 @@ const scrollProgress = ref<ManualScrollStatus>({ frames: 1, width: 0, height: 0 
 const currentFrameImage = ref("");
 const stitchedPreviewImage = ref("");
 const scrollStepPending = ref(false);
+const textExtractionOpen = ref(false);
+const extractingText = ref(false);
+const extractedText = ref("");
+const textExtractionError = ref("");
+const copiedExtractedText = ref(false);
+const extractedTextRef = ref<HTMLTextAreaElement | null>(null);
+let extractionSequence = 0;
+let copiedTextTimer: number | null = null;
 let baseCanvas: HTMLCanvasElement | null = null;
 let pixelatedCanvas: HTMLCanvasElement | null = null;
 let drawing = false;
@@ -70,7 +82,7 @@ let scrollPollTimer: number | null = null;
 
 const SCROLL_POLL_INTERVAL_MS = 180;
 
-const TOOLBAR_WIDTH = 556;
+const TOOLBAR_WIDTH = 600;
 const TOOLBAR_HEIGHT = 48;
 
 const editorStyle = computed(() => ({
@@ -114,6 +126,26 @@ const previewPanelStyle = computed(() => {
   return { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` };
 });
 
+const extractionPanelStyle = computed(() => {
+  const gap = 12;
+  const padding = 8;
+  const width = Math.min(360, Math.max(240, Math.round(window.innerWidth * 0.28)), Math.max(160, window.innerWidth - padding * 2));
+  const height = Math.min(Math.max(260, props.rect.height), Math.max(180, window.innerHeight - padding * 2));
+  const right = props.rect.x + props.rect.width + gap;
+  const left = props.rect.x - width - gap;
+  const x = right + width <= window.innerWidth - padding
+    ? right
+    : left >= padding
+      ? left
+      : Math.max(padding, window.innerWidth - width - padding);
+  const y = clamp(
+    props.rect.y,
+    padding,
+    Math.max(padding, window.innerHeight - height - padding)
+  );
+  return { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` };
+});
+
 const textDraftStyle = computed(() => {
   const draft = textDraft.value;
   const canvas = editorCanvasRef.value;
@@ -149,6 +181,11 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   disposed = true;
+  extractionSequence += 1;
+  if (copiedTextTimer !== null) {
+    window.clearTimeout(copiedTextTimer);
+    copiedTextTimer = null;
+  }
   stopScrollPolling();
   if (manualScrolling.value || startingScroll.value) {
     void cancelScrollingScreenshot();
@@ -533,6 +570,73 @@ function save(): void {
   }
 }
 
+async function extractImageText(): Promise<void> {
+  const imageDataUrl = baseCanvas?.toDataURL("image/png") ?? "";
+  if (!imageDataUrl || extractingText.value) {
+    return;
+  }
+
+  const sequence = ++extractionSequence;
+  textExtractionOpen.value = true;
+  extractingText.value = true;
+  extractedText.value = "";
+  textExtractionError.value = "";
+  copiedExtractedText.value = false;
+
+  try {
+    const result = await extractText(imageDataUrl);
+    if (disposed || sequence !== extractionSequence) {
+      return;
+    }
+    extractedText.value = result.text.trim();
+    if (!extractedText.value) {
+      textExtractionError.value = "\u672a\u8bc6\u522b\u5230\u6587\u5b57\uff0c\u53ef\u4ee5\u91cd\u65b0\u8bc6\u522b\u6216\u624b\u52a8\u8f93\u5165\u3002";
+    }
+  } catch (error) {
+    if (disposed || sequence !== extractionSequence) {
+      return;
+    }
+    textExtractionError.value = error instanceof Error ? error.message : "\u6587\u5b57\u8bc6\u522b\u5931\u8d25";
+  } finally {
+    if (sequence === extractionSequence) {
+      extractingText.value = false;
+    }
+  }
+
+  if (!disposed && sequence === extractionSequence) {
+    await nextTick();
+    extractedTextRef.value?.focus();
+  }
+}
+
+function closeTextExtraction(): void {
+  extractionSequence += 1;
+  textExtractionOpen.value = false;
+  extractingText.value = false;
+  textExtractionError.value = "";
+  copiedExtractedText.value = false;
+}
+
+async function copyExtractedText(): Promise<void> {
+  if (!extractedText.value.trim() || extractingText.value) {
+    return;
+  }
+
+  try {
+    await copyText(extractedText.value);
+    textExtractionError.value = "";
+    copiedExtractedText.value = true;
+    if (copiedTextTimer !== null) {
+      window.clearTimeout(copiedTextTimer);
+    }
+    copiedTextTimer = window.setTimeout(() => {
+      copiedExtractedText.value = false;
+      copiedTextTimer = null;
+    }, 1200);
+  } catch (error) {
+    textExtractionError.value = error instanceof Error ? error.message : "\u590d\u5236\u6587\u5b57\u5931\u8d25";
+  }
+}
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -648,6 +752,19 @@ function clamp(value: number, min: number, max: number): number {
       >
         <component :is="item.icon" class="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
+      <button
+        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition disabled:cursor-wait disabled:opacity-60"
+        :class="textExtractionOpen ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'"
+        type="button"
+        :title="'\u63d0\u53d6\u6587\u5b57'"
+        :aria-label="'\u63d0\u53d6\u6587\u5b57'"
+        :disabled="extractingText"
+        data-testid="screenshot-extract-text"
+        @click="extractImageText"
+      >
+        <LoaderCircle v-if="extractingText" class="h-[18px] w-[18px] animate-spin" aria-hidden="true" />
+        <ScanText v-else class="h-[18px] w-[18px]" aria-hidden="true" />
+      </button>
 
       <span class="mx-1 h-6 w-px shrink-0 bg-slate-200" />
       <button
@@ -709,6 +826,88 @@ function clamp(value: number, min: number, max: number): number {
         <Check class="h-5 w-5" aria-hidden="true" />
       </button>
     </div>
+
+    <aside
+      v-if="textExtractionOpen"
+      class="absolute z-[60] flex select-text flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.30)]"
+      :style="extractionPanelStyle"
+      data-testid="text-extraction-panel"
+      @mousedown.stop
+      @contextmenu.stop.prevent
+    >
+      <header class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <ScanText class="h-4 w-4 text-emerald-600" aria-hidden="true" />
+            <span>{{ "\u63d0\u53d6\u6587\u5b57" }}</span>
+          </div>
+          <p class="mt-0.5 text-[11px] text-slate-500">{{ "\u8bc6\u522b\u7ed3\u679c\u53ef\u4ee5\u76f4\u63a5\u7f16\u8f91\u548c\u590d\u5236" }}</p>
+        </div>
+        <div class="flex shrink-0 items-center gap-1">
+          <button
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-wait disabled:opacity-50"
+            type="button"
+            :title="'\u91cd\u65b0\u8bc6\u522b'"
+            :aria-label="'\u91cd\u65b0\u8bc6\u522b'"
+            :disabled="extractingText"
+            data-testid="retry-text-extraction"
+            @click="extractImageText"
+          >
+            <LoaderCircle v-if="extractingText" class="h-4 w-4 animate-spin" aria-hidden="true" />
+            <ScanText v-else class="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            type="button"
+            :title="'\u5173\u95ed\u63d0\u53d6\u6587\u5b57'"
+            :aria-label="'\u5173\u95ed\u63d0\u53d6\u6587\u5b57'"
+            @click="closeTextExtraction"
+          >
+            <X class="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+      </header>
+
+      <div v-if="textExtractionError" class="mx-4 mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
+        {{ textExtractionError }}
+      </div>
+
+      <div class="relative min-h-0 flex-1 p-4">
+        <textarea
+          ref="extractedTextRef"
+          v-model="extractedText"
+          class="h-full w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/15 disabled:cursor-wait"
+          :disabled="extractingText"
+          :placeholder="'\u8bc6\u522b\u7ed3\u679c\u4f1a\u663e\u793a\u5728\u8fd9\u91cc\uff0c\u4e5f\u53ef\u4ee5\u624b\u52a8\u8f93\u5165\u6587\u5b57'"
+          spellcheck="false"
+          data-testid="extracted-text-editor"
+          @keydown.escape.stop.prevent="closeTextExtraction"
+        />
+        <div
+          v-if="extractingText"
+          class="absolute inset-4 flex flex-col items-center justify-center rounded-lg bg-white/90 text-slate-600 backdrop-blur-sm"
+          data-testid="text-extraction-loading"
+        >
+          <LoaderCircle class="h-8 w-8 animate-spin text-emerald-500" aria-hidden="true" />
+          <span class="mt-3 text-sm font-medium">{{ "\u6b63\u5728\u8bc6\u522b\u56fe\u7247\u6587\u5b57..." }}</span>
+        </div>
+      </div>
+
+      <footer class="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3">
+        <span class="text-[11px] text-slate-400">{{ extractedText.length }} {{ "\u4e2a\u5b57\u7b26" }}</span>
+        <button
+          class="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-45"
+          type="button"
+          :disabled="extractingText || !extractedText.trim()"
+          data-testid="copy-extracted-text"
+          @click="copyExtractedText"
+        >
+          <Check v-if="copiedExtractedText" class="h-4 w-4" aria-hidden="true" />
+          <Copy v-else class="h-4 w-4" aria-hidden="true" />
+          {{ copiedExtractedText ? "\u5df2\u590d\u5236" : "\u590d\u5236\u6587\u5b57" }}
+        </button>
+      </footer>
+    </aside>
 
     <div
       v-if="scrollNotice"

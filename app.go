@@ -43,6 +43,11 @@ type ocrResultPayload struct {
 	Blocks     []ocr.Block `json:"blocks"`
 }
 
+type TextExtractionResult struct {
+	Text   string      `json:"text"`
+	Blocks []ocr.Block `json:"blocks"`
+}
+
 type translationTokenPayload struct {
 	Generation int    `json:"generation"`
 	Token      string `json:"token"`
@@ -641,6 +646,39 @@ func (a *App) ProcessImage(base64Crop string, direction string, generation int) 
 
 	go a.processImage(ctx, cfg, base64Crop, translator.NormalizeDirection(direction), generation)
 	return nil
+}
+
+// ExtractText runs the existing local OCR pipeline without starting a translation.
+func (a *App) ExtractText(base64Image string) (TextExtractionResult, error) {
+	if strings.TrimSpace(base64Image) == "" {
+		return TextExtractionResult{}, errors.New("image data is required")
+	}
+
+	a.mu.Lock()
+	cfg := a.cfg.WithDefaults()
+	a.mu.Unlock()
+
+	startedAt := time.Now()
+	result, err := a.runOCR(context.Background(), cfg, base64Image)
+	if err != nil {
+		if a.log != nil {
+			a.log.Errorf("mode=extract-text stage=ocr error=%v", err)
+		}
+		return TextExtractionResult{}, err
+	}
+
+	result.Text = strings.TrimSpace(result.Text)
+	if result.Text == "" {
+		return TextExtractionResult{}, errors.New("OCR returned no text")
+	}
+	if a.log != nil {
+		a.log.Infof("mode=extract-text ocr_ms=%d text_chars=%d blocks=%d", time.Since(startedAt).Milliseconds(), len(result.Text), len(result.Blocks))
+	}
+
+	return TextExtractionResult{
+		Text:   result.Text,
+		Blocks: result.Blocks,
+	}, nil
 }
 
 func (a *App) HideWindow() error {
