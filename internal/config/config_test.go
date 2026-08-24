@@ -168,6 +168,43 @@ func TestLoadDefaultsPersistentOCRWhenMissing(t *testing.T) {
 	require.True(t, cfg.PersistentOCR)
 }
 
+func TestLoadDefaultsTranslationTimeoutToSixtySeconds(t *testing.T) {
+	temp := t.TempDir()
+	configPath := filepath.Join(temp, "config.json")
+	require.NoError(t, os.WriteFile(configPath, []byte(`{"shortcutKey":"Alt+Q"}`), 0o600))
+
+	cfg, err := NewStoreAt(configPath, filepath.Join(temp, ".env")).Load()
+
+	require.NoError(t, err)
+	require.Equal(t, 60, cfg.TranslationTimeoutSeconds)
+}
+
+func TestTranslationTimeoutRoundTripsAndRejectsNonPositive(t *testing.T) {
+	temp := t.TempDir()
+	store := NewStoreAt(filepath.Join(temp, "config.json"), filepath.Join(temp, ".env"))
+
+	expected := Default()
+	expected.TranslationTimeoutSeconds = 120
+	require.NoError(t, store.Save(expected))
+
+	actual, err := store.Load()
+	require.NoError(t, err)
+	require.Equal(t, 120, actual.TranslationTimeoutSeconds)
+
+	require.Equal(t, 60, Config{TranslationTimeoutSeconds: -5}.WithDefaults().TranslationTimeoutSeconds)
+}
+
+func TestTranslationTimeoutEnvOverride(t *testing.T) {
+	temp := t.TempDir()
+	envPath := filepath.Join(temp, ".env")
+	require.NoError(t, os.WriteFile(envPath, []byte("SNAPTRANS_TRANSLATION_TIMEOUT_SECONDS=90\n"), 0o600))
+
+	cfg, err := NewStoreAt(filepath.Join(temp, "config.json"), envPath).Load()
+
+	require.NoError(t, err)
+	require.Equal(t, 90, cfg.TranslationTimeoutSeconds)
+}
+
 func TestLoadHonorsSavedPersistentOCROff(t *testing.T) {
 	temp := t.TempDir()
 	configPath := filepath.Join(temp, "config.json")

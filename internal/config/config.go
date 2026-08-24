@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,6 +21,7 @@ type Config struct {
 	Model                  string `json:"model"`
 	RapidOCRPath           string `json:"rapidOCRPath"`
 	RapidOCRTimeoutSeconds int    `json:"rapidOCRTimeoutSeconds"`
+	TranslationTimeoutSeconds int `json:"translationTimeoutSeconds"`
 	AutoDirection          bool   `json:"autoDirection"`
 	SystemPrompt           string `json:"systemPrompt"`
 	Glossary               string `json:"glossary"`
@@ -42,6 +44,7 @@ type persistedConfig struct {
 	DeepSeekModel          string `json:"deepSeekModel"`
 	RapidOCRPath           string `json:"rapidOCRPath"`
 	RapidOCRTimeoutSeconds int    `json:"rapidOCRTimeoutSeconds"`
+	TranslationTimeoutSeconds int `json:"translationTimeoutSeconds"`
 	AutoDirection          *bool  `json:"autoDirection"`
 	SystemPrompt           string `json:"systemPrompt"`
 	Glossary               string `json:"glossary"`
@@ -60,6 +63,7 @@ func (p persistedConfig) Config() Config {
 		Model:                  firstNonEmpty(p.Model, p.DeepSeekModel),
 		RapidOCRPath:           p.RapidOCRPath,
 		RapidOCRTimeoutSeconds: p.RapidOCRTimeoutSeconds,
+		TranslationTimeoutSeconds: p.TranslationTimeoutSeconds,
 		AutoDirection:          p.AutoDirection == nil || *p.AutoDirection,
 		SystemPrompt:           p.SystemPrompt,
 		Glossary:               p.Glossary,
@@ -83,6 +87,7 @@ func Default() Config {
 		Model:                  "deepseek-chat",
 		RapidOCRPath:           "./RapidOCR-json_v0.2.0",
 		RapidOCRTimeoutSeconds: 15,
+		TranslationTimeoutSeconds: 60,
 		AutoDirection:          true,
 		PersistentOCR:          true,
 	}
@@ -131,6 +136,13 @@ func (s *Store) Load() (Config, error) {
 	}
 
 	loaded := saved.Config()
+	if strings.HasPrefix(loaded.APIKey, secretPrefix) {
+		plain, err := decryptSecret(loaded.APIKey)
+		if err != nil {
+			return cfg, fmt.Errorf("decrypt api key: %w", err)
+		}
+		loaded.APIKey = plain
+	}
 	applyEnvFallback(&loaded, env)
 	return loaded, nil
 }
@@ -145,7 +157,14 @@ func (s *Store) Save(cfg Config) error {
 		return err
 	}
 
-	raw, err := json.MarshalIndent(cfg, "", "  ")
+	saved := cfg
+	encrypted, err := encryptSecret(cfg.APIKey)
+	if err != nil {
+		return fmt.Errorf("encrypt api key: %w", err)
+	}
+	saved.APIKey = encrypted
+
+	raw, err := json.MarshalIndent(saved, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -178,6 +197,9 @@ func (c Config) WithDefaults() Config {
 	}
 	if c.RapidOCRTimeoutSeconds <= 0 {
 		c.RapidOCRTimeoutSeconds = defaults.RapidOCRTimeoutSeconds
+	}
+	if c.TranslationTimeoutSeconds <= 0 {
+		c.TranslationTimeoutSeconds = defaults.TranslationTimeoutSeconds
 	}
 	return c
 }
@@ -241,6 +263,11 @@ func applyEnvFallback(cfg *Config, env map[string]string) {
 			cfg.RapidOCRTimeoutSeconds = parsed
 		}
 	}
+	if cfg.TranslationTimeoutSeconds <= 0 && env["SNAPTRANS_TRANSLATION_TIMEOUT_SECONDS"] != "" {
+		if parsed, err := strconv.Atoi(env["SNAPTRANS_TRANSLATION_TIMEOUT_SECONDS"]); err == nil {
+			cfg.TranslationTimeoutSeconds = parsed
+		}
+	}
 	if env["SNAPTRANS_AUTO_DIRECTION"] != "" {
 		if parsed, err := strconv.ParseBool(env["SNAPTRANS_AUTO_DIRECTION"]); err == nil {
 			cfg.AutoDirection = parsed
@@ -276,6 +303,11 @@ func applyEnvOverrides(cfg *Config, env map[string]string) {
 	if env["RAPIDOCR_TIMEOUT_SECONDS"] != "" {
 		if parsed, err := strconv.Atoi(env["RAPIDOCR_TIMEOUT_SECONDS"]); err == nil {
 			cfg.RapidOCRTimeoutSeconds = parsed
+		}
+	}
+	if env["SNAPTRANS_TRANSLATION_TIMEOUT_SECONDS"] != "" {
+		if parsed, err := strconv.Atoi(env["SNAPTRANS_TRANSLATION_TIMEOUT_SECONDS"]); err == nil {
+			cfg.TranslationTimeoutSeconds = parsed
 		}
 	}
 	*cfg = cfg.WithDefaults()

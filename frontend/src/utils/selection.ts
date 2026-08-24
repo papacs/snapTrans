@@ -542,7 +542,7 @@ export function translationPaletteForColor(color: SampledColor | null): Translat
 
   if (safeLuminance < 0.48) {
     return {
-      backgroundColor: `rgba(${red}, ${green}, ${blue}, 0.98)`,
+      backgroundColor: `rgba(${red}, ${green}, ${blue}, 1)`,
       boxShadow: "none",
       color: "#f8fafc",
       textShadow: "0 1px 1px rgba(0, 0, 0, 0.45)"
@@ -550,7 +550,7 @@ export function translationPaletteForColor(color: SampledColor | null): Translat
   }
 
   return {
-    backgroundColor: `rgba(${red}, ${green}, ${blue}, 0.98)`,
+    backgroundColor: `rgba(${red}, ${green}, ${blue}, 1)`,
     boxShadow: "none",
     color: "#0f172a",
     textShadow: "none"

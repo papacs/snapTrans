@@ -277,14 +277,14 @@ describe("translationPaletteForLuminance", () => {
     const palette = translationPaletteForLuminance(0.12);
 
     expect(palette.color).toBe("#f8fafc");
-    expect(palette.backgroundColor).toBe("rgba(31, 31, 31, 0.98)");
+    expect(palette.backgroundColor).toBe("rgba(31, 31, 31, 1)");
   });
 
   it("uses dark text on light screenshot regions", () => {
     const palette = translationPaletteForLuminance(0.82);
 
     expect(palette.color).toBe("#0f172a");
-    expect(palette.backgroundColor).toBe("rgba(209, 209, 209, 0.98)");
+    expect(palette.backgroundColor).toBe("rgba(209, 209, 209, 1)");
   });
 });
 
@@ -292,7 +292,7 @@ describe("translationPaletteForColor", () => {
   it("uses the sampled original background color for dark regions", () => {
     const palette = translationPaletteForColor({ red: 19, green: 25, blue: 39, luminance: 0.1 });
 
-    expect(palette.backgroundColor).toBe("rgba(19, 25, 39, 0.98)");
+    expect(palette.backgroundColor).toBe("rgba(19, 25, 39, 1)");
     expect(palette.color).toBe("#f8fafc");
     expect(palette.boxShadow).toBe("none");
   });

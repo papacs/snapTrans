@@ -59,3 +59,9 @@ Verify each item before checking it off.
 - [x] D-4 原始 `docs/TODO.md` 清理：勾选已完成项，保留真实待验证项
 - [x] D-5 `CONTRIBUTING.md` 贡献指南
 - [x] D-6 `docs/RELEASE-NOTES.md` 发布说明模板
+
+## 2026 优化轮 / Optimization Round 2
+
+- [x] E-1 翻译整体超时：新增 `translationTimeoutSeconds`（默认 60s），API 挂起时自动取消并在结果框提示，避免无限转圈
+- [x] E-2 API Key DPAPI 加密：Windows `CryptProtectData` 用户级加密落盘（`enc:v1:` 前缀），加载时解密，兼容旧版明文配置
+- [x] E-3 后端直裁：translate 模式提交选区坐标（`TranslateRegion`），后端从已捕获帧裁剪并复刻前端 96px 短边放大规则，省去前端 toBlob 与 base64 桥传输

@@ -42,6 +42,7 @@ import {
   showCaptureWindow,
   showSettingsWindow,
   testConnection,
+  translateRegion,
   triggerCapture,
   type AppConfig,
   type CapturePayload,
@@ -50,6 +51,7 @@ import {
   type HistoryEntry,
   type OCRBlockPayload,
   type OCRResultEvent,
+  type SelectionRegion,
   type TranslationDirection,
   type TranslationDirectionEvent,
   type TranslationTokenEvent,
@@ -57,7 +59,6 @@ import {
 } from "./services/backend";
 import {
   clampPointToBounds,
-  cropCanvasToDataUrlAsync,
   fitTranslationFontSize,
   fontSizeForTranslationBlock,
   isUsableSelection,
@@ -125,6 +126,8 @@ const resolvedTranslationDirection = computed<"to-zh" | "to-en">(() =>
   translationDirection.value === "to-en" ? "to-en" : "to-zh"
 );
 const currentCropDataUrl = ref("");
+const lastImageRegion = ref<SelectionRegion | null>(null);
+const hasResultSource = computed(() => Boolean(lastImageRegion.value || currentCropDataUrl.value));
 const workflowGeneration = ref(0);
 let captureLoadSequence = 0;
 const errorMessage = ref("");
@@ -361,6 +364,7 @@ const inlineOCRBlocks = computed(() => {
         whiteSpace: "normal" as const,
         wordBreak: "break-word" as const,
         ...palette,
+        outline: `2px solid ${palette.backgroundColor}`,
         color: cssColorForSampledColor(foregroundColor) ?? palette.color
       }
     };
@@ -404,6 +408,7 @@ const anchoredTranslationBlocks = computed(() => {
         whiteSpace: "normal" as const,
         wordBreak: "break-word" as const,
         ...palette,
+        outline: `2px solid ${palette.backgroundColor}`,
         color: block.text ? cssColorForSampledColor(foregroundColor) ?? palette.color : "transparent",
         textShadow: block.text ? palette.textShadow : "none",
         ...block.textLayout
@@ -551,6 +556,8 @@ onMounted(async () => {
       copied.value = false;
       copiedImage.value = false;
       screenshotNotice.value = "";
+      lastImageRegion.value = null;
+      currentCropDataUrl.value = "";
       workflowGeneration.value += 1;
       phase.value = "idle";
       settingsOpen.value = true;
@@ -613,6 +620,8 @@ async function startCapture(payload: CapturePayload): Promise<void> {
   copiedImage.value = false;
   screenshotNotice.value = "";
   manualDirection.value = false;
+  lastImageRegion.value = null;
+  currentCropDataUrl.value = "";
   workflowGeneration.value += 1;
   phase.value = "loading";
 
@@ -758,12 +767,15 @@ async function submitSelection(rect: Rect): Promise<void> {
   phase.value = "processing";
 
   try {
-		// Let Vue paint the OCR indicator before PNG compression. toBlob keeps
-		// the potentially expensive encoding work off the interaction task.
-		await nextTick();
-		const crop = await cropCanvasToDataUrlAsync(canvas, imageRect);
-    currentCropDataUrl.value = crop;
-    await processImage(crop, directionForRequest(), workflowGeneration.value);
+    // Let Vue paint the OCR indicator before the backend crop runs, keeping
+    // the interaction task free. The backend crops the captured frame with
+    // the same DPI mapping, so no PNG crosses the Wails bridge.
+    await nextTick();
+    if (imageRect.width <= 0 || imageRect.height <= 0) {
+      throw new Error("Selection is empty");
+    }
+    lastImageRegion.value = imageRect;
+    await translateRegion(imageRect, directionForRequest(), workflowGeneration.value);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "Failed to process selection";
     phase.value = "error";
@@ -818,6 +830,7 @@ async function cancelCapture(): Promise<void> {
   copied.value = false;
   copiedImage.value = false;
   currentCropDataUrl.value = "";
+  lastImageRegion.value = null;
   screenshotNotice.value = "";
   workflowGeneration.value += 1;
   phase.value = "idle";
@@ -878,7 +891,7 @@ async function copyTranslatedImage(): Promise<void> {
 }
 
 async function reverseTranslationDirection(): Promise<void> {
-  if (!currentCropDataUrl.value || isResultBusy.value) {
+  if (!hasResultSource.value || isResultBusy.value) {
     return;
   }
 
@@ -894,7 +907,7 @@ async function reverseTranslationDirection(): Promise<void> {
   workflowGeneration.value += 1;
 
   try {
-    await processImage(currentCropDataUrl.value, directionForRequest(), workflowGeneration.value);
+    await runProcessing(directionForRequest(), workflowGeneration.value);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "Failed to reverse translation direction";
     phase.value = "error";
@@ -902,7 +915,7 @@ async function reverseTranslationDirection(): Promise<void> {
 }
 
 async function retryProcessing(): Promise<void> {
-  if (!currentCropDataUrl.value || isResultBusy.value) {
+  if (!hasResultSource.value || isResultBusy.value) {
     return;
   }
 
@@ -915,11 +928,23 @@ async function retryProcessing(): Promise<void> {
   workflowGeneration.value += 1;
 
   try {
-    await processImage(currentCropDataUrl.value, directionForRequest(), workflowGeneration.value);
+    await runProcessing(directionForRequest(), workflowGeneration.value);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "Failed to retry";
     phase.value = "error";
   }
+}
+
+async function runProcessing(direction: TranslationDirection, generation: number): Promise<void> {
+  if (lastImageRegion.value) {
+    await translateRegion(lastImageRegion.value, direction, generation);
+    return;
+  }
+  if (currentCropDataUrl.value) {
+    await processImage(currentCropDataUrl.value, direction, generation);
+    return;
+  }
+  throw new Error("No selection source is available");
 }
 
 function directionForRequest(): TranslationDirection {
@@ -1257,6 +1282,7 @@ async function restore(): Promise<void> {
   ocrBlocks.value = [];
   resetTranslationText();
   currentCropDataUrl.value = "";
+  lastImageRegion.value = null;
   errorMessage.value = "";
   copied.value = false;
   copiedImage.value = false;
@@ -1565,7 +1591,7 @@ async function saveSettings(): Promise<void> {
               type="button"
               title="Retry translation"
               aria-label="Retry translation"
-              :disabled="!currentCropDataUrl"
+              :disabled="!hasResultSource"
               @click="retryProcessing"
             >
               <RefreshCw class="h-3.5 w-3.5" aria-hidden="true" />
@@ -1625,7 +1651,7 @@ async function saveSettings(): Promise<void> {
           type="button"
           :title="reverseDirectionTitle"
           aria-label="Reverse translation direction"
-          :disabled="!currentCropDataUrl || isResultBusy"
+          :disabled="!hasResultSource || isResultBusy"
           @click="reverseTranslationDirection"
         >
           <Languages class="h-4 w-4" aria-hidden="true" />
@@ -1962,6 +1988,22 @@ async function saveSettings(): Promise<void> {
             type="checkbox"
           />
           <span class="settings-switch" aria-hidden="true" />
+        </label>
+        </div>
+
+        <div class="mt-4 grid gap-4 sm:grid-cols-2">
+        <label class="settings-field">
+          <span class="settings-label">{{ settingsText.translationTimeout }}</span>
+          <input
+            v-model.number="config.translationTimeoutSeconds"
+            class="settings-input"
+            type="number"
+            min="10"
+            max="600"
+            step="5"
+            inputmode="numeric"
+          />
+          <span class="settings-help">{{ settingsText.translationTimeoutHelp }}</span>
         </label>
         </div>
 

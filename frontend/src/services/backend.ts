@@ -8,6 +8,7 @@ export interface AppConfig {
   model: string;
   rapidOCRPath: string;
   rapidOCRTimeoutSeconds: number;
+  translationTimeoutSeconds: number;
   autoDirection: boolean;
   systemPrompt: string;
   glossary: string;
@@ -28,6 +29,13 @@ export interface CapturePayload {
 }
 
 export interface ScrollCaptureRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface SelectionRegion {
   x: number;
   y: number;
   width: number;
@@ -139,6 +147,7 @@ export const defaultConfig: AppConfig = {
   model: "deepseek-chat",
   rapidOCRPath: "./RapidOCR-json_v0.2.0",
   rapidOCRTimeoutSeconds: 15,
+  translationTimeoutSeconds: 60,
   autoDirection: true,
   systemPrompt: "",
   glossary: "",
@@ -293,6 +302,19 @@ export async function processImage(
 ): Promise<void> {
   if (hasWailsBackend()) {
     await window.go!.main!.App!.ProcessImage(base64Crop, direction, generation);
+    return;
+  }
+
+  void streamFallbackTranslation(direction, generation);
+}
+
+export async function translateRegion(
+  region: SelectionRegion,
+  direction: TranslationDirection = "to-zh",
+  generation = 0
+): Promise<void> {
+  if (hasWailsBackend()) {
+    await window.go!.main!.App!.TranslateRegion(region, direction, generation);
     return;
   }
 

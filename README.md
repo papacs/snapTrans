@@ -98,6 +98,7 @@ D:/Tools/RapidOCR-json_v0.2.0/RapidOCR-json.exe
 | 模型 | `deepseek-chat` | 可替换为服务商暴露的模型 ID |
 | RapidOCR 路径 | `./RapidOCR-json_v0.2.0` | 支持文件夹或 EXE 路径 |
 | OCR 超时 | `15s` | 单次识别最大等待时间 |
+| 翻译超时 | `60s` | 翻译接口无响应时的最大等待时间 |
 | 自动识别方向 | 开启 | 根据 OCR 文本自动选择翻译方向 |
 | OCR 常驻预热 | 开启 | 降低第一次及后续识别延迟 |
 
@@ -110,6 +111,7 @@ LLM_MODEL=your-model-id
 
 RAPIDOCR_EXE_PATH=./RapidOCR-json_v0.2.0
 RAPIDOCR_TIMEOUT_SECONDS=15
+SNAPTRANS_TRANSLATION_TIMEOUT_SECONDS=60
 
 SNAPTRANS_SHORTCUT=Alt+Q
 SNAPTRANS_SCREENSHOT_SHORTCUT=Alt+W

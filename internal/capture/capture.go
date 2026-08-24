@@ -238,6 +238,12 @@ func encodePNGBytesWithLevel(frame image.Image, level png.CompressionLevel) ([]b
 	return buffer.Bytes(), nil
 }
 
+// EncodePNGBytes encodes a frame to PNG bytes using the shared fast encoder
+// used for full-screen captures.
+func EncodePNGBytes(frame image.Image) ([]byte, error) {
+	return encodePNGBytesWithLevel(frame, png.NoCompression)
+}
+
 func monitorForPoint(monitors []physicalMonitor, point image.Point) (physicalMonitor, bool) {
 	if len(monitors) == 0 {
 		return physicalMonitor{}, false

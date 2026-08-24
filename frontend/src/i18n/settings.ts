@@ -46,6 +46,8 @@ export interface SettingsMessages {
   detectDirectionDescription: string;
   copyAutomatically: string;
   copyAutomaticallyDescription: string;
+  translationTimeout: string;
+  translationTimeoutHelp: string;
   customInstructions: string;
   customInstructionsPlaceholder: string;
   glossary: string;
@@ -117,6 +119,8 @@ const english: SettingsMessages = {
   detectDirectionDescription: "Choose Chinese or English from OCR text.",
   copyAutomatically: "Copy automatically",
   copyAutomaticallyDescription: "Copy each completed translation.",
+  translationTimeout: "Translation timeout (s)",
+  translationTimeoutHelp: "Cancel a stalled translation after this many seconds.",
   customInstructions: "Custom instructions",
   customInstructionsPlaceholder: "Optional tone, formatting, or domain instructions",
   glossary: "Glossary",
@@ -182,6 +186,8 @@ const chinese: SettingsMessages = {
   detectDirectionDescription: "\u6839\u636e OCR \u5185\u5bb9\u81ea\u52a8\u9009\u62e9\u4e2d\u8bd1\u82f1\u6216\u82f1\u8bd1\u4e2d\u3002",
   copyAutomatically: "\u81ea\u52a8\u590d\u5236",
   copyAutomaticallyDescription: "\u7ffb\u8bd1\u5b8c\u6210\u540e\u81ea\u52a8\u590d\u5236\u5230\u526a\u8d34\u677f\u3002",
+  translationTimeout: "\u7ffb\u8bd1\u8d85\u65f6\uff08\u79d2\uff09",
+  translationTimeoutHelp: "\u7ffb\u8bd1\u957f\u65f6\u95f4\u65e0\u54cd\u5e94\u65f6\u81ea\u52a8\u53d6\u6d88\u3002",
   customInstructions: "\u81ea\u5b9a\u4e49\u6307\u4ee4",
   customInstructionsPlaceholder: "\u53ef\u9009\uff1a\u8bed\u6c14\u3001\u683c\u5f0f\u6216\u9886\u57df\u8981\u6c42",
   glossary: "\u672f\u8bed\u8868",

@@ -15,6 +15,7 @@ const backendMocks = vi.hoisted(() => {
     model: "deepseek-chat",
     rapidOCRPath: "./RapidOCR-json_v0.2.0",
     rapidOCRTimeoutSeconds: 15,
+    translationTimeoutSeconds: 60,
     autoDirection: false,
     persistentOCR: true,
     autoCopy: false,
@@ -68,6 +69,7 @@ const backendMocks = vi.hoisted(() => {
     isDesktop: false,
     loadConfig: vi.fn(async () => ({ ...defaultConfig })),
     processImage: vi.fn(async (_image: string, _direction: string, _generation: number) => {}),
+    translateRegion: vi.fn(async (_region: unknown, _direction: string, _generation: number) => {}),
     saveScreenshot: vi.fn(async () => "capture.png"),
     showCaptureWindow: vi.fn(async () => {}),
     showSettingsWindow: vi.fn(async () => {}),
@@ -120,6 +122,7 @@ vi.mock("./services/backend", () => ({
   showCaptureWindow: backendMocks.showCaptureWindow,
   showSettingsWindow: backendMocks.showSettingsWindow,
   stepScrollingScreenshot: backendMocks.stepScrollingScreenshot,
+  translateRegion: backendMocks.translateRegion,
   triggerCapture: backendMocks.triggerCapture,
   triggerScreenshot: backendMocks.triggerScreenshot
 }));
@@ -187,6 +190,7 @@ describe("App capture cancellation", () => {
     backendMocks.getHistory.mockClear();
     backendMocks.isDesktop = false;
     backendMocks.processImage.mockClear();
+    backendMocks.translateRegion.mockClear();
     backendMocks.saveScreenshot.mockClear();
     backendMocks.showCaptureWindow.mockClear();
     backendMocks.showSettingsWindow.mockClear();
@@ -558,15 +562,10 @@ describe("App capture cancellation", () => {
     window.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 920, clientY: 760 }));
     await flushPromises();
 
-    expect(backendMocks.processImage).toHaveBeenCalledTimes(1);
+    expect(backendMocks.translateRegion).toHaveBeenCalledTimes(1);
   });
 
-  it("shows OCR feedback before the selected PNG finishes encoding", async () => {
-    let finishEncoding: (() => void) | undefined;
-    const toBlob = vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => {
-      finishEncoding = () => callback(new Blob(["selection"], { type: "image/png" }));
-    });
-
+  it("shows OCR feedback immediately when submitting a selection", async () => {
     const wrapper = mount(App);
     await flushPromises();
     await wrapper.find("button[aria-label='Capture']").trigger("click");
@@ -578,17 +577,11 @@ describe("App capture cancellation", () => {
     await flushPromises();
 
     expect(wrapper.find("[data-testid='result-panel']").text()).toContain("OCR...");
-    expect(toBlob).toHaveBeenCalledTimes(1);
-    expect(backendMocks.processImage).not.toHaveBeenCalled();
+    expect(backendMocks.translateRegion).toHaveBeenCalledTimes(1);
 
     const resultPanel = wrapper.find("[data-testid='result-panel']");
     expect(resultPanel.classes()).not.toContain("backdrop-blur-[2px]");
     expect(resultPanel.classes()).not.toContain("bg-white/92");
-
-    finishEncoding?.();
-		await vi.waitFor(() => {
-			expect(backendMocks.processImage).toHaveBeenCalledTimes(1);
-		});
   });
 
   it("ignores translation events from the previous capture after a new selection starts", async () => {
@@ -611,8 +604,8 @@ describe("App capture cancellation", () => {
     await captureLayer.trigger("mouseup", { clientX: 240, clientY: 120 });
     await flushPromises();
 
-    expect(backendMocks.processImage.mock.calls[0]?.[2]).toBe(1);
-    expect(backendMocks.processImage.mock.calls[1]?.[2]).toBe(2);
+    expect(backendMocks.translateRegion.mock.calls[0]?.[2]).toBe(1);
+    expect(backendMocks.translateRegion.mock.calls[1]?.[2]).toBe(2);
 
     backendMocks.emit("translation-token", { generation: 1, token: "STALE_RESULT" });
     backendMocks.emit("translation-token", { generation: 2, token: "CURRENT_RESULT" });
@@ -928,7 +921,8 @@ describe("App capture cancellation", () => {
     expect(labels[2].attributes("style")).toContain("font-size: 16px");
     expect(labels[2].attributes("style")).toContain("font-weight: 500");
     expect(labels[2].attributes("style")).toContain("color: rgb(248, 250, 252)");
-    expect(labels[2].attributes("style")).toContain("background-color: rgba(19, 25, 39");
+    // Browsers serialize opaque rgba(...,1) as rgb(...); match either form.
+    expect(labels[2].attributes("style")).toMatch(/background-color: rgba?\(19,\s*25,\s*39/);
     expect(labels[2].attributes("style")).toContain("box-shadow: none");
     expect(wrapper.find("button[aria-label='Copy translated screenshot']").exists()).toBe(true);
   });
@@ -1461,7 +1455,7 @@ describe("App capture cancellation", () => {
     await captureLayer.trigger("mouseup", { clientX: 600, clientY: 78 });
     await flushPromises();
 
-    expect(backendMocks.processImage).toHaveBeenLastCalledWith("data:image/png;base64,c2VsZWN0aW9u", "to-zh", 1);
+    expect(backendMocks.translateRegion).toHaveBeenLastCalledWith({ x: 148, y: 26, width: 452, height: 52 }, "to-zh", 1);
 
     backendMocks.emit("translation-token", { generation: 1, token: "\u6d4b\u8bd5" });
     backendMocks.emit("translation-done", { generation: 1 });
@@ -1470,7 +1464,7 @@ describe("App capture cancellation", () => {
     await wrapper.find("button[aria-label='Reverse translation direction']").trigger("click");
     await flushPromises();
 
-    expect(backendMocks.processImage).toHaveBeenLastCalledWith("data:image/png;base64,c2VsZWN0aW9u", "to-en", 2);
+    expect(backendMocks.translateRegion).toHaveBeenLastCalledWith({ x: 148, y: 26, width: 452, height: 52 }, "to-en", 2);
     expect(wrapper.text()).toContain("Translating...");
   });
 
@@ -1522,7 +1516,7 @@ describe("App capture cancellation", () => {
     await captureLayer.trigger("mouseup", { clientX: 180, clientY: 80 });
     await flushPromises();
 
-    expect(backendMocks.processImage).toHaveBeenLastCalledWith("data:image/png;base64,c2VsZWN0aW9u", "auto", 1);
+    expect(backendMocks.translateRegion).toHaveBeenLastCalledWith({ x: 20, y: 20, width: 160, height: 60 }, "auto", 1);
 
     backendMocks.emit("translation-direction", { generation: 1, direction: "to-en" });
     backendMocks.emit("ocr-result", {
@@ -1557,7 +1551,7 @@ describe("App capture cancellation", () => {
     await wrapper.find("button[aria-label='Reverse translation direction']").trigger("click");
     await flushPromises();
 
-    expect(backendMocks.processImage).toHaveBeenLastCalledWith("data:image/png;base64,c2VsZWN0aW9u", "to-en", 2);
+    expect(backendMocks.translateRegion).toHaveBeenLastCalledWith({ x: 20, y: 20, width: 160, height: 60 }, "to-en", 2);
 
     backendMocks.emit("translation-direction", { generation: 2, direction: "to-zh" });
     backendMocks.emit("translation-token", { generation: 2, token: "test" });
@@ -1567,7 +1561,7 @@ describe("App capture cancellation", () => {
     await wrapper.find("button[aria-label='Reverse translation direction']").trigger("click");
     await flushPromises();
 
-    expect(backendMocks.processImage).toHaveBeenLastCalledWith("data:image/png;base64,c2VsZWN0aW9u", "to-zh", 3);
+    expect(backendMocks.translateRegion).toHaveBeenLastCalledWith({ x: 20, y: 20, width: 160, height: 60 }, "to-zh", 3);
   });
 
   it("auto-copies the translation result when enabled", async () => {

@@ -1,5 +1,6 @@
 .env
-.env.local
+.env.*
+!.env.sample
 config.json
 
 node_modules/

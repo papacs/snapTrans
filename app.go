@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"image"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,6 +95,7 @@ type App struct {
 	captureStartedAt time.Time
 	captureEmittedAt time.Time
 	captureAssets    *captureAssets
+	frame            image.Image
 	scrollCapture    *capture.ManualScrollCapture
 	scrollOverlay    uintptr
 }
@@ -637,15 +640,83 @@ func (a *App) invalidateCaptureWindowPreparation() {
 func (a *App) ProcessImage(base64Crop string, direction string, generation int) error {
 	a.mu.Lock()
 	cfg := a.cfg.WithDefaults()
+	a.mu.Unlock()
+
+	a.startProcessing(cfg, base64Crop, translator.NormalizeDirection(direction), generation)
+	return nil
+}
+
+// TranslateRegionRequest is a selection in captured-frame pixel coordinates.
+type TranslateRegionRequest struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+// TranslateRegion runs the OCR and translation workflow directly on the last
+// captured frame, avoiding the frontend crop and its base64 round trip over
+// the Wails JSON bridge. The frontend still performs the same DPI-aware
+// coordinate mapping, so the cropped input matches the previous pipeline.
+func (a *App) TranslateRegion(region TranslateRegionRequest, direction string, generation int) error {
+	// The frontend treats selections smaller than 8 px as unusable; keep the
+	// same minimum here so tiny-but-valid selections keep working.
+	if region.Width < 8 || region.Height < 8 || region.Width > 16384 || region.Height > 16384 ||
+		region.X < -1_000_000 || region.X > 1_000_000 || region.Y < -1_000_000 || region.Y > 1_000_000 {
+		return errors.New("invalid translation region")
+	}
+
+	a.mu.Lock()
+	frame := a.frame
+	cfg := a.cfg.WithDefaults()
+	a.mu.Unlock()
+	if frame == nil {
+		return errors.New("no captured frame is available; start a new capture")
+	}
+
+	rect := image.Rect(region.X, region.Y, region.X+region.Width, region.Y+region.Height).Intersect(frame.Bounds())
+	if rect.Empty() {
+		return errors.New("selection is outside the captured frame")
+	}
+
+	startedAt := time.Now()
+	cropped := capture.CropForOCR(frame, rect)
+	encoded, err := capture.EncodePNGBytes(cropped)
+	if err != nil {
+		return fmt.Errorf("encode selection: %w", err)
+	}
+	dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(encoded)
+	if a.log != nil {
+		a.log.Infof(
+			"generation=%d backend_crop region=%dx%d+%d+%d scale=%.1f crop_png_bytes=%d crop_ms=%d",
+			generation,
+			rect.Dx(),
+			rect.Dy(),
+			rect.Min.X,
+			rect.Min.Y,
+			capture.OCRScaleForRect(rect),
+			len(encoded),
+			time.Since(startedAt).Milliseconds(),
+		)
+	}
+
+	a.startProcessing(cfg, dataURL, translator.NormalizeDirection(direction), generation)
+	return nil
+}
+
+// startProcessing cancels any in-flight workflow and starts a new one with a
+// bounded translation timeout so a stalled API call cannot hang the overlay.
+func (a *App) startProcessing(cfg config.Config, base64Crop string, direction translator.Direction, generation int) {
+	a.mu.Lock()
 	if a.processing != nil {
 		a.processing()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	timeout := time.Duration(cfg.TranslationTimeoutSeconds) * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	a.processing = cancel
 	a.mu.Unlock()
 
-	go a.processImage(ctx, cfg, base64Crop, translator.NormalizeDirection(direction), generation)
-	return nil
+	go a.processImage(ctx, cfg, base64Crop, direction, generation)
 }
 
 // ExtractText runs the existing local OCR pipeline without starting a translation.
@@ -691,6 +762,7 @@ func (a *App) HideWindow() error {
 	a.cancelProcessing()
 	a.mu.Lock()
 	a.windowVisible = false
+	a.frame = nil
 	a.mu.Unlock()
 	if a.ctx != nil {
 		runtime.WindowHide(a.ctx)
@@ -782,6 +854,13 @@ func (a *App) captureAndEmit(wasVisible bool, mode string) {
 	a.captureOriginY = result.OriginY
 	a.mu.Unlock()
 	result.Image = a.captureAssets.Store(result.ImageBytes)
+	if frame, decodeErr := png.Decode(bytes.NewReader(result.ImageBytes)); decodeErr == nil {
+		a.mu.Lock()
+		a.frame = frame
+		a.mu.Unlock()
+	} else if a.log != nil {
+		a.log.Errorf("capture frame decode failed: %v", decodeErr)
+	}
 	result.ImageBytes = nil
 	result.Mode = mode
 	if a.log != nil {
@@ -927,6 +1006,9 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 		emitTranslationToken(token)
 	})
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			err = fmt.Errorf("translation timed out after %d seconds", cfg.TranslationTimeoutSeconds)
+		}
 		a.emitError("translation", err, generation)
 		return
 	}
