@@ -3,6 +3,7 @@ import {
   Bot,
   Camera,
   Check,
+  ChevronDown,
   Copy,
   Cpu,
   FolderOpen,
@@ -40,18 +41,19 @@ import {
   processImage,
   saveConfig,
   saveScreenshot,
-  setAutoStart,
   showCaptureWindow,
   showSettingsWindow,
   testConnection,
   translateRegion,
+  translateSelection,
   triggerCapture,
   type AppConfig,
   type CapturePayload,
   type EnvironmentStatus,
   type GenerationEvent,
   type HistoryEntry,
-  type OCRBlockPayload,
+  type TextBlockPayload,
+  type TextRegionsEvent,
   type OCRResultEvent,
   type SelectionRegion,
   type TranslationDirection,
@@ -62,16 +64,13 @@ import {
 import {
   clampPointToBounds,
   fitTranslationFontSize,
-  fontSizeForTranslationBlock,
   isUsableSelection,
   mapCssRectToImageRect,
-  mapOCRBlockToSelection,
   normalizeResultBox,
   normalizeRect,
   sampleCanvasColor,
   sampleCanvasForegroundColor,
   selectionBadgePosition,
-  shouldUseFlowTranslationLayout,
   translationPaletteForColor,
   wrapTranslationText,
   type Point,
@@ -79,10 +78,11 @@ import {
   type SampledColor
 } from "./utils/selection";
 import {
-  isLikelyDuplicateTranslation,
-  parseTranslationOutput,
-  translationForOCRBlock
+  parseTranslationOutput
 } from "./utils/translation";
+import { buildSourceRegions, layoutTranslations, OVERLAY_FONT_FAMILY } from "./utils/overlay-layout";
+import { canvasTextMeasurer, leadingMarkerInset, paintTranslationOverlay } from "./utils/overlay-painter";
+import { nativeSelectionBackdrop } from "./utils/selection-backdrop";
 import { shortcutKeyFromKeyboardEvent } from "./utils/shortcut";
 import {
   normalizeSettingsLocale,
@@ -90,27 +90,9 @@ import {
   type SettingsLocale
 } from "./i18n/settings";
 
-type Phase = "idle" | "loading" | "ready" | "drawing" | "editing" | "processing" | "streaming" | "done" | "error";
-type AnchoredTranslationLayoutBlock = {
-  key: string;
-  testId: "translation-line" | "translation-cover";
-  text: string;
-  mapped: Rect;
-  top: number;
-  width: number;
-  height: number;
-  fontSize: number;
-  lineHeight: number;
-  textLayout: Record<string, string>;
-  lines: string[];
-};
-type AnchoredTranslationLayout = {
-  blocks: AnchoredTranslationLayoutBlock[];
-  height: number;
-};
+import { bilingualHistoryText, historyTimestamp, readableTranslation } from "./utils/history";
 
-const ANCHORED_TRANSLATION_BLOCK_GAP = 2;
-
+type Phase = "idle" | "loading" | "ready" | "drawing" | "editing" | "processing" | "streaming" | "done" | "partial" | "error";
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const captureLayerRef = ref<HTMLElement | null>(null);
 const resultPanelRef = ref<HTMLElement | null>(null);
@@ -119,7 +101,7 @@ const capture = ref<CapturePayload | null>(null);
 const dragStart = ref<Point | null>(null);
 const selection = ref<Rect | null>(null);
 const resultRect = ref<Rect | null>(null);
-const ocrBlocks = ref<OCRBlockPayload[]>([]);
+const textBlocks = ref<TextBlockPayload[]>([]);
 const viewport = reactive({ width: window.innerWidth, height: window.innerHeight });
 const translationText = ref("");
 const translationDirection = ref<TranslationDirection>("to-zh");
@@ -129,7 +111,7 @@ const resolvedTranslationDirection = computed<"to-zh" | "to-en">(() =>
 );
 const currentCropDataUrl = ref("");
 const lastImageRegion = ref<SelectionRegion | null>(null);
-const hasResultSource = computed(() => Boolean(lastImageRegion.value || currentCropDataUrl.value));
+const hasResultSource = computed(() => Boolean(capture.value?.selectedText || lastImageRegion.value || currentCropDataUrl.value));
 const workflowGeneration = ref(0);
 let captureLoadSequence = 0;
 const errorMessage = ref("");
@@ -144,13 +126,19 @@ const shortcutRecording = ref<"translate" | "screenshot" | null>(null);
 const screenshotNotice = ref("");
 const envStatus = ref<EnvironmentStatus | null>(null);
 const autoStartEnabled = ref(false);
-const autoStartTouched = ref(false);
+const autoStartLoading = ref(false);
+const savedAutoStart = ref(false);
+let connectionTestSequence = 0;
+const copiedHistoryID = ref("");
 const appVersion = ref("");
 const copied = ref(false);
 const copiedImage = ref(false);
+const copyingGeneration = ref<number | null>(null);
+const expandedTranslation = ref(false);
 const isDesktop = hasWailsBackend();
 const markdown = new MarkdownIt({ breaks: true, linkify: false, html: false });
 const config = reactive<AppConfig>({ ...defaultConfig });
+const savedConfig = reactive<AppConfig>({ ...defaultConfig });
 const settingsLocale = computed(() => normalizeSettingsLocale(config.uiLanguage));
 const settingsText = computed(() => settingsMessages[settingsLocale.value]);
 
@@ -246,11 +234,11 @@ const resultStyle = computed(() => {
     return {};
   }
 
+  if (textBlocks.value.length > 0 && phase.value !== "error") {
+    return { left: rect.x+"px", top:rect.y+"px", width:rect.width+"px", height:rect.height+"px" };
+  }
   const box = normalizeResultBox(rect, viewport);
-  let height =
-    usesFlowTranslationLayout.value && cleanTranslationText.value
-      ? buildAnchoredTranslationLayout(box).height
-      : box.height;
+  let height = box.height;
 
   if (phase.value === "error") {
     const errorLines = wrapTranslationText(errorMessage.value, 14, Math.max(80, box.width - 24));
@@ -318,127 +306,84 @@ const reverseDirectionTitle = computed(() =>
   translationDirection.value === "to-zh" ? "Reverse: translate Chinese to English" : "Reverse: translate English to Chinese"
 );
 
-const inlineOCRBlocks = computed(() => {
-  const rect = resultRect.value;
-  if (!rect) {
-    return [];
+// Pixel colors do not change while text streams over the frozen capture.
+const sampledPaletteCache = new Map<string, { palette: ReturnType<typeof translationPaletteForColor>; foregroundColor: SampledColor | null }>();
+function sampleFrozenPalette(rect: Rect) {
+  const canvas = canvasRef.value;
+  const key = [captureLoadSequence, canvas?.width, canvas?.height, viewport.width, viewport.height, rect.x, rect.y, rect.width, rect.height].join(":");
+  const cached = sampledPaletteCache.get(key);
+  if (cached) return cached;
+  const result = {
+    palette: translationPaletteForColor(sampleCanvasColor(canvas, rect)),
+    foregroundColor: sampleCanvasForegroundColor(canvas, rect)
+  };
+  if (canvas) {
+    if (sampledPaletteCache.size >= 256) sampledPaletteCache.clear();
+    sampledPaletteCache.set(key, result);
   }
+  return result;
+}
 
-  const box = normalizeResultBox(rect, viewport);
-  const localSelection = { x: 0, y: 0, width: box.width, height: box.height };
-  return ocrBlocks.value.flatMap((block, index) => {
-    const mapped = mapOCRBlockToSelection(block, localSelection);
-    const text = translationForOCRBlock(
-      index,
-      block,
-      parsedTranslation.value,
-      ocrBlocks.value.length,
-      resolvedTranslationDirection.value
-    );
-    if (!text) {
-      return [];
-    }
-
-    const fontSize = fontSizeForTranslationBlock(text || block.text, mapped);
-    const sampleRect = {
-      x: box.x + mapped.x,
-      y: box.y + mapped.y,
-      width: mapped.width,
-      height: mapped.height
-    };
-    const palette = translationPaletteForColor(sampleCanvasColor(canvasRef.value, sampleRect));
-    const foregroundColor = sampleCanvasForegroundColor(canvasRef.value, sampleRect);
-
-    return {
-      key: `${index}-${block.text}-${mapped.x}-${mapped.y}`,
-      text,
-      style: {
-        left: `${mapped.x}px`,
-        top: `${mapped.y}px`,
-        width: `${mapped.width}px`,
-        height: `${mapped.height}px`,
-        fontSize: `${fontSize}px`,
-        lineHeight: `${Math.round(fontSize * 1.12)}px`,
-        fontWeight: "500",
-        overflow: "visible" as const,
-        overflowWrap: "anywhere" as const,
-        textAlign: "center" as const,
-        whiteSpace: "normal" as const,
-        wordBreak: "break-word" as const,
-        ...palette,
-        outline: `2px solid ${palette.backgroundColor}`,
-        color: cssColorForSampledColor(foregroundColor) ?? palette.color
-      }
-    };
+let measureOverlayText: ReturnType<typeof canvasTextMeasurer> | undefined;
+function textMeasurer() {
+  if (!measureOverlayText) {
+    const context = document.createElement("canvas").getContext("2d");
+    if (context && typeof context.measureText === "function") measureOverlayText = canvasTextMeasurer(context);
+  }
+  return measureOverlayText;
+}
+const sourceRegions = computed(() => {
+  const rect = resultRect.value;
+  if (!rect) return [];
+  const insets = capture.value?.selectedText ? [] : textBlocks.value.map(block => leadingMarkerInset(canvasRef.value, {
+    x: rect.x + block.x * rect.width, y: rect.y + block.y * rect.height,
+    width: block.width * rect.width, height: block.height * rect.height
+  }));
+  return buildSourceRegions(textBlocks.value, rect, insets, Boolean(capture.value?.selectedText));
+});
+const overlayLayout = computed(() => layoutTranslations(sourceRegions.value, textBlocks.value, parsedTranslation.value, resolvedTranslationDirection.value, textMeasurer()));
+const nativeBackdrops = computed(() => {
+  const rect=resultRect.value;
+  if(!rect || !capture.value?.selectedText) return [];
+  return textBlocks.value.flatMap((block,index)=>{
+    const mask=nativeSelectionBackdrop(canvasRef.value,{x:rect.x+block.x*rect.width,y:rect.y+block.y*rect.height,width:block.width*rect.width,height:block.height*rect.height},block.background);
+    return mask?[{index,background:block.background!,rect:{...mask,x:mask.x-rect.x,y:mask.y-rect.y}}]:[];
   });
 });
-
-const anchoredTranslationBlocks = computed(() => {
+const visibleNativeBackdrops = computed(() => {
+ const indices=new Set(overlayLayout.value.blocks.flatMap(block=>block.indices));
+ return nativeBackdrops.value.filter(mask=>indices.has(mask.index));
+});
+const styledOverlayBlocks = computed(() => {
   const rect = resultRect.value;
-  if (!rect || !usesFlowTranslationLayout.value) {
-    return [];
-  }
-
-  const box = normalizeResultBox(rect, viewport);
-  return buildAnchoredTranslationLayout(box).blocks.map((block) => {
-    const sampleRect = {
-      x: box.x + block.mapped.x,
-      y: box.y + block.mapped.y,
-      width: block.width,
-      height: block.mapped.height
-    };
-    const palette = translationPaletteForColor(sampleCanvasColor(canvasRef.value, sampleRect));
-    const foregroundColor = sampleCanvasForegroundColor(canvasRef.value, sampleRect);
-
-    return {
-      key: block.key,
-      testId: block.testId,
-      text: block.text,
-      style: {
-        left: `${block.mapped.x}px`,
-        top: `${block.top}px`,
-        width: `${block.width}px`,
-        minHeight: `${block.height}px`,
-        fontSize: `${block.fontSize}px`,
-        lineHeight: `${block.lineHeight}px`,
-        fontWeight: block.mapped.height >= 34 ? "700" : "500",
-        overflow: "visible" as const,
-        overflowWrap: "anywhere" as const,
-        padding: "1px 2px",
-        boxSizing: "border-box" as const,
-        textAlign: "left" as const,
-        whiteSpace: "normal" as const,
-        wordBreak: "break-word" as const,
-        ...palette,
-        outline: `2px solid ${palette.backgroundColor}`,
-        color: block.text ? cssColorForSampledColor(foregroundColor) ?? palette.color : "transparent",
-        textShadow: block.text ? palette.textShadow : "none",
-        ...block.textLayout
-      }
-    };
+  if (!rect) return [];
+  return overlayLayout.value.blocks.map(block => {
+    const { palette, foregroundColor } = sampleFrozenPalette({
+      x: rect.x + block.bounds.x, y: rect.y + block.bounds.y,
+      width: block.bounds.width, height: block.bounds.height
+    });
+    const nativeStyle = capture.value?.selectedText ? textBlocks.value[block.indices[0]!] : undefined;
+    const validColor = (value?: string) => value && /^#[0-9a-f]{6}$/i.test(value) ? value : undefined;
+    return { ...block, palette: { ...palette, backgroundColor: validColor(nativeStyle?.background) ?? palette.backgroundColor, textShadow: "none" }, foreground: validColor(nativeStyle?.foreground) ?? cssColorForSampledColor(foregroundColor) ?? palette.color };
   });
 });
-
-const hasOCRBlockLayout = computed(
-  () =>
-    !usesFlowTranslationLayout.value &&
-    ocrBlocks.value.length > 0 &&
-    (phase.value === "streaming" || phase.value === "processing" || inlineOCRBlocks.value.length > 0)
-);
-
-const usesFlowTranslationLayout = computed(
-  () => ocrBlocks.value.length > 0 && shouldUseFlowTranslationLayout(ocrBlocks.value)
-);
-
-const hasFlowTranslationLayout = computed(
-  () =>
-    usesFlowTranslationLayout.value &&
-    ocrBlocks.value.length > 0 &&
-    (phase.value === "processing" || phase.value === "streaming" || phase.value === "done")
-);
+const visibleOverlayBlocks = computed(() => styledOverlayBlocks.value.map(block => ({
+  ...block,
+  style: {
+    left: block.bounds.x + "px", top: block.bounds.y + "px",
+    width: block.bounds.width + "px", height: block.height + "px",
+    fontFamily: OVERLAY_FONT_FAMILY, fontSize: block.fontSize + "px", fontWeight: "400",
+    lineHeight: block.lineHeight + "px", textAlign: block.kind === "label" ? "center" as const : "left" as const,
+    display: "flex", flexDirection: "column" as const, justifyContent: block.kind === "label" ? "center" : "flex-start",
+    whiteSpace: "pre" as const, overflow: "hidden", boxSizing: "border-box" as const,
+    paddingLeft: block.kind === "prose" ? "1px" : "0", paddingRight: block.kind === "prose" ? "1px" : "0",
+    ...block.palette, color: block.foreground
+  }
+})));
+const hasTextBlockLayout = computed(() => textBlocks.value.length > 0);
 
 const hasTranslatedOverlay = computed(
-  () => hasOCRBlockLayout.value || hasFlowTranslationLayout.value
+  () => hasTextBlockLayout.value
 );
 
 const showsTranslatedOverlay = computed(
@@ -495,11 +440,15 @@ onMounted(async () => {
       }
       phase.value = "processing";
     }),
+    onBackendEvent<TextRegionsEvent>("text-regions", payload => {
+      if (!isCurrentGeneration(payload)) return;
+      textBlocks.value = payload.blocks ?? [];
+    }),
     onBackendEvent<OCRResultEvent>("ocr-result", (payload) => {
       if (!isCurrentGeneration(payload)) {
         return;
       }
-      ocrBlocks.value = payload.blocks ?? [];
+      textBlocks.value = payload.blocks ?? [];
     }),
     onBackendEvent<TranslationDirectionEvent>("translation-direction", (payload) => {
       if (!isCurrentGeneration(payload) || manualDirection.value) {
@@ -526,13 +475,7 @@ onMounted(async () => {
       }
       flushTranslationText();
       phase.value = "done";
-      if (config.autoCopy && cleanTranslationText.value) {
-        void copyText(cleanTranslationText.value);
-        copied.value = true;
-        window.setTimeout(() => {
-          copied.value = false;
-        }, 1100);
-      }
+      if (savedConfig.autoCopy && cleanTranslationText.value) void copyResult(false);
     }),
     onBackendEvent<WorkflowErrorPayload>("workflow-error", (payload) => {
       if (!isCurrentGeneration(payload)) {
@@ -540,8 +483,8 @@ onMounted(async () => {
       }
       flushTranslationText();
       if (payload.stage === "translation" && translationText.value.trim()) {
-        errorMessage.value = "";
-        phase.value = "done";
+        errorMessage.value = payload.message;
+        phase.value = "partial";
         return;
       }
       errorMessage.value = payload.message;
@@ -552,28 +495,31 @@ onMounted(async () => {
       capture.value = null;
       resultRect.value = null;
       selection.value = null;
-      ocrBlocks.value = [];
+      textBlocks.value = [];
       resetTranslationText();
       errorMessage.value = "";
       copied.value = false;
       copiedImage.value = false;
+  expandedTranslation.value = false;
       screenshotNotice.value = "";
       lastImageRegion.value = null;
       currentCropDataUrl.value = "";
       workflowGeneration.value += 1;
       phase.value = "idle";
+      const wasOpen = settingsOpen.value;
       settingsOpen.value = true;
       await nextTick();
       await showSettingsWindow();
       void loadHistory();
       void loadEnvironmentStatus();
-      void loadAutoStart();
+      if (!wasOpen) void loadAutoStart();
       void loadVersion();
     })
   );
 
   await frontendReady();
-  Object.assign(config, await loadConfig());
+  Object.assign(savedConfig, await loadConfig());
+  Object.assign(config, savedConfig);
 });
 
 onBeforeUnmount(() => {
@@ -590,6 +536,9 @@ onBeforeUnmount(() => {
 function updateViewport(): void {
   viewport.width = window.innerWidth;
   viewport.height = window.innerHeight;
+  if (capture.value?.selectedText && resultRect.value) {
+    void nextTick(() => { const rect = nativeSelectionRect(); if (rect && resultRect.value) resultRect.value = rect; });
+  }
 }
 
 function isCurrentGeneration(payload: { generation?: number }): boolean {
@@ -602,7 +551,7 @@ function onKeyDown(event: KeyboardEvent): void {
     void closeSettings();
     return;
   }
-  if (event.key === "Escape" && isCaptureActive()) {
+  if (event.key === "Escape" && (isCaptureActive() || resultRect.value)) {
     event.preventDefault();
     void cancelCapture();
   }
@@ -610,16 +559,20 @@ function onKeyDown(event: KeyboardEvent): void {
 
 async function startCapture(payload: CapturePayload): Promise<void> {
   const sequence = ++captureLoadSequence;
+  sampledPaletteCache.clear();
+  measureOverlayText = undefined;
+  discardSettingsDraft();
   settingsOpen.value = false;
   capture.value = payload;
   dragStart.value = null;
   selection.value = null;
   resultRect.value = null;
-  ocrBlocks.value = [];
+  textBlocks.value = [];
   resetTranslationText();
   errorMessage.value = "";
   copied.value = false;
   copiedImage.value = false;
+  expandedTranslation.value = false;
   screenshotNotice.value = "";
   manualDirection.value = false;
   lastImageRegion.value = null;
@@ -637,12 +590,15 @@ async function startCapture(payload: CapturePayload): Promise<void> {
     return;
   }
 
-  phase.value = "ready";
+  phase.value = payload.selectedText ? "loading" : "ready";
   await nextTick();
-  if (sequence !== captureLoadSequence) {
-    return;
-  }
+  if (sequence !== captureLoadSequence) return;
   await showCaptureWindow();
+  if (sequence !== captureLoadSequence) return;
+  if (payload.selectedText) {
+    await nextTick();
+    await submitNativeSelection(sequence);
+  }
 }
 
 async function drawCapture(payload: CapturePayload, sequence: number): Promise<boolean> {
@@ -664,7 +620,7 @@ async function drawCapture(payload: CapturePayload, sequence: number): Promise<b
 
   canvas.width = image.naturalWidth || payload.width;
   canvas.height = image.naturalHeight || payload.height;
-  const context = canvas.getContext("2d");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) {
     throw new Error("Canvas 2D context is unavailable");
   }
@@ -672,6 +628,30 @@ async function drawCapture(payload: CapturePayload, sequence: number): Promise<b
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   return true;
+}
+
+function nativeSelectionRect(): Rect | null {
+  const native = capture.value?.selectedText;
+  const bounds = canvasRef.value?.getBoundingClientRect();
+  if (!native || !bounds || bounds.width <= 0 || bounds.height <= 0) return null;
+  return { x: native.x * bounds.width, y: native.y * bounds.height, width: native.width * bounds.width, height: native.height * bounds.height };
+}
+
+async function submitNativeSelection(sequence: number): Promise<void> {
+  const native = capture.value?.selectedText;
+  const rect = nativeSelectionRect();
+  if (!native || !rect || sequence !== captureLoadSequence) return;
+  resultRect.value = rect;
+  textBlocks.value = native.blocks;
+  phase.value = "streaming";
+  const generation = workflowGeneration.value;
+  try {
+    await translateSelection(native.id, directionForRequest(), generation);
+  } catch (error) {
+    if (generation !== workflowGeneration.value) return;
+    errorMessage.value = error instanceof Error ? error.message : "Unable to translate selected text";
+    phase.value = "error";
+  }
 }
 
 function invalidatePendingCaptureLoad(): void {
@@ -761,11 +741,12 @@ async function submitSelection(rect: Rect): Promise<void> {
 
   resultRect.value = rect;
   selection.value = null;
-  ocrBlocks.value = [];
+  textBlocks.value = [];
   resetTranslationText();
   errorMessage.value = "";
   copied.value = false;
   copiedImage.value = false;
+  expandedTranslation.value = false;
   phase.value = "processing";
 
   try {
@@ -826,11 +807,12 @@ async function cancelCapture(): Promise<void> {
   selection.value = null;
   capture.value = null;
   resultRect.value = null;
-  ocrBlocks.value = [];
+  textBlocks.value = [];
   resetTranslationText();
   errorMessage.value = "";
   copied.value = false;
   copiedImage.value = false;
+  expandedTranslation.value = false;
   currentCropDataUrl.value = "";
   lastImageRegion.value = null;
   screenshotNotice.value = "";
@@ -859,37 +841,53 @@ async function saveEditedScreenshot(dataUrl: string): Promise<void> {
   }
 }
 
-async function copyResult(): Promise<void> {
-  if (!cleanTranslationText.value) {
+// A completed copy may belong to a selection the user has already left.
+async function performResultCopy(copy: () => Promise<void>, closeOnSuccess: boolean): Promise<void> {
+  const generation = workflowGeneration.value;
+  if (copyingGeneration.value === generation) return;
+  copyingGeneration.value = generation;
+  try {
+    await copy();
+  } catch {
+    if (generation === workflowGeneration.value) screenshotNotice.value = settingsText.value.copyFailed;
+    return;
+  } finally {
+    if (copyingGeneration.value === generation) copyingGeneration.value = null;
+  }
+  if (generation !== workflowGeneration.value) return;
+  screenshotNotice.value = "";
+  if (closeOnSuccess) {
+    await restore();
     return;
   }
-
-  await copyText(cleanTranslationText.value);
+  // Automatic copying must not dismiss a result before it can be read.
   copied.value = true;
   window.setTimeout(() => {
-    copied.value = false;
+    if (generation === workflowGeneration.value) copied.value = false;
   }, 1100);
+}
+
+async function copyResult(closeOnSuccess = true): Promise<void> {
+  const text = cleanTranslationText.value;
+  if (!text) return;
+  await performResultCopy(() => copyText(text), closeOnSuccess);
 }
 
 async function copyOcrText(): Promise<void> {
-  const text = ocrBlocks.value.map((block) => block.text).join("\n").trim();
+  const text = textBlocks.value.map((block) => block.text).join("\n").trim();
   if (!text) {
     return;
   }
-  await copyText(text);
+  try { await copyText(text); screenshotNotice.value = settingsText.value.copied; }
+  catch { screenshotNotice.value = settingsText.value.copyFailed; }
 }
 
 async function copyTranslatedImage(): Promise<void> {
-  const dataUrl = renderTranslatedSelectionImage();
-  if (!dataUrl) {
-    return;
-  }
-
-  await copyImageDataUrl(dataUrl);
-  copiedImage.value = true;
-  window.setTimeout(() => {
-    copiedImage.value = false;
-  }, 1100);
+  await performResultCopy(async () => {
+    const dataUrl = renderTranslatedSelectionImage();
+    if (!dataUrl) throw new Error("No translated image is available");
+    await copyImageDataUrl(dataUrl);
+  }, true);
 }
 
 async function reverseTranslationDirection(): Promise<void> {
@@ -899,18 +897,20 @@ async function reverseTranslationDirection(): Promise<void> {
 
   manualDirection.value = true;
   translationDirection.value = translationDirection.value === "to-zh" ? "to-en" : "to-zh";
-  ocrBlocks.value = [];
+  textBlocks.value = [];
   resetTranslationText();
   errorMessage.value = "";
   copied.value = false;
   copiedImage.value = false;
+  expandedTranslation.value = false;
   screenshotNotice.value = "";
   phase.value = "streaming";
-  workflowGeneration.value += 1;
+  const generation = ++workflowGeneration.value;
 
   try {
-    await runProcessing(directionForRequest(), workflowGeneration.value);
+    await runProcessing(directionForRequest(), generation);
   } catch (error) {
+    if (generation !== workflowGeneration.value) return;
     errorMessage.value = error instanceof Error ? error.message : "Failed to reverse translation direction";
     phase.value = "error";
   }
@@ -922,22 +922,30 @@ async function retryProcessing(): Promise<void> {
   }
 
   errorMessage.value = "";
-  ocrBlocks.value = [];
+  textBlocks.value = [];
   resetTranslationText();
   copied.value = false;
   copiedImage.value = false;
+  expandedTranslation.value = false;
   phase.value = "processing";
-  workflowGeneration.value += 1;
+  const generation = ++workflowGeneration.value;
 
   try {
-    await runProcessing(directionForRequest(), workflowGeneration.value);
+    await runProcessing(directionForRequest(), generation);
   } catch (error) {
+    if (generation !== workflowGeneration.value) return;
     errorMessage.value = error instanceof Error ? error.message : "Failed to retry";
     phase.value = "error";
   }
 }
 
 async function runProcessing(direction: TranslationDirection, generation: number): Promise<void> {
+  if (capture.value?.selectedText) {
+    phase.value = "streaming";
+    textBlocks.value = capture.value.selectedText.blocks;
+    await translateSelection(capture.value.selectedText.id, direction, generation);
+    return;
+  }
   if (lastImageRegion.value) {
     await translateRegion(lastImageRegion.value, direction, generation);
     return;
@@ -950,7 +958,7 @@ async function runProcessing(direction: TranslationDirection, generation: number
 }
 
 function directionForRequest(): TranslationDirection {
-  if (config.autoDirection && !manualDirection.value) {
+  if (savedConfig.autoDirection && !manualDirection.value) {
     return "auto";
   }
   return translationDirection.value;
@@ -974,298 +982,21 @@ function renderTranslatedSelectionImage(): string | null {
     return null;
   }
 
-  const usesAnchoredExport = shouldUseFlowTranslationLayout(ocrBlocks.value) && cleanTranslationText.value.length > 0;
-  const exportLayout = usesAnchoredExport
-    ? buildAnchoredTranslationLayout({ x: 0, y: 0, width: rect.width, height: rect.height })
-    : null;
-  const scaleX = imageRect.width / rect.width;
-  const scaleY = imageRect.height / rect.height;
-
   const target = document.createElement("canvas");
   target.width = imageRect.width;
-  target.height = exportLayout ? Math.max(imageRect.height, Math.ceil(exportLayout.height * scaleY)) : imageRect.height;
+  target.height = imageRect.height;
   const context = target.getContext("2d");
-  if (!context) {
-    return null;
+  if (!context) return null;
+  context.drawImage(sourceCanvas, imageRect.x, imageRect.y, imageRect.width, imageRect.height, 0, 0, target.width, target.height);
+  context.save();
+  context.scale(imageRect.width / rect.width, imageRect.height / rect.height);
+  for(const mask of visibleNativeBackdrops.value) {
+    context.fillStyle=mask.background;
+    context.fillRect(mask.rect.x,mask.rect.y,mask.rect.width,mask.rect.height);
   }
-
-  context.drawImage(
-    sourceCanvas,
-    imageRect.x,
-    imageRect.y,
-    imageRect.width,
-    imageRect.height,
-    0,
-    0,
-    target.width,
-    imageRect.height
-  );
-
-  if (exportLayout) {
-    if (target.height > imageRect.height) {
-      const palette = translationPaletteForColor(sampleCanvasColor(sourceCanvas, rect));
-      context.fillStyle = palette.backgroundColor;
-      context.fillRect(0, imageRect.height, target.width, target.height - imageRect.height);
-    }
-
-    exportLayout.blocks.forEach((block) => {
-      const sampleRect = {
-        x: rect.x + block.mapped.x,
-        y: rect.y + block.mapped.y,
-        width: block.width,
-        height: block.mapped.height
-      };
-      const palette = translationPaletteForColor(sampleCanvasColor(sourceCanvas, sampleRect));
-      const foregroundColor = sampleCanvasForegroundColor(sourceCanvas, sampleRect);
-      const x = Math.round(block.mapped.x * scaleX);
-      const y = Math.round(block.top * scaleY);
-      const width = Math.max(1, Math.round(block.width * scaleX));
-      const fontSize = Math.max(8, Math.round(block.fontSize * scaleY));
-      const lineHeight = Math.max(1, Math.round(block.lineHeight * scaleY));
-      const indent = Number.parseInt(block.textLayout.paddingLeft ?? "0", 10) || 0;
-      const scaledIndent = Math.round(indent * scaleX);
-      const paintHeight = Math.max(Math.round(block.height * scaleY), block.lines.length * lineHeight + 2);
-
-      context.fillStyle = palette.backgroundColor;
-      context.fillRect(x, y, width, paintHeight);
-      if (!block.text) {
-        return;
-      }
-      context.fillStyle = cssColorForSampledColor(foregroundColor) ?? palette.color;
-      context.font = `${block.mapped.height >= 34 ? "700" : "500"} ${fontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
-      context.textAlign = "left";
-      context.textBaseline = "top";
-      block.lines.forEach((line, lineIndex) => {
-        const lineX = x + 2 + (lineIndex === 0 ? 0 : scaledIndent);
-        context.fillText(line, lineX, y + 1 + lineHeight * lineIndex, Math.max(1, width - 4 - (lineX - x)));
-      });
-    });
-
-    return target.toDataURL("image/png");
-  }
-
-  const localSelection = { x: 0, y: 0, width: rect.width, height: rect.height };
-  const parsed = parsedTranslation.value;
-  ocrBlocks.value.forEach((block, index) => {
-    const text = translationForOCRBlock(index, block, parsed, ocrBlocks.value.length, resolvedTranslationDirection.value);
-    if (!text) {
-      return;
-    }
-
-    const mapped = mapOCRBlockToSelection(block, localSelection);
-    const sampleRect = {
-      x: rect.x + mapped.x,
-      y: rect.y + mapped.y,
-      width: mapped.width,
-      height: mapped.height
-    };
-    const palette = translationPaletteForColor(sampleCanvasColor(sourceCanvas, sampleRect));
-    const foregroundColor = sampleCanvasForegroundColor(sourceCanvas, sampleRect);
-    const x = Math.round(mapped.x * scaleX);
-    const y = Math.round(mapped.y * scaleY);
-    const width = Math.max(1, Math.round(mapped.width * scaleX));
-    const height = Math.max(1, Math.round(mapped.height * scaleY));
-    const fontSize = Math.max(8, Math.round(fontSizeForTranslationBlock(text, mapped) * scaleY));
-    const lineHeight = Math.round(fontSize * 1.12);
-    const lines = wrapTranslationText(text, fontSize, Math.max(1, width - 2));
-    const textHeight = lines.length * lineHeight;
-    const paintHeight = Math.max(height, textHeight);
-    const paintY = Math.round(y - Math.max(0, paintHeight - height) / 2);
-
-    context.fillStyle = palette.backgroundColor;
-    context.fillRect(x, paintY, width, paintHeight);
-    context.fillStyle = cssColorForSampledColor(foregroundColor) ?? palette.color;
-    context.font = `500 ${fontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    lines.forEach((line, lineIndex) => {
-      const lineY = paintY + paintHeight / 2 - textHeight / 2 + lineHeight * (lineIndex + 0.5);
-      context.fillText(line, x + width / 2, lineY, Math.max(1, width - 2));
-    });
-  });
-
+  context.restore();
+  paintTranslationOverlay(context, styledOverlayBlocks.value, imageRect.width / rect.width, imageRect.height / rect.height);
   return target.toDataURL("image/png");
-}
-
-function fontSizeForAnchoredTranslationBlock(rect: Rect): number {
-  return Math.max(12, Math.min(26, Math.round(rect.height * 0.85)));
-}
-
-function buildAnchoredTranslationLayout(box: Rect): AnchoredTranslationLayout {
-  const localSelection = { x: 0, y: 0, width: box.width, height: box.height };
-  const mappedBlocks = ocrBlocks.value.map((block, index) => ({
-    block,
-    index,
-    mapped: mapOCRBlockToSelection(block, localSelection)
-  }));
-  let nextTop = 0;
-  let previousVisibleText = "";
-  let previousVisibleSourceLanguage = "";
-
-  const blocks = mappedBlocks.map((entry, entryIndex) => {
-    let text = translationForOCRBlock(
-      entry.index,
-      entry.block,
-      parsedTranslation.value,
-      ocrBlocks.value.length,
-      resolvedTranslationDirection.value
-    );
-    const sourceLanguage = sourceLanguageForDuplicateGuard(entry.block.text);
-    if (
-      text &&
-      previousVisibleText &&
-      previousVisibleSourceLanguage === sourceLanguage &&
-      isLikelyDuplicateTranslation(previousVisibleText, text)
-    ) {
-      text = "";
-    }
-    const top = Math.max(entry.mapped.y, nextTop);
-    const width = widthForAnchoredTranslationBlock(entry.mapped, box.width);
-    const nextOriginalTop = mappedBlocks[entryIndex + 1]?.mapped.y ?? box.height;
-    const metrics = fitAnchoredTranslationBlock(text, entry.mapped, width, top, nextOriginalTop, box.height);
-    const testId: AnchoredTranslationLayoutBlock["testId"] = text ? "translation-line" : "translation-cover";
-
-    nextTop = top + metrics.height + ANCHORED_TRANSLATION_BLOCK_GAP;
-    if (text) {
-      previousVisibleText = text;
-      previousVisibleSourceLanguage = sourceLanguage;
-    }
-
-    return {
-      key: `${entry.index}-${entry.block.text}-${entry.mapped.x}-${entry.mapped.y}`,
-      testId,
-      text,
-      mapped: entry.mapped,
-      top,
-      width,
-      height: metrics.height,
-      fontSize: metrics.fontSize,
-      lineHeight: metrics.lineHeight,
-      textLayout: metrics.textLayout,
-      lines: metrics.lines
-    };
-  });
-
-  const height = blocks.reduce((maximum, block) => Math.max(maximum, block.top + block.height), box.height);
-  return { blocks, height: Math.ceil(height) };
-}
-
-function fitAnchoredTranslationBlock(
-  text: string,
-  mapped: Rect,
-  width: number,
-  top: number,
-  nextOriginalTop: number,
-  selectionHeight: number
-) {
-  const baseFontSize = fontSizeForAnchoredTranslationBlock(mapped);
-  if (!text) {
-    return measureAnchoredTranslationBlock(text, mapped, width, baseFontSize);
-  }
-
-  const hasHangingIndent = shouldUseHangingIndent(text);
-  const minimumFontSize = hasHangingIndent
-    ? Math.max(8, Math.round(baseFontSize * 0.48))
-    : Math.max(8, Math.round(baseFontSize * 0.6));
-  const targetBottom = Math.max(top + mapped.height, Math.min(selectionHeight, nextOriginalTop));
-  const targetHeight = Math.max(mapped.height, targetBottom - top - ANCHORED_TRANSLATION_BLOCK_GAP);
-  let selected = measureAnchoredTranslationBlock(text, mapped, width, baseFontSize);
-  const hasTightFollower = nextOriginalTop < selectionHeight && nextOriginalTop - top <= mapped.height * 1.8;
-  const compactFontSize = Math.max(minimumFontSize, Math.round(baseFontSize * 0.75));
-  const shouldReduceWidthPressure =
-    hasHangingIndent && hasTightFollower && anchoredTextWidthPressure(text, width, baseFontSize) > 0.82;
-  const shouldCompactDenseListRow = hasHangingIndent && hasTightFollower;
-  if (selected.height <= targetHeight && !shouldReduceWidthPressure && !shouldCompactDenseListRow) {
-    return selected;
-  }
-
-  for (let fontSize = baseFontSize - 1; fontSize >= minimumFontSize; fontSize -= 1) {
-    const candidate = measureAnchoredTranslationBlock(text, mapped, width, fontSize);
-    selected = candidate;
-    const widthPressureResolved =
-      !shouldReduceWidthPressure || anchoredTextWidthPressure(text, width, fontSize) <= 0.82;
-    const compactFontResolved = !shouldCompactDenseListRow || fontSize <= compactFontSize;
-    if (candidate.height <= targetHeight && widthPressureResolved && compactFontResolved) {
-      return candidate;
-    }
-  }
-
-  return selected;
-}
-
-function measureAnchoredTranslationBlock(text: string, mapped: Rect, width: number, fontSize: number) {
-  const lineHeight = Math.round(fontSize * 1.24);
-  const textLayout = text ? textLayoutForAnchoredTranslation(text, fontSize) : {};
-  const indent = Number.parseInt(textLayout.paddingLeft ?? "0", 10) || 0;
-  const lines = text ? wrapTranslationText(text, fontSize, Math.max(1, width - 4 - indent)) : [];
-  const textHeight = text ? lines.length * lineHeight + 2 : lineHeight;
-  return {
-    fontSize,
-    lineHeight,
-    textLayout,
-    lines,
-    height: Math.max(mapped.height, textHeight)
-  };
-}
-
-function widthForAnchoredTranslationBlock(rect: Rect, selectionWidth: number): number {
-  return Math.max(rect.width, selectionWidth - rect.x);
-}
-
-function textLayoutForAnchoredTranslation(text: string, fontSize: number): Record<string, string> {
-  if (!shouldUseHangingIndent(text)) {
-    return {};
-  }
-
-  const indent = Math.round(fontSize * 1.8);
-  return {
-    paddingLeft: `${indent}px`,
-    textIndent: `-${indent}px`
-  };
-}
-
-function shouldUseHangingIndent(text: string): boolean {
-  return /^\s*(?:\d+[.)、．]|[•*-])\s+/.test(text);
-}
-
-function anchoredTextWidthPressure(text: string, width: number, fontSize: number): number {
-  const textLayout = textLayoutForAnchoredTranslation(text, fontSize);
-  const indent = Number.parseInt(textLayout.paddingLeft ?? "0", 10) || 0;
-  const availableWidth = Math.max(1, width - 4 - indent);
-  const unitsPerLine = availableWidth / Math.max(1, fontSize * 0.62);
-  return anchoredTextUnits(text) / Math.max(1, unitsPerLine);
-}
-
-function anchoredTextUnits(text: string): number {
-  return Array.from(text.trim()).reduce((total, char) => total + anchoredCharacterUnit(char), 0);
-}
-
-function anchoredCharacterUnit(char: string): number {
-  if (/\s/.test(char)) {
-    return 0.35;
-  }
-  if (/[\p{Script=Han}]/u.test(char)) {
-    return 1;
-  }
-  if (/[A-Za-z0-9]/.test(char)) {
-    return 0.62;
-  }
-  return 0.5;
-}
-
-function sourceLanguageForDuplicateGuard(text: string): string {
-  const hasHan = /[\p{Script=Han}]/u.test(text);
-  const hasLatin = /[A-Za-z]/.test(text);
-  if (hasHan && hasLatin) {
-    return "mixed";
-  }
-  if (hasHan) {
-    return "han";
-  }
-  if (hasLatin) {
-    return "latin";
-  }
-  return "other";
 }
 
 function cssColorForSampledColor(color: SampledColor | null): string | null {
@@ -1281,18 +1012,29 @@ async function restore(): Promise<void> {
   capture.value = null;
   selection.value = null;
   resultRect.value = null;
-  ocrBlocks.value = [];
+  textBlocks.value = [];
   resetTranslationText();
   currentCropDataUrl.value = "";
   lastImageRegion.value = null;
   errorMessage.value = "";
   copied.value = false;
   copiedImage.value = false;
+  expandedTranslation.value = false;
   workflowGeneration.value += 1;
   await hideWindow();
 }
 
+function discardSettingsDraft(): void {
+  Object.assign(config, savedConfig);
+  autoStartEnabled.value = savedAutoStart.value;
+  connectionTestSequence += 1;
+  testStatus.value = "idle";
+  testMessage.value = "";
+}
+
 async function closeSettings(): Promise<void> {
+  if (settingsSaving.value) return;
+  discardSettingsDraft();
   settingsOpen.value = false;
   shortcutRecording.value = null;
   testStatus.value = "idle";
@@ -1320,23 +1062,24 @@ async function loadVersion(): Promise<void> {
 }
 
 async function loadAutoStart(): Promise<void> {
+  autoStartLoading.value = true;
   try {
-    autoStartEnabled.value = await isAutoStartEnabled();
-  } catch {
-    autoStartEnabled.value = false;
+    savedAutoStart.value = await isAutoStartEnabled();
+    autoStartEnabled.value = savedAutoStart.value;
+  } catch (error) {
+    settingsError.value = error instanceof Error ? error.message : "Failed to read autostart";
+  } finally {
+    autoStartLoading.value = false;
   }
 }
 
-async function toggleAutoStart(): Promise<void> {
-  autoStartTouched.value = true;
-  const desiredState = autoStartEnabled.value;
+async function copyHistoryEntry(entry: HistoryEntry): Promise<void> {
   try {
-    await setAutoStart(desiredState);
-  } catch (error) {
-    autoStartEnabled.value = !desiredState;
-    settingsError.value = error instanceof Error ? error.message : "Failed to update autostart";
-  } finally {
-    autoStartTouched.value = false;
+    await copyText(bilingualHistoryText(entry, settingsLocale.value));
+    copiedHistoryID.value = entry.id;
+    window.setTimeout(() => { if (copiedHistoryID.value === entry.id) copiedHistoryID.value = ""; }, 1500);
+  } catch {
+    settingsError.value = settingsText.value.copyFailed;
   }
 }
 
@@ -1362,19 +1105,22 @@ async function clearAllHistory(): Promise<void> {
   try {
     await clearHistory();
     historyEntries.value = [];
-  } catch {
-    // ignore
+  } catch (error) {
+    settingsError.value = error instanceof Error ? error.message : "Failed to clear history";
   }
 }
 
 async function runConnectionTest(): Promise<void> {
+  const sequence = ++connectionTestSequence;
   testStatus.value = "testing";
   testMessage.value = "";
   try {
-    await testConnection();
+    await testConnection({ ...config });
+    if (sequence !== connectionTestSequence) return;
     testStatus.value = "ok";
     testMessage.value = settingsText.value.connectionSuccessful;
   } catch (error) {
+    if (sequence !== connectionTestSequence) return;
     testStatus.value = "error";
     testMessage.value = error instanceof Error ? error.message : settingsText.value.connectionFailed;
   }
@@ -1413,10 +1159,15 @@ function onShortcutRecorderKeydown(event: KeyboardEvent): void {
 }
 
 async function saveSettings(): Promise<void> {
+  if (settingsSaving.value || autoStartLoading.value) return;
   settingsError.value = "";
   settingsSaving.value = true;
   try {
-    await saveConfig({ ...config });
+    const draft = { ...config };
+    const autoStart = autoStartEnabled.value;
+    await saveConfig(draft, autoStart);
+    Object.assign(savedConfig, draft);
+    savedAutoStart.value = autoStart;
     settingsSaving.value = false;
     await closeSettings();
   } catch (error) {
@@ -1497,6 +1248,7 @@ async function saveSettings(): Promise<void> {
       @contextmenu="onContextMenu"
     >
       <canvas ref="canvasRef" class="h-full w-full object-fill" />
+      <div v-if="capture.notice && phase === 'ready'" role="status" class="absolute left-1/2 top-5 max-w-[90vw] -translate-x-1/2 rounded-lg bg-slate-900/90 px-4 py-2 text-sm text-white">{{ capture.notice }}</div>
       <div
         v-if="selection && phase !== 'editing'"
         class="pointer-events-none absolute border-2 border-emerald-300 bg-emerald-200/5 shadow-[0_0_0_9999px_rgba(2,6,23,0.18)] outline outline-1 outline-white/90"
@@ -1537,7 +1289,7 @@ async function saveSettings(): Promise<void> {
       class="absolute z-20 overflow-visible transition-[height,top,box-shadow,background-color] duration-100 ease-out"
       :class="
         preservesSourcePreview
-          ? 'rounded-md border-2 border-emerald-400 shadow-[0_0_0_1px_rgba(255,255,255,0.70),0_8px_28px_rgba(16,185,129,0.18)]'
+          ? (capture?.selectedText ? 'rounded-sm' : 'rounded-sm ring-1 ring-emerald-400/70')
           : 'rounded-md border border-white/70 bg-white/92 p-2 shadow-[0_10px_36px_rgba(15,23,42,0.26)] ring-1 ring-slate-900/5 backdrop-blur-[2px] dark:border-slate-700/70 dark:bg-zinc-950/92'
       "
       :style="resultStyle"
@@ -1556,27 +1308,18 @@ async function saveSettings(): Promise<void> {
         </div>
       </div>
 
-      <template v-if="hasFlowTranslationLayout && phase !== 'error'">
-        <div
-          v-for="block in anchoredTranslationBlocks"
-          :key="block.key"
-          class="absolute"
-          :style="block.style"
-          :data-testid="block.testId"
-        >
-          {{ block.text }}
-        </div>
-      </template>
-
-      <template v-else-if="hasOCRBlockLayout && phase !== 'error'">
-        <div
-          v-for="block in inlineOCRBlocks"
-          :key="block.key"
-          class="absolute flex items-center justify-center text-center font-medium"
-          :style="block.style"
-          data-testid="ocr-block"
-        >
-          {{ block.text }}
+      <div v-if="phase === 'partial'" data-testid="partial-translation" role="alert"
+        class="absolute bottom-full left-0 z-40 mb-2 flex max-w-full items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-sm">
+        <span :title="errorMessage">{{ settingsText.partialTranslation }}</span>
+        <button type="button" class="shrink-0 font-semibold underline" aria-label="Retry translation" @click="retryProcessing">{{ settingsText.retry }}</button>
+      </div>
+      <div v-if="screenshotNotice" role="status" class="absolute bottom-0 left-0 z-40 rounded bg-slate-900 px-3 py-2 text-xs text-white">{{ screenshotNotice }}</div>
+      <template v-if="hasTextBlockLayout && phase !== 'error'">
+        <div v-for="mask in visibleNativeBackdrops" :key="'backdrop-'+mask.index" class="pointer-events-none absolute" :style="{left:mask.rect.x+'px',top:mask.rect.y+'px',width:mask.rect.width+'px',height:mask.rect.height+'px',background:mask.background}" />
+        <div v-for="block in visibleOverlayBlocks" :key="block.key" class="absolute"
+          :style="block.style" :title="block.truncated ? block.text : undefined"
+          :data-testid="block.kind === 'prose' ? 'translation-line' : 'ocr-block'">
+          <span v-for="(line, index) in block.lines" :key="index" class="block shrink-0" :style="{ paddingLeft: (index > 0 ? block.indent : 0) + 'px' }">{{ line }}</span>
         </div>
       </template>
 
@@ -1602,13 +1345,13 @@ async function saveSettings(): Promise<void> {
             <button
               class="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-200 dark:hover:bg-zinc-800"
               type="button"
-              title="Copy original OCR text"
-              aria-label="Copy OCR text"
-              :disabled="!ocrBlocks.length"
+              title="Copy original text"
+              aria-label="Copy original text"
+              :disabled="!textBlocks.length"
               @click="copyOcrText"
             >
               <Copy class="h-3.5 w-3.5" aria-hidden="true" />
-              Copy OCR
+              {{ settingsLocale === 'en' ? 'Copy original' : '复制原文' }}
             </button>
           </div>
         </div>
@@ -1622,17 +1365,27 @@ async function saveSettings(): Promise<void> {
         />
       </template>
 
+      <div v-if="capture?.selectedText && preservesSourcePreview" class="pointer-events-none absolute inset-0 z-20 rounded-sm ring-1 ring-emerald-400/70" />
+      <aside v-if="expandedTranslation" class="fixed right-4 top-4 z-50 flex max-h-[calc(100vh-32px)] w-[min(420px,calc(100vw-32px))] flex-col rounded-xl border border-slate-200 bg-white p-4 text-slate-900 shadow-xl dark:border-zinc-700 dark:bg-zinc-900 dark:text-white">
+        <div class="mb-3 flex items-center justify-between gap-4">
+          <strong class="text-sm">{{ settingsLocale === "en" ? "Full translation" : "完整译文" }}</strong>
+          <button type="button" aria-label="Close full translation" @click="expandedTranslation = false"><X class="h-4 w-4" /></button>
+        </div>
+        <div class="overflow-auto whitespace-pre-wrap break-words text-sm leading-6">{{ cleanTranslationText }}</div>
+      </aside>
       <div
         class="absolute flex h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-2 shadow-[0_10px_32px_rgba(15,23,42,0.22)] backdrop-blur dark:border-slate-700/70 dark:bg-zinc-950/95"
         :style="resultActionsStyle"
       >
+        <button v-if="overlayLayout.truncated" type="button" class="whitespace-nowrap px-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+          aria-label="Show full translation" @click="expandedTranslation = !expandedTranslation">{{ settingsLocale === "en" ? "Full text" : "完整译文" }}</button>
         <button
           class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
           type="button"
-          title="Copy translated text"
+          :title="settingsLocale === 'en' ? 'Copy text and close' : '复制译文并收起'"
           aria-label="Copy translated text"
-          :disabled="!cleanTranslationText"
-          @click="copyResult"
+          :disabled="!cleanTranslationText || copyingGeneration === workflowGeneration"
+          @click="copyResult()"
         >
           <Check v-if="copied" class="h-4 w-4" aria-hidden="true" />
           <Copy v-else class="h-4 w-4" aria-hidden="true" />
@@ -1640,9 +1393,9 @@ async function saveSettings(): Promise<void> {
         <button
           class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-100 dark:hover:bg-zinc-800"
           type="button"
-          title="Copy translated screenshot"
+          :title="settingsLocale === 'en' ? 'Copy image and close' : '复制译后图片并收起'"
           aria-label="Copy translated screenshot"
-          :disabled="!cleanTranslationText"
+          :disabled="!cleanTranslationText || copyingGeneration === workflowGeneration"
           @click="copyTranslatedImage"
         >
           <Check v-if="copiedImage" class="h-4 w-4" aria-hidden="true" />
@@ -1680,6 +1433,7 @@ async function saveSettings(): Promise<void> {
         @submit.prevent="saveSettings"
         @keydown="onShortcutRecorderKeydown"
       >
+        <fieldset class="contents" :disabled="settingsSaving">
         <header
           data-testid="settings-drag-region"
           class="flex shrink-0 cursor-move select-none items-center justify-between border-b border-slate-200/90 bg-white/95 px-6 py-4 shadow-[0_1px_0_rgba(15,23,42,0.02)] backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/95"
@@ -1945,11 +1699,11 @@ async function saveSettings(): Promise<void> {
             <span class="settings-toggle-description">{{ settingsText.startWithWindowsDescription }}</span>
           </span>
           <input
+            data-testid="autostart-toggle"
             v-model="autoStartEnabled"
             class="peer sr-only"
             type="checkbox"
-            :disabled="autoStartTouched"
-            @change="toggleAutoStart"
+            :disabled="autoStartLoading || settingsSaving"
           />
           <span class="settings-switch" aria-hidden="true" />
         </label>
@@ -2065,24 +1819,35 @@ async function saveSettings(): Promise<void> {
         <div v-if="historyEntries.length === 0" class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-xs text-slate-500 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-slate-400">
           {{ historyLoaded ? settingsText.noRecentTranslations : settingsText.loadingHistory }}
         </div>
-        <div v-else class="max-h-44 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 dark:divide-zinc-800 dark:border-zinc-800">
+        <div v-else class="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 dark:divide-zinc-800 dark:border-zinc-800">
           <div
             v-for="entry in historyEntries"
             :key="entry.id"
             class="group flex items-center gap-3 px-3 py-2.5 transition hover:bg-slate-50 dark:hover:bg-zinc-900"
           >
-            <div class="min-w-0 flex-1 text-xs">
-              <div class="truncate text-slate-400 dark:text-slate-500">{{ entry.source }}</div>
-              <div class="mt-0.5 truncate font-medium text-slate-700 dark:text-slate-200">{{ entry.translation }}</div>
-            </div>
+            <details class="group/history min-w-0 flex-1 text-xs">
+              <summary class="cursor-pointer list-none rounded focus-visible:outline-emerald-500">
+                <div class="mb-1 flex items-center justify-between gap-2">
+                  <time :datetime="entry.timestamp" class="text-[10px] tabular-nums text-slate-500">{{ historyTimestamp(entry.timestamp, settingsLocale) }}</time>
+                  <ChevronDown class="h-3 w-3 text-slate-400 transition-transform group-open/history:rotate-180" aria-hidden="true" />
+                </div>
+                <div class="truncate text-slate-500 group-open/history:hidden dark:text-slate-400">{{ entry.source }}</div>
+                <div class="mt-1 truncate font-medium text-slate-800 group-open/history:hidden dark:text-slate-100">{{ readableTranslation(entry.translation) }}</div>
+              </summary>
+              <div class="mt-3 space-y-3 border-t border-slate-100 pt-3 leading-relaxed dark:border-zinc-800">
+                <div><span class="mb-1 block text-[10px] font-medium text-slate-400">{{ settingsLocale === "en" ? "Original" : "原文" }}</span><p class="whitespace-pre-wrap break-words text-slate-500">{{ entry.source }}</p></div>
+                <div><span class="mb-1 block text-[10px] font-medium text-slate-400">{{ settingsLocale === "en" ? "Translation" : "译文" }}</span><p class="whitespace-pre-wrap break-words text-slate-800 dark:text-slate-100">{{ readableTranslation(entry.translation) }}</p></div>
+              </div>
+            </details>
             <button
-              class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-slate-700 hover:shadow-sm dark:hover:bg-zinc-800 dark:hover:text-slate-100"
+              class="inline-flex h-8 w-8 shrink-0 self-start items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-slate-700 hover:shadow-sm dark:hover:bg-zinc-800 dark:hover:text-slate-100"
               type="button"
-              :title="settingsText.copyHistoryEntry"
+              :title="copiedHistoryID === entry.id ? settingsText.copied : settingsText.copyHistoryEntry"
               aria-label="Copy history entry"
-              @click="copyText(entry.translation)"
+              @click="copyHistoryEntry(entry)"
             >
-              <Copy class="h-3.5 w-3.5" aria-hidden="true" />
+              <Check v-if="copiedHistoryID === entry.id" class="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
+              <Copy v-else class="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -2121,13 +1886,14 @@ async function saveSettings(): Promise<void> {
             <button
               class="inline-flex h-9 min-w-24 items-center justify-center rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
-              :disabled="settingsSaving"
+              :disabled="settingsSaving || autoStartLoading"
             >
               {{ settingsSaving ? settingsText.saving : settingsText.saveChanges }}
             </button>
           </div>
         </div>
         </footer>
+        </fieldset>
       </form>
     </section>
   </main>

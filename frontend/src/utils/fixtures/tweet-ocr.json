@@ -1,0 +1,96 @@
+{
+  "text": "Tibo@thsottiaux·8小時\nBrent is one of the best things that happened to the quality and polish of\nthe desktop app.\nRelentless improvements day after day.\nBrent Traut @btraut · 9小時\nLast week, I pushed a change to the ChatGPT desktop app that makes\nthe loading of threads faster.Not just a little faster.A LOT faster.\nLong threads now load over90% faster.\nDecreased the memory footprint of long threads by over 90%.\nQ 107\nt7 51\n2,941\nl.l 27万",
+  "blocks": [
+    {
+      "text": "Tibo@thsottiaux·8小時",
+      "x": 0.09274873524451939,
+      "y": 0.041401273885350316,
+      "width": 0.33220910623946037,
+      "height": 0.05732484076433121
+    },
+    {
+      "text": "Brent is one of the best things that happened to the quality and polish of",
+      "x": 0.0893760539629005,
+      "y": 0.10828025477707007,
+      "width": 0.8482293423271501,
+      "height": 0.06369426751592357
+    },
+    {
+      "text": "the desktop app.",
+      "x": 0.0893760539629005,
+      "y": 0.17197452229299362,
+      "width": 0.20067453625632378,
+      "height": 0.06687898089171974
+    },
+    {
+      "text": "Relentless improvements day after day.",
+      "x": 0.09274873524451939,
+      "y": 0.30254777070063693,
+      "width": 0.45699831365935917,
+      "height": 0.05732484076433121
+    },
+    {
+      "text": "Brent Traut @btraut · 9小時",
+      "x": 0.1163575042158516,
+      "y": 0.43630573248407645,
+      "width": 0.41652613827993257,
+      "height": 0.07961783439490445
+    },
+    {
+      "text": "Last week, I pushed a change to the ChatGPT desktop app that makes",
+      "x": 0.10961214165261383,
+      "y": 0.5318471337579618,
+      "width": 0.8229342327150084,
+      "height": 0.06687898089171974
+    },
+    {
+      "text": "the loading of threads faster.Not just a little faster.A LOT faster.",
+      "x": 0.10961214165261383,
+      "y": 0.5955414012738853,
+      "width": 0.7453625632377741,
+      "height": 0.06369426751592357
+    },
+    {
+      "text": "Long threads now load over90% faster.",
+      "x": 0.11467116357504216,
+      "y": 0.7165605095541401,
+      "width": 0.5008431703204047,
+      "height": 0.0732484076433121
+    },
+    {
+      "text": "Decreased the memory footprint of long threads by over 90%.",
+      "x": 0.1163575042158516,
+      "y": 0.7866242038216561,
+      "width": 0.7537942664418212,
+      "height": 0.06687898089171974
+    },
+    {
+      "text": "Q 107",
+      "x": 0.09106239460370995,
+      "y": 0.9235668789808917,
+      "width": 0.08263069139966273,
+      "height": 0.0732484076433121
+    },
+    {
+      "text": "t7 51",
+      "x": 0.28499156829679595,
+      "y": 0.9267515923566879,
+      "width": 0.07251264755480608,
+      "height": 0.0732484076433121
+    },
+    {
+      "text": "2,941",
+      "x": 0.4856661045531197,
+      "y": 0.9267515923566879,
+      "width": 0.1045531197301855,
+      "height": 0.0732484076433121
+    },
+    {
+      "text": "l.l 27万",
+      "x": 0.6829679595278246,
+      "y": 0.9267515923566879,
+      "width": 0.09443507588532883,
+      "height": 0.0732484076433121
+    }
+  ]
+}

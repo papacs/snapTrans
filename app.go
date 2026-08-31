@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	_ "embed"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"image"
-	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +20,8 @@ import (
 	"snaptrans/internal/hotkeys"
 	"snaptrans/internal/logfile"
 	"snaptrans/internal/ocr"
+	"snaptrans/internal/selection"
+	"snaptrans/internal/textregion"
 	"snaptrans/internal/translator"
 
 	"snaptrans/internal/autostart"
@@ -81,11 +81,16 @@ type App struct {
 	screenshotShortcut *hotkeys.Registration
 	processing         context.CancelFunc
 	ocrWorker          *ocr.Worker
+	ocrWorkerConfig    ocrWorkerSettings
+	ocrCache           ocrResultCache
+	settingsMu         sync.Mutex
 	trayOnce           sync.Once
 
 	captureOriginX   int
 	captureOriginY   int
 	captureInFlight  bool
+	captureEpoch     uint64
+	selectedText     *capture.SelectedText
 	windowVisible    bool
 	frontendReady    bool
 	settingsPending  bool
@@ -106,6 +111,7 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	selection.DefaultReader()
 
 	store, err := config.NewStore("snapTrans")
 	if err != nil {
@@ -136,55 +142,6 @@ func (a *App) startup(ctx context.Context) {
 
 	a.syncOCRWorker(cfg)
 	a.startTray()
-}
-
-// syncOCRWorker starts, stops, or restarts the persistent OCR worker to
-// match the current configuration.
-func (a *App) syncOCRWorker(cfg config.Config) {
-	a.mu.Lock()
-	worker := a.ocrWorker
-	currentPath := a.cfg.RapidOCRPath
-	a.mu.Unlock()
-
-	if !cfg.PersistentOCR {
-		if worker != nil {
-			worker.Close()
-			a.mu.Lock()
-			a.ocrWorker = nil
-			a.mu.Unlock()
-		}
-		return
-	}
-
-	if worker == nil {
-		a.mu.Lock()
-		worker = ocr.NewRapidOCRWorker(cfg.RapidOCRPath, time.Duration(cfg.RapidOCRTimeoutSeconds)*time.Second)
-		a.ocrWorker = worker
-		a.mu.Unlock()
-		go a.warmOCRWorker(worker)
-		return
-	}
-
-	if cfg.RapidOCRPath != currentPath {
-		worker.SetExecutable(cfg.RapidOCRPath)
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if err := worker.Restart(ctx); err != nil {
-				a.emitError("ocr", fmt.Errorf("OCR worker restart failed: %w", err), 0)
-			}
-		}()
-	}
-}
-
-// warmOCRWorker starts a persistent RapidOCR worker in the background so
-// the first screenshot avoids the model-loading delay.
-func (a *App) warmOCRWorker(worker *ocr.Worker) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := worker.Start(ctx); err != nil {
-		a.emitError("ocr", fmt.Errorf("OCR worker warm-up failed: %w", err), 0)
-	}
 }
 
 func (a *App) shutdown(_ context.Context) {
@@ -305,7 +262,7 @@ func (a *App) SaveConfig(next config.Config) error {
 	if next.ShortcutKey != current.ShortcutKey {
 		var err error
 		registration, err = hotkeys.Register(next.ShortcutKey, func() {
-			_ = a.TriggerCapture()
+			_ = a.TriggerTranslation()
 		})
 		if err != nil {
 			if a.log != nil {
@@ -367,7 +324,7 @@ func (a *App) updateTrayShortcuts(shortcut string, screenshotShortcut string) {
 	screenshotItem := a.screenshotItem
 	a.trayMu.Unlock()
 	if item != nil {
-		item.SetTitle("Capture  " + shortcut)
+		item.SetTitle("Capture / 框选翻译")
 	}
 	if screenshotItem != nil {
 		screenshotItem.SetTitle("Screenshot  " + screenshotShortcut)
@@ -396,6 +353,7 @@ type ScrollCaptureStepResult struct {
 	Width        int    `json:"width"`
 	Height       int    `json:"height"`
 	Appended     bool   `json:"appended"`
+	LimitReached bool   `json:"limitReached"`
 }
 
 // BeginScrollingScreenshot captures the initial frame while the overlay is
@@ -421,6 +379,8 @@ func (a *App) BeginScrollingScreenshot(request ScrollCaptureRequest) (capture.Ma
 		return capture.ManualScrollStatus{}, errors.New("another capture is already running")
 	}
 	a.captureInFlight = true
+	a.captureEpoch++
+	a.selectedText = nil
 	wasVisible := a.windowVisible
 	a.windowVisible = false
 	a.mu.Unlock()
@@ -480,10 +440,11 @@ func (a *App) StepScrollingScreenshot() (ScrollCaptureStepResult, error) {
 		return ScrollCaptureStepResult{}, err
 	}
 	result := ScrollCaptureStepResult{
-		Frames:   snapshot.Frames,
-		Width:    snapshot.Width,
-		Height:   snapshot.Height,
-		Appended: snapshot.Appended,
+		Frames:       snapshot.Frames,
+		Width:        snapshot.Width,
+		Height:       snapshot.Height,
+		Appended:     snapshot.Appended,
+		LimitReached: snapshot.LimitReached,
 	}
 	if len(snapshot.CurrentImageBytes) > 0 {
 		result.CurrentImage = a.captureAssets.Store(snapshot.CurrentImageBytes)
@@ -555,30 +516,32 @@ func (a *App) finishScrollingCaptureWindow(overlay uintptr) {
 }
 
 func (a *App) triggerCaptureMode(mode string) error {
-	wasVisible, started := a.beginCapture()
+	wasVisible, epoch, started := a.beginCapture()
 	if !started {
 		return nil
 	}
 
 	go func() {
 		defer a.finishCapture()
-		a.captureAndEmit(wasVisible, mode)
+		a.captureAndEmit(wasVisible, mode, epoch, "")
 	}()
 	return nil
 }
 
-func (a *App) beginCapture() (wasVisible bool, started bool) {
+func (a *App) beginCapture() (wasVisible bool, epoch uint64, started bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.captureInFlight {
-		return false, false
+		return false, a.captureEpoch, false
 	}
+	a.captureEpoch++
+	a.selectedText = nil
 	a.captureInFlight = true
 	wasVisible = a.windowVisible
 	a.windowVisible = false
 	a.captureStartedAt = time.Now()
 	a.captureEmittedAt = time.Time{}
-	return wasVisible, true
+	return wasVisible, a.captureEpoch, true
 }
 
 func (a *App) finishCapture() {
@@ -716,12 +679,14 @@ func (a *App) startProcessing(cfg config.Config, base64Crop string, direction tr
 	if a.processing != nil {
 		a.processing()
 	}
-	timeout := time.Duration(cfg.TranslationTimeoutSeconds) * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithCancel(context.Background())
 	a.processing = cancel
 	a.mu.Unlock()
 
-	go a.processImage(ctx, cfg, base64Crop, direction, generation)
+	go func() {
+		defer cancel()
+		a.processImage(ctx, cfg, base64Crop, direction, generation)
+	}()
 }
 
 // ExtractText runs the existing local OCR pipeline without starting a translation.
@@ -758,6 +723,7 @@ func (a *App) ExtractText(base64Image string) (TextExtractionResult, error) {
 }
 
 func (a *App) HideWindow() error {
+	a.invalidateCaptureRequest()
 	session, overlay := a.takeScrollCapture()
 	if session != nil {
 		session.Cancel()
@@ -769,6 +735,10 @@ func (a *App) HideWindow() error {
 	a.windowVisible = false
 	a.frame = nil
 	a.mu.Unlock()
+	a.ocrCache.Clear()
+	if a.captureAssets != nil {
+		a.captureAssets.Clear()
+	}
 	if a.ctx != nil {
 		runtime.WindowHide(a.ctx)
 	}
@@ -776,6 +746,7 @@ func (a *App) HideWindow() error {
 }
 
 func (a *App) QuitApp() error {
+	a.invalidateCaptureRequest()
 	a.cancelProcessing()
 	systray.Quit()
 	if a.ctx != nil {
@@ -785,13 +756,16 @@ func (a *App) QuitApp() error {
 }
 
 func (a *App) ShowSettings() error {
+	a.invalidateCaptureRequest()
 	if a.ctx == nil {
 		return nil
 	}
 
+	a.cancelProcessing()
+	runtime.WindowUnminimise(a.ctx)
 	runtime.WindowUnfullscreen(a.ctx)
 	a.invalidateCaptureWindowPreparation()
-	runtime.WindowSetAlwaysOnTop(a.ctx, true)
+	runtime.WindowSetAlwaysOnTop(a.ctx, false)
 	width, height := 680, 780
 	if screenHeight := availableScreenHeight(); screenHeight > 0 && height > screenHeight-48 {
 		height = screenHeight - 48
@@ -828,8 +802,8 @@ func (a *App) ShowSettingsWindow() error {
 	return nil
 }
 
-func (a *App) captureAndEmit(wasVisible bool, mode string) {
-	if a.ctx == nil {
+func (a *App) captureAndEmit(wasVisible bool, mode string, epoch uint64, notice string) {
+	if a.ctx == nil || !a.captureRequestCurrent(epoch) {
 		return
 	}
 
@@ -854,18 +828,24 @@ func (a *App) captureAndEmit(wasVisible bool, mode string) {
 		return
 	}
 
+	a.publishCapture(result, mode, epoch, notice, startedAt)
+}
+
+func (a *App) publishCapture(result capture.Result, mode string, epoch uint64, notice string, startedAt time.Time) {
 	a.mu.Lock()
+	if a.captureEpoch != epoch {
+		a.mu.Unlock()
+		return
+	}
+	a.selectedText = result.SelectedText
+	result.Notice = notice
 	a.captureOriginX = result.OriginX
 	a.captureOriginY = result.OriginY
-	a.mu.Unlock()
+	defer a.mu.Unlock()
 	result.Image = a.captureAssets.Store(result.ImageBytes)
-	if frame, decodeErr := png.Decode(bytes.NewReader(result.ImageBytes)); decodeErr == nil {
-		a.mu.Lock()
-		a.frame = frame
-		a.mu.Unlock()
-	} else if a.log != nil {
-		a.log.Errorf("capture frame decode failed: %v", decodeErr)
-	}
+	a.frame = result.Frame
+	a.ocrCache.Clear()
+	result.Frame = nil
 	result.ImageBytes = nil
 	result.Mode = mode
 	if a.log != nil {
@@ -889,10 +869,10 @@ func (a *App) captureAndEmit(wasVisible bool, mode string) {
 		)
 	}
 
-	a.mu.Lock()
 	a.captureEmittedAt = time.Now()
-	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "capture-start", result)
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "capture-start", result)
+	}
 }
 
 func (a *App) startTray() {
@@ -906,7 +886,7 @@ func (a *App) onTrayReady() {
 		systray.SetIcon(trayIcon)
 	}
 	systray.SetTitle("snapTrans")
-	systray.SetTooltip("snapTrans screenshot translator")
+	systray.SetTooltip("snapTrans · Select text or capture to translate")
 
 	captureItem := systray.AddMenuItem("Capture  Alt+Q", "Start screenshot translation")
 	screenshotItem := systray.AddMenuItem("Screenshot  Alt+W", "Capture and annotate an image")
@@ -917,7 +897,7 @@ func (a *App) onTrayReady() {
 	a.mu.Lock()
 	cfg := a.cfg
 	a.mu.Unlock()
-	captureItem.SetTitle("Capture  " + cfg.ShortcutKey)
+	captureItem.SetTitle("Capture / 框选翻译")
 	screenshotItem.SetTitle("Screenshot  " + cfg.ScreenshotShortcutKey)
 	a.trayMu.Lock()
 	a.captureItem = captureItem
@@ -959,19 +939,22 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 		return
 	}
 
+	a.processText(ctx, cfg, result.Text, result.Blocks, direction, generation, startedAt, "ocr")
+}
+
+func (a *App) processText(ctx context.Context, cfg config.Config, text string, blocks []textregion.Block, direction translator.Direction, generation int, startedAt time.Time, source string) {
+	if ctx.Err() != nil {
+		return
+	}
 	if direction == translator.DirectionAuto {
-		direction = translator.DetectDirection(result.Text)
+		direction = translator.DetectDirection(text)
 	}
 	runtime.EventsEmit(a.ctx, "translation-direction", translationDirectionPayload{
 		Generation: generation,
 		Direction:  string(direction),
 	})
 
-	runtime.EventsEmit(a.ctx, "ocr-result", ocrResultPayload{
-		Generation: generation,
-		Text:       result.Text,
-		Blocks:     result.Blocks,
-	})
+	runtime.EventsEmit(a.ctx, "text-regions", textRegionsPayload{Generation: generation, Text: text, Blocks: blocks, Source: source})
 	runtime.EventsEmit(a.ctx, "translation-start", sentinelPayload{Generation: generation})
 	translationStartedAt := time.Now()
 	var firstTokenOnce sync.Once
@@ -986,15 +969,21 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 				)
 			}
 		})
+		if ctx.Err() != nil {
+			return
+		}
 		runtime.EventsEmit(a.ctx, "translation-token", translationTokenPayload{
 			Generation: generation,
 			Token:      token,
 		})
 	}
-	if translated, ok := translator.TryFastTranslation(result.Text, direction); ok {
+	if translated, ok := translator.TryFastTranslation(text, direction); ok && strings.TrimSpace(cfg.SystemPrompt) == "" && strings.TrimSpace(cfg.Glossary) == "" {
 		emitTranslationToken(translated)
+		if ctx.Err() != nil {
+			return
+		}
 		runtime.EventsEmit(a.ctx, "translation-done", sentinelPayload{Generation: generation})
-		a.saveHistory(result.Text, translated, string(direction))
+		a.saveHistory(text, translated, string(direction))
 		return
 	}
 
@@ -1005,12 +994,18 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 		Model:        cfg.Model,
 		SystemPrompt: cfg.SystemPrompt,
 		Glossary:     cfg.Glossary,
+		Source:       source,
 	})
-	err = client.Translate(ctx, result.Text, direction, func(token string) {
+	translationCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TranslationTimeoutSeconds)*time.Second)
+	defer cancel()
+	err := client.Translate(translationCtx, text, direction, func(token string) {
 		translated.WriteString(token)
 		emitTranslationToken(token)
 	})
 	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = fmt.Errorf("translation timed out after %d seconds", cfg.TranslationTimeoutSeconds)
 		}
@@ -1018,11 +1013,14 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 		return
 	}
 
+	if ctx.Err() != nil {
+		return
+	}
 	runtime.EventsEmit(a.ctx, "translation-done", sentinelPayload{Generation: generation})
 	if a.log != nil {
 		a.log.Infof("generation=%d direction=%s total_ms=%d", generation, direction, time.Since(startedAt).Milliseconds())
 	}
-	a.saveHistory(result.Text, translated.String(), string(direction))
+	a.saveHistory(text, translated.String(), string(direction))
 }
 
 func (a *App) saveHistory(source string, translated string, direction string) {
@@ -1050,10 +1048,8 @@ func (a *App) ClearHistory() error {
 
 // TestConnection verifies the configured LLM endpoint with the current
 // settings without saving them.
-func (a *App) TestConnection() error {
-	a.mu.Lock()
-	cfg := a.cfg.WithDefaults()
-	a.mu.Unlock()
+func (a *App) TestConnection(draft config.Config) error {
+	cfg := draft.WithDefaults()
 
 	client := translator.NewOpenAICompatible(translator.Options{
 		APIKey:  cfg.APIKey,
@@ -1141,7 +1137,7 @@ func (a *App) registerShortcut(shortcut string) error {
 	}
 
 	registration, err := hotkeys.Register(shortcut, func() {
-		_ = a.TriggerCapture()
+		_ = a.TriggerTranslation()
 	})
 	if err != nil {
 		return err
@@ -1219,33 +1215,6 @@ func (a *App) cancelProcessing() {
 		a.processing()
 		a.processing = nil
 	}
-}
-
-// runOCR prefers the persistent worker; if the worker is unavailable or
-// fails, it falls back to a one-shot RapidOCR invocation.
-func (a *App) runOCR(ctx context.Context, cfg config.Config, base64Crop string) (ocr.Result, error) {
-	a.mu.Lock()
-	worker := a.ocrWorker
-	a.mu.Unlock()
-
-	if worker != nil {
-		result, err := worker.Run(ctx, base64Crop)
-		if err == nil {
-			return result, nil
-		}
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return ocr.Result{}, err
-		}
-		fallback := ocr.NewRapidOCR(cfg.RapidOCRPath, time.Duration(cfg.RapidOCRTimeoutSeconds)*time.Second)
-		if result, fallbackErr := fallback.ExtractResult(ctx, base64Crop); fallbackErr == nil {
-			return result, nil
-		} else {
-			return ocr.Result{}, fallbackErr
-		}
-	}
-
-	fallback := ocr.NewRapidOCR(cfg.RapidOCRPath, time.Duration(cfg.RapidOCRTimeoutSeconds)*time.Second)
-	return fallback.ExtractResult(ctx, base64Crop)
 }
 
 func (a *App) emitError(stage string, err error, generation int) {

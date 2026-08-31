@@ -2,9 +2,9 @@
 
 # snapTrans
 
-**面向 Windows 的轻量级截图翻译与截图标注工具**
+**面向 Windows 的轻量级选词翻译、截图翻译与截图标注工具**
 
-按下快捷键，框选屏幕区域；松开鼠标后立即 OCR，并在原位置流式显示翻译结果。
+选中文字后按原有快捷键，直接在原位置显示译文；没有选中文字时，框选屏幕，松手即翻译。
 
 [![Windows](https://img.shields.io/badge/platform-Windows_10%2F11-0078D4?logo=windows11&logoColor=white)](https://www.microsoft.com/windows/)
 [![Wails](https://img.shields.io/badge/Wails-v2-DF0000?logo=wails&logoColor=white)](https://wails.io/)
@@ -24,14 +24,17 @@ snapTrans 将“截图、识别、翻译、阅读”压缩成一次自然的鼠�
 
 | 工作模式 | 默认快捷键 | 交互体验 |
 | --- | --- | --- |
-| 截图翻译 | <kbd>Alt</kbd> + <kbd>Q</kbd> | 冻结屏幕 → 拖出选区 → 松开鼠标 → 原位流式翻译 |
+| 选词 / 截图翻译 | <kbd>Alt</kbd> + <kbd>Q</kbd> | 有可靠文字选区 → 直接原位翻译；否则冻结屏幕 → 框选 → 松手翻译 |
 | 截图涂鸦 | <kbd>Alt</kbd> + <kbd>W</kbd> | 冻结屏幕 → 拖出选区 → 标注或向下滚动拼接 → 复制或保存 PNG |
 
 > 两套快捷键互相独立。截图翻译始终保持“松手即翻译”，截图涂鸦则在选区旁显示紧凑工具栏。
 
 ## 🚀 核心功能
 
-### 即时截图翻译
+### 选词与截图翻译
+
+- **同一个快捷键**：选中文字按 Alt+Q 直接翻译，跳过框选和 OCR；不用 Ctrl+C，不读取或改写剪贴板。
+- **兼容兜底**：应用不提供可靠选区、跨屏或超出可见范围时回到框选；托盘 Capture 始终手动框选。文字读取限制 350ms，慢应用不会阻塞后续操作。
 
 - **本地 OCR**：通过 RapidOCR 在本机完成文字识别。
 - **原位覆盖**：译文直接显示在截图选区上，不需要切换窗口。
@@ -76,7 +79,9 @@ build/bin/
 2. 右键托盘图标，打开 `Settings`。
 3. 配置 API Key、Base URL 和模型名称。
 4. 确认 RapidOCR 路径，保存设置。
-5. 按 <kbd>Alt</kbd> + <kbd>Q</kbd> 截图翻译，或按 <kbd>Alt</kbd> + <kbd>W</kbd> 截图涂鸦。
+5. 选中文字后按 <kbd>Alt</kbd> + <kbd>Q</kbd> 原位翻译；不选择文字则进入框选。<kbd>Alt</kbd> + <kbd>W</kbd> 仍用于截图涂鸦。
+
+原生选词翻译不依赖 OCR，也不向模型发送图片；截图翻译仍需保留 RapidOCR。已验证自建 Windows EDIT 控件及 Chrome 测试页面的选区读取，其他应用取决于 UI Automation 支持情况。
 
 RapidOCR 路径既可以填写文件夹，也可以填写完整可执行文件路径：
 
@@ -92,14 +97,14 @@ D:/Tools/RapidOCR-json_v0.2.0/RapidOCR-json.exe
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| 截图翻译快捷键 | `Alt+Q` | 松开鼠标后立即开始 OCR 和翻译 |
+| 翻译快捷键 | `Alt+Q` | 优先选中文字直译，无可靠选区则框选翻译 |
 | 截图涂鸦快捷键 | `Alt+W` | 松开鼠标后进入标注模式 |
 | API Base URL | `https://api.deepseek.com` | 支持 OpenAI-compatible 服务 |
-| 模型 | `deepseek-chat` | 可替换为服务商暴露的模型 ID |
+| 模型 | `deepseek-v4-flash` | 可替换为服务商暴露的模型 ID |
 | RapidOCR 路径 | `./RapidOCR-json_v0.2.0` | 支持文件夹或 EXE 路径 |
 | OCR 超时 | `15s` | 单次识别最大等待时间 |
 | 翻译超时 | `60s` | 翻译接口无响应时的最大等待时间 |
-| 自动识别方向 | 开启 | 根据 OCR 文本自动选择翻译方向 |
+| 自动识别方向 | 开启 | 根据源文本自动选择翻译方向 |
 | OCR 常驻预热 | 开启 | 降低第一次及后续识别延迟 |
 
 设置会保存到当前用户的系统配置目录。开发环境也可以通过根目录 `.env` 提供配置：

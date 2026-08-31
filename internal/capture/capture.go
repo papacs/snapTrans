@@ -30,6 +30,7 @@ type Display struct {
 
 type Result struct {
 	Image           string        `json:"image"`
+	Frame           image.Image   `json:"-"`
 	ImageBytes      []byte        `json:"-"`
 	Width           int           `json:"width"`
 	Height          int           `json:"height"`
@@ -39,6 +40,8 @@ type Result struct {
 	Source          string        `json:"source"`
 	Mode            string        `json:"mode,omitempty"`
 	ScrollFrames    int           `json:"scrollFrames,omitempty"`
+	SelectedText    *SelectedText `json:"selectedText,omitempty"`
+	Notice          string        `json:"notice,omitempty"`
 	CaptureDuration time.Duration `json:"-"`
 	EncodeDuration  time.Duration `json:"-"`
 	EncodedBytes    int           `json:"-"`
@@ -168,6 +171,7 @@ func captureMonitors(ctx context.Context, monitors []physicalMonitor) (Result, e
 
 	return Result{
 		ImageBytes:      encoded,
+		Frame:           frame,
 		Width:           union.Dx(),
 		Height:          union.Dy(),
 		OriginX:         union.Min.X,

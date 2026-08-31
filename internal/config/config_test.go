@@ -216,3 +216,15 @@ func TestLoadHonorsSavedPersistentOCROff(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, cfg.PersistentOCR)
 }
+
+func TestMigrateOnlyOfficialLegacyDefaultModel(t *testing.T) {
+	cfg := Default()
+	cfg.Model = "deepseek-chat"
+	require.Equal(t, "deepseek-v4-flash", cfg.WithDefaults().Model)
+	cfg.BaseURL = "https://custom.example/v1"
+	require.Equal(t, "deepseek-chat", cfg.WithDefaults().Model)
+	cfg.BaseURL = "https://api.deepseek.com.proxy.example"
+	require.Equal(t, "deepseek-chat", cfg.WithDefaults().Model)
+	cfg.BaseURL, cfg.Model = "https://api.deepseek.com/v1", "custom-model"
+	require.Equal(t, "custom-model", cfg.WithDefaults().Model)
+}

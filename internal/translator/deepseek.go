@@ -13,6 +13,7 @@ import (
 )
 
 type Options struct {
+	Source       string
 	APIKey       string
 	BaseURL      string
 	Model        string
@@ -72,7 +73,7 @@ func NewOpenAICompatible(options Options) *OpenAICompatible {
 		options.BaseURL = "https://api.deepseek.com"
 	}
 	if strings.TrimSpace(options.Model) == "" {
-		options.Model = "deepseek-chat"
+		options.Model = "deepseek-v4-flash"
 	}
 	return &OpenAICompatible{options: options}
 }
@@ -86,6 +87,7 @@ func (d *OpenAICompatible) Ping(ctx context.Context) error {
 
 	clientConfig := openai.DefaultConfig(d.options.APIKey)
 	clientConfig.BaseURL = d.options.BaseURL
+	clientConfig.HTTPClient = translationHTTPClient()
 	client := openai.NewClientWithConfig(clientConfig)
 
 	_, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
@@ -111,10 +113,14 @@ func (d *OpenAICompatible) Translate(ctx context.Context, sourceText string, dir
 
 	clientConfig := openai.DefaultConfig(d.options.APIKey)
 	clientConfig.BaseURL = d.options.BaseURL
+	clientConfig.HTTPClient = translationHTTPClient()
 	client := openai.NewClientWithConfig(clientConfig)
 	direction = NormalizeDirection(string(direction))
 
 	request := buildTranslationRequest(d.options.Model, sourceText, direction, d.options.SystemPrompt, d.options.Glossary)
+	if d.options.Source == "selection" {
+		request = selectedTextRequest(request, d.options, direction, numberedOCRLines(sourceText))
+	}
 	translated, err := streamTranslationRequest(ctx, client, request, onToken)
 	if shouldRetryStreamStartError(translated, err) {
 		translated, err = streamTranslationRequest(ctx, client, request, onToken)
@@ -123,7 +129,7 @@ func (d *OpenAICompatible) Translate(ctx context.Context, sourceText string, dir
 		return err
 	}
 	if looksLikeMissingOCRRequest(translated) {
-		return errors.New("translation model did not receive usable OCR text; please select a text area and try again")
+		return errors.New("translation model did not receive usable source text; select text or capture a text area and try again")
 	}
 
 	missing := missingNumberedOCRLines(sourceText, translated)
@@ -134,14 +140,21 @@ func (d *OpenAICompatible) Translate(ctx context.Context, sourceText string, dir
 	if strings.TrimSpace(translated) != "" {
 		onToken("\n")
 	}
-	retry, err := streamTranslationRequest(ctx, client, buildMissingTranslationRequest(d.options.Model, missing, direction, d.options.SystemPrompt, d.options.Glossary), onToken)
+	retryRequest := buildMissingTranslationRequest(d.options.Model, missing, direction, d.options.SystemPrompt, d.options.Glossary)
+	if d.options.Source == "selection" {
+		retryRequest = selectedTextRequest(retryRequest, d.options, direction, numberedOCRLineText(missing))
+	}
+	retry, err := streamTranslationRequest(ctx, client, retryRequest, onToken)
 	if err != nil {
 		return err
 	}
 	if looksLikeMissingOCRRequest(retry) {
-		return errors.New("translation model did not receive usable OCR text; please select a text area and try again")
+		return errors.New("translation model did not receive usable source text; select text or capture a text area and try again")
 	}
 
+	if remaining := missingNumberedOCRLines(sourceText, translated+"\n"+retry); len(remaining) > 0 {
+		return fmt.Errorf("translation incomplete: %d text regions are still missing after retry", len(remaining))
+	}
 	return nil
 }
 

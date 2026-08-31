@@ -1,6 +1,9 @@
-import { flushPromises, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
+import tweetOCR from "./utils/fixtures/tweet-ocr.json";
+
+enableAutoUnmount(afterEach);
 
 const backendMocks = vi.hoisted(() => {
   type Listener = (payload: unknown) => void;
@@ -64,12 +67,17 @@ const backendMocks = vi.hoisted(() => {
       blocks: []
     })),
     frontendReady: vi.fn(async () => {}),
-    getHistory: vi.fn(async () => []),
+    getHistory: vi.fn(async (): Promise<import("./services/backend").HistoryEntry[]> => []),
+    testConnection: vi.fn(async (_config: unknown) => {}),
+    saveConfig: vi.fn(async (_config: unknown, _autoStart?: boolean) => {}),
+    setAutoStart: vi.fn(async () => {}),
+    isAutoStartEnabled: vi.fn(async () => false),
     hideWindow: vi.fn(async () => {}),
     minimizeWindow: vi.fn(() => {}),
     isDesktop: false,
     loadConfig: vi.fn(async () => ({ ...defaultConfig })),
     processImage: vi.fn(async (_image: string, _direction: string, _generation: number) => {}),
+    translateSelection: vi.fn(async (_id: string, _direction: string, _generation: number) => {}),
     translateRegion: vi.fn(async (_region: unknown, _direction: string, _generation: number) => {}),
     saveScreenshot: vi.fn(async () => "capture.png"),
     showCaptureWindow: vi.fn(async () => {}),
@@ -120,11 +128,17 @@ vi.mock("./services/backend", () => ({
   },
   processImage: backendMocks.processImage,
   saveScreenshot: backendMocks.saveScreenshot,
-  saveConfig: vi.fn(async () => {}),
+  saveConfig: backendMocks.saveConfig,
+  testConnection: backendMocks.testConnection,
+  setAutoStart: backendMocks.setAutoStart,
+  isAutoStartEnabled: backendMocks.isAutoStartEnabled,
+  getEnvironmentStatus: vi.fn(async () => null),
+  getVersion: vi.fn(async () => "test"),
   showCaptureWindow: backendMocks.showCaptureWindow,
   showSettingsWindow: backendMocks.showSettingsWindow,
   stepScrollingScreenshot: backendMocks.stepScrollingScreenshot,
   translateRegion: backendMocks.translateRegion,
+  translateSelection: backendMocks.translateSelection,
   triggerCapture: backendMocks.triggerCapture,
   triggerScreenshot: backendMocks.triggerScreenshot
 }));
@@ -194,6 +208,7 @@ describe("App capture cancellation", () => {
     backendMocks.isDesktop = false;
     backendMocks.processImage.mockClear();
     backendMocks.translateRegion.mockClear();
+    backendMocks.translateSelection.mockClear();
     backendMocks.saveScreenshot.mockClear();
     backendMocks.showCaptureWindow.mockClear();
     backendMocks.showSettingsWindow.mockClear();
@@ -222,6 +237,7 @@ describe("App capture cancellation", () => {
     });
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
       clearRect: vi.fn(),
+      scale: vi.fn(), rect: vi.fn(), clip: vi.fn(),
       drawImage: drawImageMock,
       fillRect: vi.fn(),
       fillText: vi.fn(),
@@ -229,7 +245,10 @@ describe("App capture cancellation", () => {
       ellipse: vi.fn(),
       getImageData,
       lineTo: vi.fn(),
-      measureText: vi.fn((text: string) => ({ width: text.length * 16 })),
+      measureText: vi.fn(function(this: CanvasRenderingContext2D, text: string) {
+        const size=Number(this.font?.match(/([\d.]+)px/)?.[1] ?? 16);
+        return {width:Array.from(text).reduce((sum,char)=>sum+size*(/[\p{Script=Han}]/u.test(char)?1:/\s/.test(char)?0.3:0.55),0)};
+      }),
       moveTo: vi.fn(),
       restore: vi.fn(),
       save: vi.fn(),
@@ -254,9 +273,66 @@ describe("App capture cancellation", () => {
   });
 
   afterEach(() => {
+    backendMocks.testConnection.mockReset();
+    backendMocks.saveConfig.mockReset();
+    backendMocks.setAutoStart.mockClear();
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it.each(["processing", "streaming", "done", "error"])("Escape closes a %s result and cancels the workflow", async (state) => {
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", {button:0,clientX:80,clientY:80});
+    await layer.trigger("mouseup", {button:0,clientX:480,clientY:280});
+    await flushPromises();
+    if (state === "streaming" || state === "done") backendMocks.emit("translation-token", {generation:1,token:"[1] 你好"});
+    if (state === "done") backendMocks.emit("translation-done", {generation:1});
+    if (state === "error") backendMocks.emit("workflow-error", {generation:1,stage:"translation",message:"offline"});
+    await flushPromises();
+    expect(wrapper.find("[data-testid='result-panel']").exists()).toBe(true);
+    window.dispatchEvent(new KeyboardEvent("keydown", {key:"Escape"}));
+    await flushPromises();
+    expect(wrapper.find("[data-testid='result-panel']").exists()).toBe(false);
+    expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+    backendMocks.emit("translation-token", {generation:1,token:"late"});
+    await flushPromises();
+    expect(wrapper.find("[data-testid='result-panel']").exists()).toBe(false);
+  });
+
+
+  it("lays out tweet paragraphs locally even when the selection includes social counters", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", {button:0,clientX:14,clientY:80});
+    await layer.trigger("mouseup", {button:0,clientX:607,clientY:394});
+    await flushPromises();
+    backendMocks.emit("ocr-result", {generation:1,...tweetOCR});
+    backendMocks.emit("translation-token", {generation:1,token:[
+      "[1] Tibo@thsottiaux·8小时",
+      "[2] Brent 是桌面应用品质和体验提升的最大功臣之一。",
+      "[3] 桌面应用。",
+      "[4] 日复一日，不断改进。",
+      "[5] Brent Traut @btraut·9小时",
+      "[6] 上周，我为 ChatGPT 桌面应用提交了一项更新，",
+      "[7] 让长线程加载更快。不只是一点，而是快了很多。",
+      "[8] 长线程加载速度提升超过 90%。",
+      "[9] 长线程内存占用减少超过 90%。",
+      "[10] Q 107", "[11] t7 51", "[12] 2,941", "[13] l.l 27万"
+    ].join("\n")});
+    backendMocks.emit("translation-done",{generation:1});
+    await flushPromises();
+    const paragraphs=wrapper.findAll("[data-testid='translation-line']");
+    expect(paragraphs.length).toBeGreaterThanOrEqual(5);
+    expect(paragraphs.every(line=>line.attributes("style")?.includes("text-align: left"))).toBe(true);
+    expect(paragraphs.some(line=>line.text().includes("内存占用"))).toBe(true);
   });
 
   it("cancels capture selection with right click", async () => {
@@ -938,7 +1014,8 @@ describe("App capture cancellation", () => {
 
     const labels = wrapper.findAll("[data-testid='ocr-block']");
     const resultPanel = wrapper.find("section.z-20");
-    expect(resultPanel.classes()).toContain("border-emerald-400");
+    expect(resultPanel.classes()).toContain("ring-1");
+    expect(resultPanel.classes()).not.toContain("border-2");
     expect(labels).toHaveLength(3);
     expect(labels[0].text()).toBe("\u4e2d\u6027");
     expect(labels[1].text()).toBe("\u8d1f\u9762");
@@ -947,8 +1024,8 @@ describe("App capture cancellation", () => {
     expect(labels[2].attributes("style")).toContain("top: 10px");
     expect(labels[2].attributes("style")).toContain("width: 81px");
     expect(labels[2].attributes("style")).toContain("height: 19px");
-    expect(labels[2].attributes("style")).toContain("font-size: 16px");
-    expect(labels[2].attributes("style")).toContain("font-weight: 500");
+    expect(labels[2].attributes("style")).toContain("font-size: 14px");
+    expect(labels[2].attributes("style")).toContain("font-weight: 400");
     expect(labels[2].attributes("style")).toContain("color: rgb(248, 250, 252)");
     // Browsers serialize opaque rgba(...,1) as rgb(...); match either form.
     expect(labels[2].attributes("style")).toMatch(/background-color: rgba?\(19,\s*25,\s*39/);
@@ -993,8 +1070,8 @@ describe("App capture cancellation", () => {
 		await flushPromises();
 
 		const labels = wrapper.findAll("[data-testid='ocr-block']");
-		expect(labels).toHaveLength(6);
-		expect(wrapper.findAll("[data-testid='translation-line']")).toHaveLength(0);
+		expect(labels).toHaveLength(5);
+		expect(wrapper.findAll("[data-testid='translation-line']")).toHaveLength(1);
 		const firstRowTops = labels.slice(0, 5).map((label) => stylePx(label.attributes("style"), "top"));
 		expect(new Set(firstRowTops)).toEqual(new Set([16]));
 	});
@@ -1047,7 +1124,7 @@ describe("App capture cancellation", () => {
 		await flushPromises();
 
 		const labels = wrapper.findAll("[data-testid='ocr-block']");
-		expect(wrapper.findAll("[data-testid='translation-line']")).toHaveLength(0);
+		expect(wrapper.findAll("[data-testid='translation-line']")).toHaveLength(3);
 		expect(wrapper.findAll("[data-testid='translation-cover']")).toHaveLength(0);
 		expect(labels.map((label) => label.text())).not.toContain("[1] 2 LiteLLM");
 		expect(labels.find((label) => label.text() === "登录")?.attributes("style")).toContain("width: 55px");
@@ -1078,7 +1155,7 @@ describe("App capture cancellation", () => {
     backendMocks.emit("translation-done", { generation: 1 });
     await flushPromises();
 
-    const labels = wrapper.findAll("[data-testid='ocr-block']");
+    const labels = wrapper.findAll("[data-testid='ocr-block'], [data-testid='translation-line']");
     expect(labels.map((label) => label.text())).toEqual([
       "\u5341\u5927\u70ed\u95e8\u6a21\u578b",
       "\u4e2d\u6027",
@@ -1088,8 +1165,8 @@ describe("App capture cancellation", () => {
     expect(wrapper.text()).not.toContain("OCR_TEXT_BEGIN");
     expect(wrapper.text()).not.toContain("OCR_TEXT_END");
     expect(labels.some((label) => label.text() === "30")).toBe(false);
-    expect(labels[0].attributes("style")).toContain("white-space: normal");
-    expect(labels[0].attributes("style")).toContain("overflow-wrap: anywhere");
+    expect(labels[0].attributes("style")).toContain("white-space: pre");
+    expect(labels[0].attributes("style")).toContain("overflow: hidden");
     expect(labels[0].attributes("style")).toContain("box-shadow: none");
   });
 
@@ -1142,7 +1219,7 @@ describe("App capture cancellation", () => {
     expect(lines[0].attributes("style")).toContain("left: 189px");
     expect(lines[0].attributes("style")).toContain("top: 0px");
     expect(lines[0].attributes("style")).toContain("font-size: 26px");
-    expect(lines[0].attributes("style")).toContain("color: rgb(255, 83, 22)");
+    expect(lines[0].attributes("style")).toContain("color: rgb(248, 250, 252)");
     expect(lines[1].attributes("style")).toContain("left: 0px");
     expect(lines[1].attributes("style")).toContain("top: 53px");
     expect(lines[1].attributes("style")).toContain("font-size: 24px");
@@ -1219,11 +1296,14 @@ describe("App capture cancellation", () => {
 
     const line = wrapper.find("[data-testid='translation-line']");
     expect(line.exists()).toBe(true);
-    expect(line.attributes("style")).toContain("padding: 1px 2px 1px 43px");
-    expect(line.attributes("style")).toContain("text-indent: -43px");
+    expect(line.text()).toMatch(/^2\./);
+    expect(line.attributes("style")).toContain("text-align: left");
+    for (const continuation of line.findAll("span").slice(1)) {
+      expect(stylePx(continuation.attributes("style"), "padding-left")).toBeGreaterThan(0);
+    }
   });
 
-  it("reserves vertical space when long anchored prose translations wrap", async () => {
+  it("keeps independent columns anchored when a long translation needs full view", async () => {
     const wrapper = mount(App);
     await flushPromises();
 
@@ -1263,15 +1343,18 @@ describe("App capture cancellation", () => {
     const firstStyle = lines[0].attributes("style");
     const secondStyle = lines[1].attributes("style");
     const firstTop = stylePx(firstStyle, "top");
-    const firstHeight = stylePx(firstStyle, "min-height");
+    const firstHeight = stylePx(firstStyle, "height");
     const firstLineHeight = stylePx(firstStyle, "line-height");
     const secondTop = stylePx(secondStyle, "top");
 
-    expect(firstHeight).toBeGreaterThan(firstLineHeight + 2);
-    expect(secondTop).toBeGreaterThanOrEqual(firstTop + firstHeight + 2);
+    expect(firstHeight).toBeGreaterThanOrEqual(firstLineHeight);
+    expect(firstTop).toBe(53);
+    expect(secondTop).toBe(67);
+    await wrapper.get("button[aria-label='Show full translation']").trigger("click");
+    expect(wrapper.text()).toContain("Hacker News");
   });
 
-  it("shrinks dense numbered prose rows before they overflow the anchored width", async () => {
+  it("keeps dense numbered prose legible and bounded instead of shrinking it excessively", async () => {
     const wrapper = mount(App);
     await flushPromises();
 
@@ -1317,8 +1400,8 @@ describe("App capture cancellation", () => {
 
     const firstStyle = lines[0].attributes("style");
     const secondStyle = lines[1].attributes("style");
-    expect(stylePx(firstStyle, "font-size")).toBeLessThanOrEqual(18);
-    expect(stylePx(secondStyle, "font-size")).toBeLessThanOrEqual(18);
+    expect(stylePx(firstStyle, "font-size")).toBeGreaterThanOrEqual(19);
+    expect(stylePx(secondStyle, "font-size")).toBeGreaterThanOrEqual(19);
     expect(firstStyle).toContain("box-sizing: border-box");
     expect(secondStyle).toContain("box-sizing: border-box");
   });
@@ -1349,11 +1432,12 @@ describe("App capture cancellation", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("AI \u8f85\u52a9\u7f16\u7801");
-    expect(wrapper.text()).not.toContain("translation incomplete");
+    expect(wrapper.find("[data-testid='partial-translation']").text()).toContain("翻译中断");
+    expect(wrapper.find("button[aria-label='Retry translation']").exists()).toBe(true);
     expect(wrapper.findAll("[data-testid='translation-line']")).toHaveLength(1);
   });
 
-  it("covers untranslated source rows in prose layout without copying unchanged English", async () => {
+  it("leaves untranslated source rows visible without copying them as translations", async () => {
     const wrapper = mount(App);
     await flushPromises();
 
@@ -1390,13 +1474,11 @@ describe("App capture cancellation", () => {
     const translatedLines = wrapper.findAll("[data-testid='translation-line']");
     const covers = wrapper.findAll("[data-testid='translation-cover']");
     expect(translatedLines).toHaveLength(1);
-    expect(covers).toHaveLength(1);
-    expect(covers[0].text()).toBe("");
-    expect(covers[0].attributes("style")).toContain("top: 276px");
+    expect(covers).toHaveLength(0);
     expect(wrapper.text()).not.toContain("You can open a comment");
   });
 
-  it("suppresses adjacent duplicate prose translations while covering the source row", async () => {
+  it("does not discard similar translations from distinct source regions", async () => {
     const wrapper = mount(App);
     await flushPromises();
 
@@ -1439,12 +1521,112 @@ describe("App capture cancellation", () => {
 
     const translatedLines = wrapper.findAll("[data-testid='translation-line']");
     const covers = wrapper.findAll("[data-testid='translation-cover']");
-    expect(translatedLines).toHaveLength(2);
-    expect(covers).toHaveLength(1);
-    expect(covers[0].text()).toBe("");
+    expect(translatedLines).toHaveLength(3);
+    expect(covers).toHaveLength(0);
+    await wrapper.get("button[aria-label='Show full translation']").trigger("click");
     expect(wrapper.text()).toContain("\u6211\u5e0c\u671b\u80fd\u591f\u5ba1\u8ba1\u6d41\u7a0b\u4e0e\u7ed3\u679c");
-    expect(wrapper.text()).not.toContain("\u5076\u5c14\u5bf9\u6a21\u578b\u8f93\u51fa\u8fdb\u884c\u5408\u7406\u6027\u68c0\u67e5");
+    expect(wrapper.text()).toContain("\u5076\u5c14\u5bf9\u6a21\u578b\u8f93\u51fa\u8fdb\u884c\u5408\u7406\u6027\u68c0\u67e5");
     expect(wrapper.text()).toContain("https://news.ycombinator.com/item?id=");
+  });
+
+  async function nativeResult() {
+    const wrapper = mount(App); await flushPromises();
+    backendMocks.emit("capture-start", {image:"data:image/png;base64,ZmFrZQ==",width:1600,height:1200,source:"wails",mode:"translate",
+      selectedText:{id:"selection-1",x:.2,y:.15,width:.4,height:.2,blocks:[{text:"A selected paragraph",x:0,y:0,width:.9,height:.3,background:"#ffffff",foreground:"#172033"}]}});
+    await flushPromises(); return wrapper;
+  }
+  it("starts native selection translation in place without a box or OCR",async()=>{
+    const wrapper=await nativeResult();
+    expect(backendMocks.translateSelection).toHaveBeenCalledWith("selection-1","to-zh",1);
+    expect(backendMocks.translateRegion).not.toHaveBeenCalled();
+    expect(backendMocks.processImage).not.toHaveBeenCalled();
+    expect(wrapper.find("section.cursor-crosshair").exists()).toBe(false);
+    expect(wrapper.get("[data-testid='result-panel']").attributes("style")).toContain("left: 160px");
+    expect(wrapper.get("[data-testid='result-panel']").attributes("style")).toContain("top: 90px");
+    expect(wrapper.get("[data-testid='result-panel']").text()).not.toContain("OCR");
+    backendMocks.emit("text-regions",{generation:1,source:"selection",text:"A selected paragraph",blocks:[{text:"A selected paragraph",x:0,y:0,width:.9,height:.3,background:"#ffffff",foreground:"#172033"}]});
+    backendMocks.emit("translation-token",{generation:1,token:"[1] 选中的段落"});
+    backendMocks.emit("translation-done",{generation:1});await flushPromises();
+    expect(wrapper.text()).toContain("选中的段落");
+    expect(wrapper.get("[data-testid='translation-line']").attributes("style")).toContain("background-color: rgb(255, 255, 255)");
+  });
+  it("reverses and retries a native selection without falling back to OCR",async()=>{
+    const wrapper=await nativeResult();
+    backendMocks.emit("translation-token",{generation:1,token:"[1] 选中文字"});backendMocks.emit("translation-done",{generation:1});await flushPromises();
+    await wrapper.get("button[aria-label='Reverse translation direction']").trigger("click");await flushPromises();
+    expect(backendMocks.translateSelection).toHaveBeenLastCalledWith("selection-1","to-en",2);
+    backendMocks.emit("workflow-error",{generation:2,stage:"translation",message:"offline"});await flushPromises();
+    await wrapper.get("button[aria-label='Retry translation']").trigger("click");await flushPromises();
+    expect(backendMocks.translateSelection).toHaveBeenLastCalledWith("selection-1","to-en",3);
+    expect(wrapper.get("[data-testid=translation-progress]").text()).not.toContain("OCR");
+    expect(backendMocks.translateRegion).not.toHaveBeenCalled();
+  });
+  it("ignores native selection responses after closing",async()=>{
+    const wrapper=await nativeResult();
+    window.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape"}));await flushPromises();
+    backendMocks.emit("text-regions",{generation:1,source:"selection",blocks:[{text:"Stale",x:0,y:0,width:1,height:1}]});
+    backendMocks.emit("translation-token",{generation:1,token:"不应该出现"});backendMocks.emit("translation-done",{generation:1});await flushPromises();
+    expect(wrapper.find("[data-testid='result-panel']").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("不应该出现");
+  });
+
+  async function completedCopyResult() {
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", { clientX: 40, clientY: 40 });
+    await layer.trigger("mousemove", { clientX: 300, clientY: 140 });
+    await layer.trigger("mouseup", { clientX: 300, clientY: 140 });
+    await flushPromises();
+    backendMocks.emit("translation-token", { generation: 1, token: "测试译文" });
+    backendMocks.emit("translation-done", { generation: 1 });
+    await flushPromises();
+    return wrapper;
+  }
+
+  it.each(["text", "screenshot"] as const)("closes only after manual %s copying succeeds", async kind => {
+    const wrapper = await completedCopyResult();
+    const copy = kind === "text" ? backendMocks.copyText : backendMocks.copyImageDataUrl;
+    let finish!: () => void;
+    copy.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    const button = wrapper.get("button[aria-label='Copy translated " + kind + "']");
+    await button.trigger("click");
+    expect(wrapper.find("[data-testid='result-panel']").exists()).toBe(true);
+    expect(button.attributes("disabled")).toBeDefined();
+    expect(backendMocks.hideWindow).not.toHaveBeenCalled();
+    finish();
+    await flushPromises();
+    expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+    expect(wrapper.find("[data-testid='result-panel']").exists()).toBe(false);
+  });
+
+  it.each(["text", "screenshot"] as const)("keeps the result and permits retry after %s clipboard failure", async kind => {
+    const wrapper = await completedCopyResult();
+    const copy = kind === "text" ? backendMocks.copyText : backendMocks.copyImageDataUrl;
+    copy.mockRejectedValueOnce(new Error("Clipboard busy"));
+    await wrapper.get("button[aria-label='Copy translated " + kind + "']").trigger("click");
+    await flushPromises();
+    expect(wrapper.get("[data-testid='result-panel']").text()).toContain("复制失败");
+    expect(backendMocks.hideWindow).not.toHaveBeenCalled();
+    await wrapper.get("button[aria-label='Copy translated " + kind + "']").trigger("click");
+    await flushPromises();
+    expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["text", "screenshot"] as const)("does not close a new capture when an older %s copy finishes", async kind => {
+    const wrapper = await completedCopyResult();
+    const copy = kind === "text" ? backendMocks.copyText : backendMocks.copyImageDataUrl;
+    let finish!: () => void;
+    copy.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    await wrapper.get("button[aria-label='Copy translated " + kind + "']").trigger("click");
+    await backendMocks.triggerCapture();
+    await flushPromises();
+    finish();
+    await flushPromises();
+    expect(backendMocks.hideWindow).not.toHaveBeenCalled();
+    expect(wrapper.find("section.cursor-crosshair").exists()).toBe(true);
   });
 
   it("copies a translated screenshot from the selected region", async () => {
@@ -1511,7 +1693,7 @@ describe("App capture cancellation", () => {
 
     backendMocks.emit("ocr-result", {
       generation: 1,
-      blocks: [{ text: "Positive", x: 0.62, y: 0.2, width: 0.18, height: 0.36 }]
+      blocks: [{ text: "Positive", x: 0.62, y: 0.2, width: 0.3, height: 0.36 }]
     });
     backendMocks.emit("translation-token", { generation: 1, token: "[1] \u6b63\u9762" });
     backendMocks.emit("translation-done", { generation: 1 });
@@ -1558,7 +1740,9 @@ describe("App capture cancellation", () => {
 
     const labels = wrapper.findAll("[data-testid='ocr-block']");
     expect(labels.length).toBeGreaterThan(0);
-    expect(labels.some((label) => label.text() === "Settings")).toBe(true);
+    await wrapper.get("button[aria-label='Show full translation']").trigger("click");
+    expect(wrapper.text()).toContain("Settings");
+    expect(labels.some((label) => label.text().includes("设置"))).toBe(false);
   });
 
   it("keeps the manually reversed direction until the next capture", async () => {
@@ -1614,6 +1798,8 @@ describe("App capture cancellation", () => {
     await flushPromises();
 
     expect(backendMocks.copyText).toHaveBeenCalledWith("\u6d4b\u8bd5");
+    expect(backendMocks.hideWindow).not.toHaveBeenCalled();
+    expect(wrapper.find("[data-testid='result-panel']").exists()).toBe(true);
   });
 
   it("closes the result panel when clicking outside it", async () => {
@@ -1663,4 +1849,81 @@ describe("App capture cancellation", () => {
     expect(wrapper.text()).not.toContain("测试");
     expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
   });
+});
+
+
+describe("settings drafts and history", () => {
+ beforeEach(() => {
+  backendMocks.listeners.clear();
+  backendMocks.isDesktop = false;
+  backendMocks.loadConfig.mockResolvedValue({ ...backendMocks.defaultConfig });
+  backendMocks.getHistory.mockResolvedValue([]);
+  backendMocks.testConnection.mockClear();
+  backendMocks.saveConfig.mockClear();
+  backendMocks.setAutoStart.mockClear();
+  backendMocks.copyText.mockClear();
+ });
+ async function settings() {
+  const wrapper = mount(App);
+  await flushPromises();
+  await wrapper.get("button[aria-label='Settings']").trigger("click");
+  await flushPromises();
+  return wrapper;
+ }
+ it("tests the unsaved connection without saving it", async () => {
+  const wrapper = await settings();
+  await wrapper.get("[data-testid='api-key-input']").setValue("draft-test-key");
+  const testButton = wrapper.findAll("button").find(button => button.text() === "测试连接")!;
+  await testButton.trigger("click");
+  await flushPromises();
+  expect(backendMocks.testConnection).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "draft-test-key" }));
+  expect(backendMocks.saveConfig).not.toHaveBeenCalled();
+ });
+ it("discards settings on cancel, including theme and autostart", async () => {
+  const wrapper = await settings();
+  await wrapper.get("[data-testid='api-key-input']").setValue("discard-me");
+  await wrapper.get("[data-testid='theme-toggle']").trigger("click");
+  await wrapper.get("input[data-testid='autostart-toggle']").setValue(true);
+  expect(backendMocks.setAutoStart).not.toHaveBeenCalled();
+  await wrapper.findAll("button").find(button => button.text() === "取消")!.trigger("click");
+  await wrapper.get("button[aria-label='Settings']").trigger("click");
+  await flushPromises();
+  expect((wrapper.get("[data-testid='api-key-input']").element as HTMLInputElement).value).toBe("");
+  expect((wrapper.get("[data-testid='autostart-toggle']").element as HTMLInputElement).checked).toBe(false);
+  expect(wrapper.get("[data-testid='theme-toggle']").attributes("aria-label")).toBe("切换为暗色主题");
+ });
+ it("saves the draft and OS toggle together", async () => {
+  const wrapper = await settings();
+  await wrapper.get("[data-testid='api-key-input']").setValue("saved-test-key");
+  await wrapper.get("[data-testid='autostart-toggle']").setValue(true);
+  await wrapper.get("form").trigger("submit");
+  await flushPromises();
+  expect(backendMocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({apiKey:"saved-test-key"}), true);
+  await wrapper.get("button[aria-label='Settings']").trigger("click");
+  await flushPromises();
+  expect((wrapper.get("[data-testid='api-key-input']").element as HTMLInputElement).value).toBe("saved-test-key");
+ });
+ it("shows local date/time and copies both complete texts in source order", async () => {
+  backendMocks.getHistory.mockResolvedValueOnce([{
+   id:"history-1", timestamp:"2026-08-31T10:20:30+08:00", source:"Hello\nWorld",
+   translation:"[2] 世界\n[1] 你好", direction:"to-zh"
+  }]);
+  const wrapper = await settings();
+  expect(wrapper.get("time").attributes("datetime")).toBe("2026-08-31T10:20:30+08:00");
+  expect(wrapper.get("time").text()).toContain("2026");
+  expect(wrapper.get("details").text()).not.toContain("[1]");
+  await wrapper.get("button[aria-label='Copy history entry']").trigger("click");
+  await flushPromises();
+  expect(backendMocks.copyText).toHaveBeenCalledWith("原文：\nHello\nWorld\n\n译文：\n你好\n世界");
+  expect(wrapper.get("button[aria-label='Copy history entry']").attributes("title")).toBe("已复制");
+ });
+ it("keeps history and displays feedback when copying fails", async () => {
+  backendMocks.getHistory.mockResolvedValueOnce([{ id:"failure", timestamp:"", source:"Hello", translation:"你好", direction:"to-zh" }]);
+  backendMocks.copyText.mockRejectedValueOnce(new Error("clipboard busy"));
+  const wrapper = await settings();
+  await wrapper.get("button[aria-label='Copy history entry']").trigger("click");
+  await flushPromises();
+  expect(wrapper.text()).toContain("复制失败");
+  expect(wrapper.find("details").exists()).toBe(true);
+ });
 });

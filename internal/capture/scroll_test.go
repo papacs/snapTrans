@@ -270,3 +270,37 @@ func assertSamePixels(t *testing.T, expected image.Image, actual image.Image) {
 		}
 	}
 }
+
+func TestManualScrollReportsLimitsAndStopsCapturing(t *testing.T) {
+	for _, pixelLimit := range []bool{false, true} {
+		t.Run(map[bool]string{false: "frames", true: "pixels"}[pixelLimit], func(t *testing.T) {
+			content := patternedScrollContent(48, 200)
+			calls := 0
+			options := ManualScrollOptions{MaxFrames: 2, MaxPixels: 1_000_000}
+			if pixelLimit {
+				options.MaxFrames = 10
+				options.MaxPixels = 48 * 110
+			}
+			session, err := startManualScrollCapture(context.Background(), image.Rect(0, 0, 48, 100), options, func(image.Rectangle) (image.Image, error) {
+				top := 0
+				if calls > 0 {
+					top = 60
+				}
+				calls++
+				return content.SubImage(image.Rect(0, top, 48, top+100)), nil
+			})
+			require.NoError(t, err)
+			snapshot, err := session.CaptureNext()
+			require.NoError(t, err)
+			require.True(t, snapshot.LimitReached)
+			require.Equal(t, !pixelLimit, snapshot.Appended)
+			snapshot, err = session.CaptureNext()
+			require.NoError(t, err)
+			require.True(t, snapshot.LimitReached)
+			require.Equal(t, 2, calls)
+			result, err := session.Finish()
+			require.NoError(t, err)
+			require.NotEmpty(t, result.ImageBytes)
+		})
+	}
+}

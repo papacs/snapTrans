@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"snaptrans/internal/textregion"
 	"sort"
 	"strings"
 	"time"
@@ -25,13 +26,7 @@ type Result struct {
 	Blocks []Block `json:"blocks"`
 }
 
-type Block struct {
-	Text   string  `json:"text"`
-	X      float64 `json:"x"`
-	Y      float64 `json:"y"`
-	Width  float64 `json:"width"`
-	Height float64 `json:"height"`
-}
+type Block = textregion.Block
 
 type RapidOCR struct {
 	ExecutablePath string

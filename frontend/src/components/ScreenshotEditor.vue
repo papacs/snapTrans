@@ -77,6 +77,7 @@ let copiedTextTimer: number | null = null;
 let baseCanvas: HTMLCanvasElement | null = null;
 let pixelatedCanvas: HTMLCanvasElement | null = null;
 let drawing = false;
+let redrawFrame: number | null = null;
 let disposed = false;
 let scrollPollTimer: number | null = null;
 
@@ -181,6 +182,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   disposed = true;
+  if (redrawFrame !== null) window.cancelAnimationFrame(redrawFrame);
   extractionSequence += 1;
   if (copiedTextTimer !== null) {
     window.clearTimeout(copiedTextTimer);
@@ -382,6 +384,10 @@ async function pollScrollingCapture(): Promise<void> {
       stitchedPreviewImage.value = result.previewImage;
       scrollNotice.value = "";
     }
+    if (result.limitReached) {
+      pollingFailed = true;
+      scrollNotice.value = "已达到长截图大小或帧数上限，请点击完成以保留当前结果。";
+    }
   } catch (error) {
     pollingFailed = true;
     scrollNotice.value = error instanceof Error ? error.message : "滚动画面采集失败";
@@ -442,11 +448,11 @@ function onMouseMove(event: MouseEvent): void {
   const point = canvasPoint(event);
   const current = currentAnnotation.value;
   if (current.tool === "pen" || current.tool === "mosaic") {
-    currentAnnotation.value = { ...current, points: [...current.points, point] };
+    current.points.push(point);
   } else if (current.tool === "rectangle" || current.tool === "ellipse" || current.tool === "arrow") {
     currentAnnotation.value = { ...current, end: point };
   }
-  redraw();
+  scheduleRedraw();
 }
 
 function onMouseUp(event: MouseEvent): void {
@@ -468,7 +474,14 @@ function detachDrawingListeners(): void {
   window.removeEventListener("mouseup", onMouseUp);
 }
 
+function scheduleRedraw(): void {
+  if (redrawFrame !== null) return;
+  if (typeof window.requestAnimationFrame !== "function") { redraw(); return; }
+  redrawFrame = window.requestAnimationFrame(() => { redrawFrame = null; redraw(); });
+}
+
 function redraw(): void {
+  if (redrawFrame !== null) { window.cancelAnimationFrame(redrawFrame); redrawFrame = null; }
   const editor = editorCanvasRef.value;
   if (!editor) {
     return;

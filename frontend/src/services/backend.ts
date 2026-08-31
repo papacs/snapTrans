@@ -26,6 +26,8 @@ export interface CapturePayload {
   source?: "wails" | "browser";
   mode?: "translate" | "screenshot";
   scrollFrames?: number;
+  selectedText?: NativeTextSelection;
+  notice?: string;
 }
 
 export interface ScrollCaptureRegion {
@@ -56,6 +58,7 @@ export interface ScrollCaptureStepResult {
   width: number;
   height: number;
   appended: boolean;
+  limitReached?: boolean;
 }
 
 export interface DisplayInfo {
@@ -89,7 +92,14 @@ export interface OCRResultEvent extends GenerationEvent {
   blocks: OCRBlockPayload[];
 }
 
-export interface OCRBlockPayload {
+// Selection bounds are normalized to the full captured frame (0..1).
+// Child text blocks are normalized to that selection, not the screen.
+export interface NativeTextSelection extends SelectionRegion { id: string; blocks: TextBlockPayload[] }
+export interface TextRegionsEvent extends OCRResultEvent { source: "ocr" | "selection" }
+export type OCRBlockPayload = TextBlockPayload;
+export interface TextBlockPayload {
+  background?: string;
+  foreground?: string;
   text: string;
   x: number;
   y: number;
@@ -126,6 +136,7 @@ type EventName =
   | "capture-start"
   | "ocr-start"
   | "ocr-result"
+  | "text-regions"
   | "translation-direction"
   | "translation-start"
   | "translation-token"
@@ -144,7 +155,7 @@ export const defaultConfig: AppConfig = {
   screenshotShortcutKey: "Alt+W",
   apiKey: "",
   baseURL: "https://api.deepseek.com",
-  model: "deepseek-chat",
+  model: "deepseek-v4-flash",
   rapidOCRPath: "./RapidOCR-json_v0.2.0",
   rapidOCRTimeoutSeconds: 15,
   translationTimeoutSeconds: 60,
@@ -207,13 +218,18 @@ export async function frontendReady(): Promise<void> {
   }
 }
 
-export async function saveConfig(config: AppConfig): Promise<void> {
+export async function saveConfig(config: AppConfig, autoStart?: boolean): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.SaveConfig(config);
+    if (autoStart === undefined) {
+      await window.go!.main!.App!.SaveConfig(config);
+    } else {
+      await window.go!.main!.App!.SaveSettings(config, autoStart);
+    }
     return;
   }
 
   localStorage.setItem("snaptrans.config", JSON.stringify(config));
+  if (autoStart !== undefined) localStorage.setItem("snaptrans.autostart", String(autoStart));
 }
 
 export async function triggerCapture(): Promise<void> {
@@ -321,6 +337,14 @@ export async function translateRegion(
   void streamFallbackTranslation(direction, generation);
 }
 
+export async function translateSelection(id: string, direction: TranslationDirection, generation: number): Promise<void> {
+  if (hasWailsBackend()) {
+    await window.go!.main!.App!.TranslateSelection(id, direction, generation);
+    return;
+  }
+  throw new Error("Native text selection is only available in the desktop app.");
+}
+
 export async function extractText(base64Image: string): Promise<OCRResultPayload> {
   if (hasWailsBackend()) {
     const result = await window.go!.main!.App!.ExtractText(base64Image);
@@ -376,9 +400,9 @@ export async function clearHistory(): Promise<void> {
   localStorage.removeItem("snaptrans.history");
 }
 
-export async function testConnection(): Promise<void> {
+export async function testConnection(config: AppConfig): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.TestConnection();
+    await window.go!.main!.App!.TestConnection(config);
     return;
   }
 
@@ -409,7 +433,7 @@ export async function isAutoStartEnabled(): Promise<boolean> {
   if (hasWailsBackend()) {
     return window.go!.main!.App!.IsAutoStartEnabled();
   }
-  return false;
+  return localStorage.getItem("snaptrans.autostart") === "true";
 }
 
 export async function getVersion(): Promise<string> {
@@ -439,7 +463,8 @@ export async function saveScreenshot(dataUrl: string): Promise<string> {
 
 export async function copyText(text: string): Promise<void> {
   if (window.runtime?.ClipboardSetText) {
-    await window.runtime.ClipboardSetText(text);
+    const success = await window.runtime.ClipboardSetText(text);
+    if (success === false) throw new Error("Clipboard is busy; please retry.");
     return;
   }
 
@@ -453,7 +478,7 @@ export async function copyImageDataUrl(dataUrl: string): Promise<void> {
     return;
   }
 
-  await copyText(dataUrl);
+  throw new Error("当前环境无法复制图片，请使用保存图片。 / Image clipboard unavailable; please save the image.");
 }
 
 function emitFallback<T>(eventName: EventName, payload: T): void {

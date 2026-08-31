@@ -20,15 +20,18 @@ var assets embed.FS
 const instanceMutexName = "snapTrans.single-instance"
 
 func main() {
-	instance, err := singleinstance.Acquire(instanceMutexName)
-	if err != nil {
-		if errors.Is(err, singleinstance.ErrAlreadyRunning) {
-			showAlreadyRunningMessage()
-			return
+	// Wails binding generation only reflects methods; it does not run the app.
+	if !generatingBindings {
+		instance, err := singleinstance.Acquire(instanceMutexName)
+		if err != nil {
+			if errors.Is(err, singleinstance.ErrAlreadyRunning) {
+				showAlreadyRunningMessage()
+				return
+			}
+			log.Fatal(err)
 		}
-		log.Fatal(err)
+		defer instance.Release()
 	}
-	defer instance.Release()
 
 	app := NewApp()
 

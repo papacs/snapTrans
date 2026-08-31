@@ -38,6 +38,7 @@ type ManualScrollSnapshot struct {
 	Frames            int    `json:"frames"`
 	Width             int    `json:"width"`
 	Height            int    `json:"height"`
+	LimitReached      bool   `json:"limitReached"`
 	Appended          bool   `json:"appended"`
 }
 
@@ -120,6 +121,9 @@ func (session *ManualScrollCapture) CaptureNext() (ManualScrollSnapshot, error) 
 	session.mu.Lock()
 	defer session.mu.Unlock()
 
+	if session.stitcher.frameCount() >= session.maxFrames || session.stitcher.limitReached {
+		return ManualScrollSnapshot{Frames: session.stitcher.frameCount(), Width: session.stitcher.frames[0].Bounds().Dx(), Height: session.stitcher.totalHeight, LimitReached: true}, nil
+	}
 	frame, err := session.captureFrame(session.rect)
 	if err != nil {
 		return ManualScrollSnapshot{}, err
@@ -130,10 +134,11 @@ func (session *ManualScrollCapture) CaptureNext() (ManualScrollSnapshot, error) 
 	}
 	if !appended {
 		return ManualScrollSnapshot{
-			Frames:   session.stitcher.frameCount(),
-			Width:    session.stitcher.frames[0].Bounds().Dx(),
-			Height:   session.stitcher.totalHeight,
-			Appended: false,
+			Frames:       session.stitcher.frameCount(),
+			Width:        session.stitcher.frames[0].Bounds().Dx(),
+			Height:       session.stitcher.totalHeight,
+			Appended:     false,
+			LimitReached: session.stitcher.limitReached,
 		}, nil
 	}
 
@@ -168,6 +173,7 @@ func (session *ManualScrollCapture) snapshotLocked(current image.Image, appended
 		Width:             session.stitcher.frames[0].Bounds().Dx(),
 		Height:            session.stitcher.totalHeight,
 		Appended:          appended,
+		LimitReached:      session.stitcher.frameCount() >= session.maxFrames || session.stitcher.limitReached,
 	}, nil
 }
 
@@ -206,6 +212,7 @@ type verticalStitcher struct {
 	observedFrame *image.RGBA
 	observedTop   int
 	maxPixels     int64
+	limitReached  bool
 }
 
 func newVerticalStitcher(first image.Image, maxPixels int64) (*verticalStitcher, error) {
@@ -279,6 +286,7 @@ func (stitcher *verticalStitcher) addManual(next image.Image) bool {
 	width := observed.Bounds().Dx()
 	if int64(width)*int64(stitcher.totalHeight+extension) > stitcher.maxPixels ||
 		stitcher.totalHeight+extension > maxCanvasHeight {
+		stitcher.limitReached = true
 		return false
 	}
 	stitcher.frames = append(stitcher.frames, normalized)

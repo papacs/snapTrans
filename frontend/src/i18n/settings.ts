@@ -61,6 +61,10 @@ export interface SettingsMessages {
   noRecentTranslations: string;
   loadingHistory: string;
   copyHistoryEntry: string;
+  copied: string;
+  partialTranslation: string;
+  retry: string;
+  copyFailed: string;
   openLogs: string;
   unsavedHint: string;
   cancel: string;
@@ -108,7 +112,7 @@ const english: SettingsMessages = {
   record: "Record",
   recording: "Listening...",
   pressShortcut: "Press a combination, or Esc to cancel.",
-  shortcutHelp: "Global shortcut for instant capture and translation.",
+  shortcutHelp: "Translate selected text in place; otherwise drag an area to translate.",
   rapidOCRPath: "RapidOCR path",
   rapidOCRPathHelp: "Folder or full path to rapidocr_json.exe.",
   startWithWindows: "Start with Windows",
@@ -129,12 +133,16 @@ const english: SettingsMessages = {
   glossaryPlaceholder: "API -> interface\ncommit -> submit",
   glossaryHelp: "One source -> target term per line.",
   recentTranslations: "Recent translations",
-  recentTranslationsDescription: "Reuse a recent result without capturing again.",
+  recentTranslationsDescription: "Expand a record to read it. Copy includes original and translation.",
   clear: "Clear",
   clearHistory: "Clear translation history",
   noRecentTranslations: "No recent translations yet.",
   loadingHistory: "Loading history...",
-  copyHistoryEntry: "Copy this translation",
+  copyHistoryEntry: "Copy original and translation",
+  copied: "Copied",
+  partialTranslation: "Translation interrupted. The text below is incomplete.",
+  retry: "Retry",
+  copyFailed: "Copy failed. Please retry.",
   openLogs: "Open logs",
   unsavedHint: "Changes apply after saving.",
   cancel: "Cancel",
@@ -176,7 +184,7 @@ const chinese: SettingsMessages = {
   record: "\u5f55\u5165",
   recording: "\u6b63\u5728\u5f55\u5165...",
   pressShortcut: "\u8bf7\u6309\u4e0b\u65b0\u7684\u5feb\u6377\u952e\u7ec4\u5408...",
-  shortcutHelp: "\u5168\u5c40\u5feb\u6377\u952e\uff0c\u677e\u5f00\u9f20\u6807\u540e\u7acb\u5373 OCR \u5e76\u7ffb\u8bd1\u3002",
+  shortcutHelp: "选中文字后按快捷键原位翻译；未选中或不支持时，框选翻译。",
   rapidOCRPath: "RapidOCR \u8def\u5f84",
   rapidOCRPathHelp: "\u53ef\u586b\u5199\u6587\u4ef6\u5939\u6216 rapidocr_json.exe \u5b8c\u6574\u8def\u5f84\u3002",
   startWithWindows: "\u5f00\u673a\u81ea\u542f",
@@ -197,12 +205,16 @@ const chinese: SettingsMessages = {
   glossaryPlaceholder: "API -> \u63a5\u53e3\ncommit -> \u63d0\u4ea4",
   glossaryHelp: "\u6bcf\u884c\u4e00\u7ec4\uff1a\u539f\u6587 -> \u8bd1\u6587\u3002",
   recentTranslations: "\u6700\u8fd1\u7ffb\u8bd1",
-  recentTranslationsDescription: "\u67e5\u770b\u5e76\u590d\u7528\u8fd1\u671f\u7ed3\u679c\u3002",
+  recentTranslationsDescription: "点击记录展开全文，复制时包含原文和译文。",
   clear: "\u6e05\u7a7a",
   clearHistory: "\u6e05\u7a7a\u7ffb\u8bd1\u5386\u53f2",
   noRecentTranslations: "\u6682\u65e0\u7ffb\u8bd1\u8bb0\u5f55\u3002",
   loadingHistory: "\u6b63\u5728\u52a0\u8f7d\u5386\u53f2\u8bb0\u5f55...",
-  copyHistoryEntry: "\u590d\u5236\u8fd9\u6761\u8bd1\u6587",
+  copyHistoryEntry: "复制原文和译文",
+  copied: "已复制",
+  partialTranslation: "翻译中断，以下内容尚未完成。",
+  retry: "重新翻译",
+  copyFailed: "复制失败，请重试。",
   openLogs: "\u6253\u5f00\u65e5\u5fd7",
   unsavedHint: "\u4fdd\u5b58\u540e\u5e94\u7528\u66f4\u6539\u3002",
   cancel: "\u53d6\u6d88",

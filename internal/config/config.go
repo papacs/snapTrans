@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,63 +13,63 @@ import (
 )
 
 type Config struct {
-	UILanguage             string `json:"uiLanguage"`
-	Theme                  string `json:"theme"`
-	ShortcutKey            string `json:"shortcutKey"`
-	ScreenshotShortcutKey  string `json:"screenshotShortcutKey"`
-	APIKey                 string `json:"apiKey"`
-	BaseURL                string `json:"baseURL"`
-	Model                  string `json:"model"`
-	RapidOCRPath           string `json:"rapidOCRPath"`
-	RapidOCRTimeoutSeconds int    `json:"rapidOCRTimeoutSeconds"`
-	TranslationTimeoutSeconds int `json:"translationTimeoutSeconds"`
-	AutoDirection          bool   `json:"autoDirection"`
-	SystemPrompt           string `json:"systemPrompt"`
-	Glossary               string `json:"glossary"`
-	PersistentOCR          bool   `json:"persistentOCR"`
-	AutoCopy               bool   `json:"autoCopy"`
+	UILanguage                string `json:"uiLanguage"`
+	Theme                     string `json:"theme"`
+	ShortcutKey               string `json:"shortcutKey"`
+	ScreenshotShortcutKey     string `json:"screenshotShortcutKey"`
+	APIKey                    string `json:"apiKey"`
+	BaseURL                   string `json:"baseURL"`
+	Model                     string `json:"model"`
+	RapidOCRPath              string `json:"rapidOCRPath"`
+	RapidOCRTimeoutSeconds    int    `json:"rapidOCRTimeoutSeconds"`
+	TranslationTimeoutSeconds int    `json:"translationTimeoutSeconds"`
+	AutoDirection             bool   `json:"autoDirection"`
+	SystemPrompt              string `json:"systemPrompt"`
+	Glossary                  string `json:"glossary"`
+	PersistentOCR             bool   `json:"persistentOCR"`
+	AutoCopy                  bool   `json:"autoCopy"`
 }
 
 // persistedConfig accepts both the current generic LLM fields and the
 // DeepSeek-specific fields written by versions before LiteLLM support.
 type persistedConfig struct {
-	UILanguage             string `json:"uiLanguage"`
-	Theme                  string `json:"theme"`
-	ShortcutKey            string `json:"shortcutKey"`
-	ScreenshotShortcutKey  string `json:"screenshotShortcutKey"`
-	APIKey                 string `json:"apiKey"`
-	BaseURL                string `json:"baseURL"`
-	Model                  string `json:"model"`
-	DeepSeekAPIKey         string `json:"deepSeekAPIKey"`
-	DeepSeekBaseURL        string `json:"deepSeekBaseURL"`
-	DeepSeekModel          string `json:"deepSeekModel"`
-	RapidOCRPath           string `json:"rapidOCRPath"`
-	RapidOCRTimeoutSeconds int    `json:"rapidOCRTimeoutSeconds"`
-	TranslationTimeoutSeconds int `json:"translationTimeoutSeconds"`
-	AutoDirection          *bool  `json:"autoDirection"`
-	SystemPrompt           string `json:"systemPrompt"`
-	Glossary               string `json:"glossary"`
-	PersistentOCR          *bool  `json:"persistentOCR"`
-	AutoCopy               *bool  `json:"autoCopy"`
+	UILanguage                string `json:"uiLanguage"`
+	Theme                     string `json:"theme"`
+	ShortcutKey               string `json:"shortcutKey"`
+	ScreenshotShortcutKey     string `json:"screenshotShortcutKey"`
+	APIKey                    string `json:"apiKey"`
+	BaseURL                   string `json:"baseURL"`
+	Model                     string `json:"model"`
+	DeepSeekAPIKey            string `json:"deepSeekAPIKey"`
+	DeepSeekBaseURL           string `json:"deepSeekBaseURL"`
+	DeepSeekModel             string `json:"deepSeekModel"`
+	RapidOCRPath              string `json:"rapidOCRPath"`
+	RapidOCRTimeoutSeconds    int    `json:"rapidOCRTimeoutSeconds"`
+	TranslationTimeoutSeconds int    `json:"translationTimeoutSeconds"`
+	AutoDirection             *bool  `json:"autoDirection"`
+	SystemPrompt              string `json:"systemPrompt"`
+	Glossary                  string `json:"glossary"`
+	PersistentOCR             *bool  `json:"persistentOCR"`
+	AutoCopy                  *bool  `json:"autoCopy"`
 }
 
 func (p persistedConfig) Config() Config {
 	return Config{
-		UILanguage:             p.UILanguage,
-		Theme:                  p.Theme,
-		ShortcutKey:            p.ShortcutKey,
-		ScreenshotShortcutKey:  p.ScreenshotShortcutKey,
-		APIKey:                 firstNonEmpty(p.APIKey, p.DeepSeekAPIKey),
-		BaseURL:                firstNonEmpty(p.BaseURL, p.DeepSeekBaseURL),
-		Model:                  firstNonEmpty(p.Model, p.DeepSeekModel),
-		RapidOCRPath:           p.RapidOCRPath,
-		RapidOCRTimeoutSeconds: p.RapidOCRTimeoutSeconds,
+		UILanguage:                p.UILanguage,
+		Theme:                     p.Theme,
+		ShortcutKey:               p.ShortcutKey,
+		ScreenshotShortcutKey:     p.ScreenshotShortcutKey,
+		APIKey:                    firstNonEmpty(p.APIKey, p.DeepSeekAPIKey),
+		BaseURL:                   firstNonEmpty(p.BaseURL, p.DeepSeekBaseURL),
+		Model:                     firstNonEmpty(p.Model, p.DeepSeekModel),
+		RapidOCRPath:              p.RapidOCRPath,
+		RapidOCRTimeoutSeconds:    p.RapidOCRTimeoutSeconds,
 		TranslationTimeoutSeconds: p.TranslationTimeoutSeconds,
-		AutoDirection:          p.AutoDirection == nil || *p.AutoDirection,
-		SystemPrompt:           p.SystemPrompt,
-		Glossary:               p.Glossary,
-		PersistentOCR:          p.PersistentOCR == nil || *p.PersistentOCR,
-		AutoCopy:               p.AutoCopy != nil && *p.AutoCopy,
+		AutoDirection:             p.AutoDirection == nil || *p.AutoDirection,
+		SystemPrompt:              p.SystemPrompt,
+		Glossary:                  p.Glossary,
+		PersistentOCR:             p.PersistentOCR == nil || *p.PersistentOCR,
+		AutoCopy:                  p.AutoCopy != nil && *p.AutoCopy,
 	}
 }
 
@@ -79,17 +80,17 @@ type Store struct {
 
 func Default() Config {
 	return Config{
-		UILanguage:             "zh-CN",
-		Theme:                  "light",
-		ShortcutKey:            "Alt+Q",
-		ScreenshotShortcutKey:  "Alt+W",
-		BaseURL:                "https://api.deepseek.com",
-		Model:                  "deepseek-chat",
-		RapidOCRPath:           "./RapidOCR-json_v0.2.0",
-		RapidOCRTimeoutSeconds: 15,
+		UILanguage:                "zh-CN",
+		Theme:                     "light",
+		ShortcutKey:               "Alt+Q",
+		ScreenshotShortcutKey:     "Alt+W",
+		BaseURL:                   "https://api.deepseek.com",
+		Model:                     "deepseek-v4-flash",
+		RapidOCRPath:              "./RapidOCR-json_v0.2.0",
+		RapidOCRTimeoutSeconds:    15,
 		TranslationTimeoutSeconds: 60,
-		AutoDirection:          true,
-		PersistentOCR:          true,
+		AutoDirection:             true,
+		PersistentOCR:             true,
 	}
 }
 
@@ -200,6 +201,10 @@ func (c Config) WithDefaults() Config {
 	}
 	if c.TranslationTimeoutSeconds <= 0 {
 		c.TranslationTimeoutSeconds = defaults.TranslationTimeoutSeconds
+	}
+	// Migrate only the retired default on the official endpoint; gateway aliases stay untouched.
+	if endpoint, err := url.Parse(c.BaseURL); err == nil && strings.EqualFold(endpoint.Hostname(), "api.deepseek.com") && c.Model == "deepseek-chat" {
+		c.Model = defaults.Model
 	}
 	return c
 }

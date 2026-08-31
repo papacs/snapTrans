@@ -13,6 +13,7 @@ import type {
   TranslationDirection,
   TranslationDirectionEvent,
   TranslationTokenEvent,
+  TextRegionsEvent,
   WorkflowErrorPayload
 } from "../services/backend";
 
@@ -24,6 +25,9 @@ declare global {
           LoadConfig: () => Promise<AppConfig>;
           FrontendReady: () => Promise<void>;
           SaveConfig: (config: AppConfig) => Promise<void>;
+          SaveSettings: (config: AppConfig, autoStart: boolean) => Promise<void>;
+          TriggerTranslation: () => Promise<void>;
+          TranslateSelection: (id: string, direction: TranslationDirection, generation: number) => Promise<void>;
           TriggerCapture: () => Promise<void>;
           TriggerScreenshot: () => Promise<void>;
           ShowCaptureWindow: () => Promise<void>;
@@ -40,7 +44,7 @@ declare global {
           ShowSettingsWindow: () => Promise<void>;
           GetHistory: () => Promise<HistoryEntry[]>;
           ClearHistory: () => Promise<void>;
-          TestConnection: () => Promise<void>;
+          TestConnection: (config: AppConfig) => Promise<void>;
           GetEnvironmentStatus: () => Promise<EnvironmentStatus>;
           SetAutoStart: (enabled: boolean) => Promise<void>;
           IsAutoStartEnabled: () => Promise<boolean>;
@@ -54,7 +58,7 @@ declare global {
       EventsOn: <T = unknown>(eventName: string, callback: (payload: T) => void) => (() => void) | void;
       EventsOff?: (eventName: string) => void;
       WindowMinimise?: () => void;
-      ClipboardSetText?: (text: string) => Promise<void>;
+      ClipboardSetText?: (text: string) => Promise<void | boolean>;
     };
   }
 }
@@ -63,6 +67,7 @@ export interface BackendEvents {
   "capture-start": CapturePayload;
   "ocr-start": GenerationEvent;
   "ocr-result": OCRResultEvent;
+  "text-regions": TextRegionsEvent;
   "translation-direction": TranslationDirectionEvent;
   "translation-start": GenerationEvent;
   "translation-token": TranslationTokenEvent;

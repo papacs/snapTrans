@@ -38,3 +38,19 @@ func TestCaptureAssetRejectsUnknownVersion(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, response.Code)
 }
+
+func TestCaptureAssetsBudgetAndClearKeepVersionsDistinct(t *testing.T) {
+	assets := newCaptureAssets()
+	assets.maxBytes = 10
+	first := assets.Store([]byte("123456"))
+	second := assets.Store([]byte("abcdef"))
+	require.Len(t, assets.images, 1)
+	require.Equal(t, 6, assets.bytes)
+	response := httptest.NewRecorder()
+	assets.ServeHTTP(response, httptest.NewRequest(http.MethodGet, first, nil))
+	require.Equal(t, http.StatusNotFound, response.Code)
+	assets.Clear()
+	require.Empty(t, assets.images)
+	require.Zero(t, assets.bytes)
+	require.NotEqual(t, second, assets.Store([]byte("new")))
+}
