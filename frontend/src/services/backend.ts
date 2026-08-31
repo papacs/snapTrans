@@ -1,4 +1,6 @@
+import { normalizeFeatures, type FeatureFlags } from "../utils/features";
 export interface AppConfig {
+  features: FeatureFlags;
   uiLanguage: "zh-CN" | "en";
   theme: "light" | "dark";
   shortcutKey: string;
@@ -117,6 +119,9 @@ import type { TranslationDirection as ResolvedDirection } from "../utils/transla
 export type TranslationDirection = ResolvedDirection | "auto";
 
 export interface HistoryEntry {
+  favorite?: boolean;
+  kind?: "learning";
+  example?: string;
   id: string;
   timestamp: string;
   source: string;
@@ -133,6 +138,7 @@ export interface EnvironmentStatus {
 }
 
 type EventName =
+  | "text-action"
   | "capture-start"
   | "ocr-start"
   | "ocr-result"
@@ -149,6 +155,7 @@ type Listener<T> = (payload: T) => void;
 const fallbackListeners = new Map<EventName, Set<Listener<unknown>>>();
 
 export const defaultConfig: AppConfig = {
+  features: normalizeFeatures(),
   uiLanguage: "zh-CN",
   theme: "light",
   shortcutKey: "Alt+Q",
@@ -208,7 +215,8 @@ function normalizeLoadedConfig(loaded: Partial<AppConfig> | null | undefined): A
     ...defaultConfig,
     ...loaded,
     uiLanguage: loaded?.uiLanguage === "en" ? "en" : "zh-CN",
-    theme: loaded?.theme === "dark" ? "dark" : "light"
+    theme: loaded?.theme === "dark" ? "dark" : "light",
+    features: normalizeFeatures(loaded?.features)
   };
 }
 
@@ -397,7 +405,8 @@ export async function clearHistory(): Promise<void> {
     return;
   }
 
-  localStorage.removeItem("snaptrans.history");
+  const saved = (await getHistory()).filter(entry => entry.favorite || entry.kind === "learning");
+  localStorage.setItem("snaptrans.history", JSON.stringify(saved));
 }
 
 export async function testConnection(config: AppConfig): Promise<void> {
@@ -609,4 +618,51 @@ async function streamFallbackTranslation(direction: TranslationDirection, genera
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+
+export type TextAction = "explain" | "summarize" | "meme" | "learning";
+export interface TextActionRequest { id: string; text: string; action: TextAction }
+export interface TextActionEvent { id: string; token?: string; error?: string; done: boolean }
+const fallbackActionTimers = new Map<string, number>();
+export async function startTextAction(request: TextActionRequest): Promise<void> {
+  if (hasWailsBackend()) { await window.go!.main!.App!.StartTextAction(request); return; }
+  for (const id of fallbackActionTimers.keys()) await cancelTextAction(id);
+  const timer = window.setTimeout(() => {
+    fallbackActionTimers.delete(request.id);
+    emitFallback("text-action", {id:request.id, token:"浏览器演示 / Browser preview — 桌面版会使用你配置的模型处理这段文字。此处未调用 API。", done:true} satisfies TextActionEvent);
+  }, 250);
+  fallbackActionTimers.set(request.id, timer);
+}
+export async function cancelTextAction(id: string): Promise<void> {
+  if (hasWailsBackend()) { await window.go!.main!.App!.CancelTextAction(id); return; }
+  window.clearTimeout(fallbackActionTimers.get(id)); fallbackActionTimers.delete(id);
+}
+export async function setHistoryFavorite(id: string, favorite: boolean): Promise<void> {
+  if (hasWailsBackend()) {await window.go!.main!.App!.SetHistoryFavorite(id,favorite); return;}
+  const entries = await getHistory(); const entry = entries.find(e=>e.id===id);
+  if (!entry) throw new Error("History entry no longer exists");
+  entry.favorite=favorite; localStorage.setItem("snaptrans.history",JSON.stringify(entries));
+}
+export async function saveLearningCard(source: string, meaning: string, example: string): Promise<void> {
+  if (hasWailsBackend()) {await window.go!.main!.App!.SaveLearningCard(source,meaning,example); return;}
+  if (!source.trim() || !meaning.trim()) throw new Error("Original and meaning are required");
+  const entries=await getHistory();
+  if(entries.some(e=>e.kind==="learning" && e.source===source && e.translation===meaning && e.example===example)) return;
+  entries.unshift({id:crypto.randomUUID(),timestamp:new Date().toISOString(),source,translation:meaning,example,kind:"learning",favorite:true,direction:"auto"});
+  localStorage.setItem("snaptrans.history",JSON.stringify(entries));
+}
+export async function deleteSavedEntry(id: string): Promise<void> {
+  if(hasWailsBackend()){await window.go!.main!.App!.DeleteSavedEntry(id);return;}
+  localStorage.setItem("snaptrans.history",JSON.stringify((await getHistory()).filter(e=>e.id!==id)));
+}
+export async function pinImage(image: string, x=80, y=80): Promise<void> {
+  if(hasWailsBackend()){await window.go!.main!.App!.PinImage({image,x:Math.round(x),y:Math.round(y)});return;}
+  throw new Error("桌面贴钉仅在 Windows 应用中可用。 / Pins require the Windows desktop app.");
+}
+export async function exportMarkdown(text: string): Promise<string> {
+  if(hasWailsBackend()) return window.go!.main!.App!.ExportMarkdown(text);
+  const url=URL.createObjectURL(new Blob([text],{type:"text/markdown;charset=utf-8"}));
+  const link=document.createElement("a");link.href=url;link.download="snapTrans-cards.md";link.click();
+  window.setTimeout(()=>URL.revokeObjectURL(url),1000);return link.download;
 }

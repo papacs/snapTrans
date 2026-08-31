@@ -38,6 +38,7 @@ func (a *App) invalidateCaptureRequest() {
 // TriggerTranslation is the global-hotkey entry. Explicit tray Capture keeps
 // its original manual-box behavior even when another app retains a selection.
 func (a *App) TriggerTranslation() error {
+	a.cancelTextAction()
 	if a.ctx == nil {
 		return nil
 	}

@@ -75,16 +75,18 @@ type App struct {
 	captureItem    *systray.MenuItem
 	screenshotItem *systray.MenuItem
 
-	mu                 sync.Mutex
-	cfg                config.Config
-	shortcut           *hotkeys.Registration
-	screenshotShortcut *hotkeys.Registration
-	processing         context.CancelFunc
-	ocrWorker          *ocr.Worker
-	ocrWorkerConfig    ocrWorkerSettings
-	ocrCache           ocrResultCache
-	settingsMu         sync.Mutex
-	trayOnce           sync.Once
+	mu                  sync.Mutex
+	cfg                 config.Config
+	shortcut            *hotkeys.Registration
+	screenshotShortcut  *hotkeys.Registration
+	extensionProcessing context.CancelFunc
+	extensionRequestID  string
+	processing          context.CancelFunc
+	ocrWorker           *ocr.Worker
+	ocrWorkerConfig     ocrWorkerSettings
+	ocrCache            ocrResultCache
+	settingsMu          sync.Mutex
+	trayOnce            sync.Once
 
 	captureOriginX   int
 	captureOriginY   int
@@ -145,6 +147,8 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) shutdown(_ context.Context) {
+	a.cancelTextAction()
+	closeAllPins()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -516,6 +520,7 @@ func (a *App) finishScrollingCaptureWindow(overlay uintptr) {
 }
 
 func (a *App) triggerCaptureMode(mode string) error {
+	a.cancelTextAction()
 	wasVisible, epoch, started := a.beginCapture()
 	if !started {
 		return nil
@@ -642,13 +647,11 @@ func (a *App) TranslateRegion(region TranslateRegionRequest, direction string, g
 		return errors.New("no captured frame is available; start a new capture")
 	}
 
-	rect := image.Rect(region.X, region.Y, region.X+region.Width, region.Y+region.Height).Intersect(frame.Bounds())
-	if rect.Empty() {
-		return errors.New("selection is outside the captured frame")
-	}
-
 	startedAt := time.Now()
-	cropped := capture.CropForOCR(frame, rect)
+	cropped, rect, err := cropTranslationRegion(frame, region)
+	if err != nil {
+		return err
+	}
 	encoded, err := capture.EncodePNGBytes(cropped)
 	if err != nil {
 		return fmt.Errorf("encode selection: %w", err)
@@ -723,6 +726,7 @@ func (a *App) ExtractText(base64Image string) (TextExtractionResult, error) {
 }
 
 func (a *App) HideWindow() error {
+	a.cancelTextAction()
 	a.invalidateCaptureRequest()
 	session, overlay := a.takeScrollCapture()
 	if session != nil {
@@ -756,6 +760,7 @@ func (a *App) QuitApp() error {
 }
 
 func (a *App) ShowSettings() error {
+	a.cancelTextAction()
 	a.invalidateCaptureRequest()
 	if a.ctx == nil {
 		return nil
@@ -891,6 +896,8 @@ func (a *App) onTrayReady() {
 	captureItem := systray.AddMenuItem("Capture  Alt+Q", "Start screenshot translation")
 	screenshotItem := systray.AddMenuItem("Screenshot  Alt+W", "Capture and annotate an image")
 	settingsItem := systray.AddMenuItem("Settings", "Open settings")
+	restorePinsItem := systray.AddMenuItem("Unlock pins / 恢复贴钉交互", "Disable click-through on all pinned images")
+	closePinsItem := systray.AddMenuItem("Close pins / 关闭所有贴钉", "Close pinned images")
 	systray.AddSeparator()
 	quitItem := systray.AddMenuItem("Quit", "Exit snapTrans")
 
@@ -911,6 +918,10 @@ func (a *App) onTrayReady() {
 				_ = a.TriggerCapture()
 			case <-screenshotItem.ClickedCh:
 				_ = a.TriggerScreenshot()
+			case <-restorePinsItem.ClickedCh:
+				restoreAllPins()
+			case <-closePinsItem.ClickedCh:
+				closeAllPins()
 			case <-settingsItem.ClickedCh:
 				_ = a.ShowSettings()
 			case <-quitItem.ClickedCh:
@@ -1043,7 +1054,7 @@ func (a *App) ClearHistory() error {
 	if a.historyStore == nil {
 		return nil
 	}
-	return a.historyStore.Clear()
+	return a.historyStore.ClearRecent()
 }
 
 // TestConnection verifies the configured LLM endpoint with the current

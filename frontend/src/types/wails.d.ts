@@ -22,6 +22,13 @@ declare global {
     go?: {
       main?: {
         App?: {
+          StartTextAction: (request: import("../services/backend").TextActionRequest) => Promise<void>;
+          CancelTextAction: (id: string) => Promise<void>;
+          SetHistoryFavorite: (id: string, favorite: boolean) => Promise<void>;
+          SaveLearningCard: (source: string, meaning: string, example: string) => Promise<void>;
+          DeleteSavedEntry: (id: string) => Promise<void>;
+          PinImage: (request: {image: string; x: number; y: number}) => Promise<void>;
+          ExportMarkdown: (text: string) => Promise<string>;
           LoadConfig: () => Promise<AppConfig>;
           FrontendReady: () => Promise<void>;
           SaveConfig: (config: AppConfig) => Promise<void>;

@@ -13,6 +13,9 @@ import (
 )
 
 type Entry struct {
+	Favorite    bool      `json:"favorite"`
+	Kind        string    `json:"kind,omitempty"`
+	Example     string    `json:"example,omitempty"`
 	ID          string    `json:"id"`
 	Timestamp   time.Time `json:"timestamp"`
 	Source      string    `json:"source"`
@@ -55,9 +58,7 @@ func (s *Store) Add(source string, translation string, direction string) error {
 		Direction:   direction,
 	}
 	entries = append([]Entry{entry}, entries...)
-	if len(entries) > s.max {
-		entries = entries[:s.max]
-	}
+	entries = s.trim(entries)
 
 	return s.saveLocked(entries)
 }

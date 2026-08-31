@@ -81,21 +81,13 @@ func TestTranslateRegionRequiresCapturedFrame(t *testing.T) {
 }
 
 func TestTranslateRegionClipsToFrameBounds(t *testing.T) {
-	app := NewApp()
-	app.ctx = context.Background()
-	app.frame = solidTestFrame(400, 300)
-
-	// Region partially outside the frame is clipped to the valid area.
-	err := app.TranslateRegion(TranslateRegionRequest{X: 350, Y: 0, Width: 200, Height: 300}, "to-zh", 1)
+	frame := solidTestFrame(400, 300)
+	cropped, rect, err := cropTranslationRegion(frame, TranslateRegionRequest{X: 350, Y: 0, Width: 200, Height: 300})
 	require.NoError(t, err)
-	require.NotNil(t, app.processing)
-
-	// Fully outside the frame is rejected.
-	err = app.TranslateRegion(TranslateRegionRequest{X: 500, Y: 500, Width: 100, Height: 100}, "to-zh", 2)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "outside the captured frame")
-
-	app.cancelProcessing()
+	require.Equal(t, image.Rect(350, 0, 400, 300), rect)
+	require.Equal(t, image.Rect(0, 0, 100, 600), cropped.Bounds())
+	_, _, err = cropTranslationRegion(frame, TranslateRegionRequest{X: 500, Y: 500, Width: 100, Height: 100})
+	require.ErrorContains(t, err, "outside the captured frame")
 }
 
 func solidTestFrame(width int, height int) *image.RGBA {

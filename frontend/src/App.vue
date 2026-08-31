@@ -17,13 +17,24 @@ import {
   Settings,
   Sparkles,
   Sun,
+  Star,
   X
 } from "lucide-vue-next";
 import MarkdownIt from "markdown-it";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import SettingsNavigation from "./components/SettingsNavigation.vue";
+import { settingsSections, type SettingsSection } from "./utils/settings-navigation";
+import ExtensionSettings from "./components/ExtensionSettings.vue";
+import ExtensionWorkbench from "./components/ExtensionWorkbench.vue";
+import LearningLibrary from "./components/LearningLibrary.vue";
+import { normalizeFeatures } from "./utils/features";
+import { clearComparisonBaseline, filterLibrary, libraryMarkdown } from "./utils/extensions";
 import ScreenshotEditor from "./components/ScreenshotEditor.vue";
 import {
   clearHistory,
+  setHistoryFavorite,
+  exportMarkdown,
+  triggerScreenshot,
   copyImageDataUrl,
   copyText,
   defaultConfig,
@@ -116,8 +127,37 @@ const workflowGeneration = ref(0);
 let captureLoadSequence = 0;
 const errorMessage = ref("");
 const settingsOpen = ref(false);
+const settingsSection = ref<SettingsSection>("ai");
+const settingsScrollRef = ref<HTMLElement | null>(null);
+function selectSettingsSection(section: SettingsSection): void {
+  settingsSection.value = section;
+  shortcutRecording.value = null;
+  if (settingsScrollRef.value) settingsScrollRef.value.scrollTop = 0;
+}
+async function submitSettings(event: Event): Promise<void> {
+  const form = event.currentTarget as HTMLFormElement;
+  const invalid = form.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(":invalid:not(fieldset)");
+  if (invalid) {
+    const panelID = invalid.closest('[role="tabpanel"]')?.id;
+    const section = settingsSections.find(item => `settings-panel-${item.id}` === panelID);
+    if (section) selectSettingsSection(section.id);
+    await nextTick();
+    invalid.focus();
+    invalid.reportValidity();
+    return;
+  }
+  await saveSettings();
+}
 const settingsError = ref("");
 const settingsSaving = ref(false);
+const sourceText = ref("");
+const extensionOpen = ref(false);
+const extensionImage = ref("");
+const extensionTranslatedImage = ref("");
+const extensionOrigin = ref({x:0,y:0});
+const historyQuery = ref("");
+const favoritesOnly = ref(false);
+const favoritePending = ref("");
 const historyEntries = ref<HistoryEntry[]>([]);
 const historyLoaded = ref(false);
 const testStatus = ref<"idle" | "testing" | "ok" | "error">("idle");
@@ -139,6 +179,10 @@ const isDesktop = hasWailsBackend();
 const markdown = new MarkdownIt({ breaks: true, linkify: false, html: false });
 const config = reactive<AppConfig>({ ...defaultConfig });
 const savedConfig = reactive<AppConfig>({ ...defaultConfig });
+const featureFlags = computed(() => normalizeFeatures(savedConfig.features));
+const hasResultTools = computed(() => Object.entries(featureFlags.value).some(([key,value]) => value && !["historyTools","redaction","textExtraction"].includes(key)));
+const visibleHistory = computed(() => filterLibrary(historyEntries.value.filter(e=>e.kind!=="learning"),featureFlags.value.historyTools?historyQuery.value:"",featureFlags.value.historyTools&&favoritesOnly.value?"favorites":"all"));
+watch(() => featureFlags.value.imageCompare, enabled => {if(!enabled)clearComparisonBaseline();});
 const settingsLocale = computed(() => normalizeSettingsLocale(config.uiLanguage));
 const settingsText = computed(() => settingsMessages[settingsLocale.value]);
 
@@ -291,7 +335,7 @@ const resultActionsStyle = computed(() => {
     box.y + box.height + 52 > viewport.height - 8
       ? { bottom: "calc(100% + 8px)" }
       : { top: "calc(100% + 8px)" };
-  const horizontal = box.x + 204 > viewport.width - 8 ? { right: "0px" } : { left: "0px" };
+  const horizontal = box.x + 260 > viewport.width - 8 ? { right: "0px" } : { left: "0px" };
 
   return { ...vertical, ...horizontal };
 });
@@ -443,12 +487,14 @@ onMounted(async () => {
     onBackendEvent<TextRegionsEvent>("text-regions", payload => {
       if (!isCurrentGeneration(payload)) return;
       textBlocks.value = payload.blocks ?? [];
+      sourceText.value = payload.text ?? "";
     }),
     onBackendEvent<OCRResultEvent>("ocr-result", (payload) => {
       if (!isCurrentGeneration(payload)) {
         return;
       }
       textBlocks.value = payload.blocks ?? [];
+      sourceText.value = payload.text ?? "";
     }),
     onBackendEvent<TranslationDirectionEvent>("translation-direction", (payload) => {
       if (!isCurrentGeneration(payload) || manualDirection.value) {
@@ -491,6 +537,8 @@ onMounted(async () => {
       phase.value = "error";
     }),
     onBackendEvent("settings-open", async () => {
+      extensionOpen.value = false;
+      sourceText.value = "";
       invalidatePendingCaptureLoad();
       capture.value = null;
       resultRect.value = null;
@@ -546,6 +594,10 @@ function isCurrentGeneration(payload: { generation?: number }): boolean {
 }
 
 function onKeyDown(event: KeyboardEvent): void {
+  if (document.querySelector("[data-extension-workbench]")) {
+    if(event.key === "Escape") {event.preventDefault(); extensionOpen.value=false;}
+    return;
+  }
   if (event.key === "Escape" && settingsOpen.value) {
     event.preventDefault();
     void closeSettings();
@@ -558,6 +610,7 @@ function onKeyDown(event: KeyboardEvent): void {
 }
 
 async function startCapture(payload: CapturePayload): Promise<void> {
+  extensionOpen.value=false;sourceText.value="";
   const sequence = ++captureLoadSequence;
   sampledPaletteCache.clear();
   measureOverlayText = undefined;
@@ -801,6 +854,7 @@ function isCaptureActive(): boolean {
 }
 
 async function cancelCapture(): Promise<void> {
+  extensionOpen.value=false;sourceText.value="";
   invalidatePendingCaptureLoad();
   detachCaptureDragListeners();
   dragStart.value = null;
@@ -874,7 +928,7 @@ async function copyResult(closeOnSuccess = true): Promise<void> {
 }
 
 async function copyOcrText(): Promise<void> {
-  const text = textBlocks.value.map((block) => block.text).join("\n").trim();
+  const text = sourceText.value || textBlocks.value.map((block) => block.text).join("\n").trim();
   if (!text) {
     return;
   }
@@ -999,6 +1053,27 @@ function renderTranslatedSelectionImage(): string | null {
   return target.toDataURL("image/png");
 }
 
+function openResultTools(): void {
+ const canvas=canvasRef.value, rect=resultRect.value;if(!canvas || !rect)return;
+ try {
+ const bounds=canvas.getBoundingClientRect();
+ const imageRect=mapCssRectToImageRect(rect,{width:bounds.width,height:bounds.height},{width:canvas.width,height:canvas.height},capture.value?.displays);
+ const cropped=document.createElement("canvas");cropped.width=imageRect.width;cropped.height=imageRect.height;
+ const ctx=cropped.getContext("2d");if(!ctx)return;
+ ctx.drawImage(canvas,imageRect.x,imageRect.y,imageRect.width,imageRect.height,0,0,cropped.width,cropped.height);
+ extensionImage.value=cropped.toDataURL("image/png");
+ extensionTranslatedImage.value=cleanTranslationText.value?renderTranslatedSelectionImage()??"":"";
+ extensionOrigin.value={x:(capture.value?.originX??0)+imageRect.x,y:(capture.value?.originY??0)+imageRect.y};
+ extensionOpen.value=true;
+ }catch(error){screenshotNotice.value=String(error);}
+}
+async function favoriteHistory(entry:HistoryEntry):Promise<void>{
+ if(favoritePending.value)return;favoritePending.value=entry.id;
+ try{await setHistoryFavorite(entry.id,!entry.favorite);await loadHistory();}catch(error){settingsError.value=String(error);}finally{favoritePending.value="";}
+}
+async function exportFavorites():Promise<void>{
+ try{await exportMarkdown(libraryMarkdown(historyEntries.value.filter(e=>e.favorite && e.kind!=="learning")));}catch(error){settingsError.value=String(error);}
+}
 function cssColorForSampledColor(color: SampledColor | null): string | null {
   if (!color) {
     return null;
@@ -1008,6 +1083,7 @@ function cssColorForSampledColor(color: SampledColor | null): string | null {
 }
 
 async function restore(): Promise<void> {
+  extensionOpen.value=false;sourceText.value="";
   phase.value = "idle";
   capture.value = null;
   selection.value = null;
@@ -1104,7 +1180,7 @@ async function loadHistory(): Promise<void> {
 async function clearAllHistory(): Promise<void> {
   try {
     await clearHistory();
-    historyEntries.value = [];
+    await loadHistory();
   } catch (error) {
     settingsError.value = error instanceof Error ? error.message : "Failed to clear history";
   }
@@ -1204,6 +1280,7 @@ async function saveSettings(): Promise<void> {
             <Camera class="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
+        <button type="button" class="settings-secondary-button mb-4" @click="triggerScreenshot">{{settingsLocale==='en'?'Screenshot & annotate':'截图与涂鸦'}}</button>
         <div class="grid grid-cols-3 gap-2">
           <div class="h-12 rounded-md bg-emerald-500/15" />
           <div class="h-12 rounded-md bg-blue-500/15" />
@@ -1269,10 +1346,14 @@ async function saveSettings(): Promise<void> {
       :source-canvas="canvasRef"
       :capture="capture"
       :rect="selection"
+      :features="featureFlags"
+      :locale="settingsLocale"
       @cancel="cancelCapture"
       @complete="completeScreenshot"
       @save="saveEditedScreenshot"
     />
+
+    <ExtensionWorkbench v-if="extensionOpen" :features="featureFlags" :locale="settingsLocale" :image="extensionImage" :translated-image="extensionTranslatedImage" :source="sourceText" :translation="cleanTranslationText" :origin="extensionOrigin" @close="extensionOpen=false" @pinned="restore" />
 
     <div
       v-if="phase === 'editing' && screenshotNotice"
@@ -1377,6 +1458,7 @@ async function saveSettings(): Promise<void> {
         class="absolute flex h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-2 shadow-[0_10px_32px_rgba(15,23,42,0.22)] backdrop-blur dark:border-slate-700/70 dark:bg-zinc-950/95"
         :style="resultActionsStyle"
       >
+        <button v-if="hasResultTools" type="button" class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-emerald-700 hover:bg-emerald-50" :title="settingsLocale==='en'?'Extension tools':'扩展工具'" :aria-label="settingsLocale==='en'?'Extension tools':'扩展工具'" data-testid="result-extensions" :disabled="isResultBusy" @click="openResultTools"><Sparkles class="h-4 w-4"/></button>
         <button v-if="overlayLayout.truncated" type="button" class="whitespace-nowrap px-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"
           aria-label="Show full translation" @click="expandedTranslation = !expandedTranslation">{{ settingsLocale === "en" ? "Full text" : "完整译文" }}</button>
         <button
@@ -1430,7 +1512,8 @@ async function saveSettings(): Promise<void> {
     >
       <form
         class="flex h-full w-full flex-col overflow-hidden"
-        @submit.prevent="saveSettings"
+        novalidate
+        @submit.prevent="submitSettings"
         @keydown="onShortcutRecorderKeydown"
       >
         <fieldset class="contents" :disabled="settingsSaving">
@@ -1514,10 +1597,11 @@ async function saveSettings(): Promise<void> {
           </div>
         </header>
 
-        <div data-testid="settings-scroll" class="settings-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          <div class="mx-auto max-w-3xl space-y-4">
+        <SettingsNavigation :model-value="settingsSection" :locale="settingsLocale" @update:model-value="selectSettingsSection" />
+        <div ref="settingsScrollRef" data-testid="settings-scroll" class="settings-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-4">
+          <div class="mx-auto max-w-3xl">
 
-            <section data-testid="settings-section" class="settings-card">
+            <section v-show="settingsSection === 'ai'" id="settings-panel-ai" role="tabpanel" aria-labelledby="settings-tab-ai" tabindex="0" data-testid="settings-section" class="settings-card">
               <div class="settings-section-header">
                 <div class="settings-section-icon bg-violet-50 text-violet-600 dark:bg-violet-950 dark:text-violet-300">
                   <Bot class="h-4 w-4" aria-hidden="true" />
@@ -1614,7 +1698,7 @@ async function saveSettings(): Promise<void> {
         </div>
             </section>
 
-            <section data-testid="settings-section" class="settings-card">
+            <section v-show="settingsSection === 'capture'" id="settings-panel-capture" role="tabpanel" aria-labelledby="settings-tab-capture" tabindex="0" data-testid="settings-section" class="settings-card">
               <div class="settings-section-header">
                 <div class="settings-section-icon bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300">
                   <Cpu class="h-4 w-4" aria-hidden="true" />
@@ -1723,7 +1807,7 @@ async function saveSettings(): Promise<void> {
         </div>
             </section>
 
-            <section data-testid="settings-section" class="settings-card">
+            <section v-show="settingsSection === 'translation'" id="settings-panel-translation" role="tabpanel" aria-labelledby="settings-tab-translation" tabindex="0" data-testid="settings-section" class="settings-card">
               <div class="settings-section-header">
                 <div class="settings-section-icon bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300">
                   <Languages class="h-4 w-4" aria-hidden="true" />
@@ -1796,6 +1880,13 @@ async function saveSettings(): Promise<void> {
         </div>
             </section>
 
+            <div v-show="settingsSection === 'productivity'" id="settings-panel-productivity" role="tabpanel" aria-labelledby="settings-tab-productivity" tabindex="0">
+              <ExtensionSettings v-model="config.features" :locale="settingsLocale" group="productivity" />
+            </div>
+            <div v-show="settingsSection === 'experiments'" id="settings-panel-experiments" role="tabpanel" aria-labelledby="settings-tab-experiments" tabindex="0">
+              <ExtensionSettings v-model="config.features" :locale="settingsLocale" group="experiments" />
+            </div>
+            <div v-show="settingsSection === 'library'" id="settings-panel-library" role="tabpanel" aria-labelledby="settings-tab-library" tabindex="0" class="space-y-4">
             <section data-testid="settings-section" class="settings-card">
         <div class="settings-section-header mb-3">
           <div class="settings-section-icon bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-300">
@@ -1813,15 +1904,21 @@ async function saveSettings(): Promise<void> {
             :disabled="historyEntries.length === 0"
             @click="clearAllHistory"
           >
-            {{ settingsText.clear }}
+            {{ settingsLocale === "en" ? "Clear recent" : "清空最近" }}
           </button>
         </div>
-        <div v-if="historyEntries.length === 0" class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-xs text-slate-500 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-slate-400">
+        <div v-if="featureFlags.historyTools" class="mb-3 flex flex-wrap items-center gap-2">
+          <input v-model="historyQuery" type="search" class="settings-input min-w-0 flex-1" :aria-label="settingsLocale==='en'?'Search history':'搜索历史'" :placeholder="settingsLocale==='en'?'Search original or translation':'搜索原文或译文'"/>
+          <label class="flex items-center gap-1 text-xs"><input v-model="favoritesOnly" type="checkbox" class="accent-emerald-600"/>{{settingsLocale==='en'?'Favorites':'只看收藏'}}</label>
+          <button type="button" class="settings-tertiary-button" :disabled="!historyEntries.some(e=>e.favorite && e.kind!=='learning')" @click="exportFavorites">{{settingsLocale==='en'?'Export favorites':'导出收藏'}}</button>
+          <span class="w-full text-[11px] text-slate-500">{{settingsLocale==='en'?'Clearing recent history keeps favorites and learning cards.':'清空最近记录会保留收藏和学习卡片。'}}</span>
+        </div>
+        <div v-if="visibleHistory.length === 0" class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-xs text-slate-500 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-slate-400">
           {{ historyLoaded ? settingsText.noRecentTranslations : settingsText.loadingHistory }}
         </div>
         <div v-else class="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 dark:divide-zinc-800 dark:border-zinc-800">
           <div
-            v-for="entry in historyEntries"
+            v-for="entry in visibleHistory"
             :key="entry.id"
             class="group flex items-center gap-3 px-3 py-2.5 transition hover:bg-slate-50 dark:hover:bg-zinc-900"
           >
@@ -1839,6 +1936,7 @@ async function saveSettings(): Promise<void> {
                 <div><span class="mb-1 block text-[10px] font-medium text-slate-400">{{ settingsLocale === "en" ? "Translation" : "译文" }}</span><p class="whitespace-pre-wrap break-words text-slate-800 dark:text-slate-100">{{ readableTranslation(entry.translation) }}</p></div>
               </div>
             </details>
+            <button v-if="featureFlags.historyTools" type="button" class="inline-flex h-8 w-8 shrink-0 self-start items-center justify-center rounded-md text-amber-500 hover:bg-amber-50" :disabled="Boolean(favoritePending)" :aria-label="entry.favorite?'Unfavorite':'Favorite'" :title="entry.favorite?(settingsLocale==='en'?'Remove favorite':'取消收藏'):(settingsLocale==='en'?'Favorite':'收藏')" @click="favoriteHistory(entry)"><Star class="h-4 w-4" :fill="entry.favorite?'currentColor':'none'"/></button>
             <button
               class="inline-flex h-8 w-8 shrink-0 self-start items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-slate-700 hover:shadow-sm dark:hover:bg-zinc-800 dark:hover:text-slate-100"
               type="button"
@@ -1852,6 +1950,8 @@ async function saveSettings(): Promise<void> {
           </div>
         </div>
             </section>
+            <LearningLibrary v-if="featureFlags.learningCards" :entries="historyEntries" :locale="settingsLocale" @changed="loadHistory" />
+            </div>
           </div>
         </div>
 

@@ -3,6 +3,7 @@ import type { Point, Rect, Size } from "./selection";
 export type AnnotationTool = "rectangle" | "ellipse" | "arrow" | "pen" | "mosaic" | "text" | "sticker";
 
 export type Annotation =
+  | { tool: "redact"; rects: Rect[] }
   | {
       tool: "rectangle" | "ellipse" | "arrow";
       start: Point;
@@ -65,6 +66,11 @@ export function renderAnnotation(
   context.lineJoin = "round";
 
   switch (annotation.tool) {
+    case "redact":
+      context.globalAlpha = 1;
+      context.fillStyle = "#111827";
+      for (const rect of annotation.rects) context.fillRect(rect.x, rect.y, rect.width, rect.height);
+      break;
     case "rectangle":
       applyStroke(context, annotation.color, annotation.width);
       context.strokeRect(

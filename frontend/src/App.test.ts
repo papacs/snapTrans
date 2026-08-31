@@ -9,6 +9,7 @@ const backendMocks = vi.hoisted(() => {
   type Listener = (payload: unknown) => void;
   const listeners = new Map<string, Set<Listener>>();
   const defaultConfig = {
+    features: {textExtraction:true, pin:true, textActions:true, redaction:true, historyTools:true, memeExplanation:false, learningCards:false, shareCards:false, imageCompare:false},
     uiLanguage: "zh-CN" as const,
     theme: "light" as const,
     shortcutKey: "Alt+Q",
@@ -749,6 +750,41 @@ describe("App capture cancellation", () => {
     expect(wrapper.find("[data-testid='settings-scroll']").exists()).toBe(true);
     expect(wrapper.findAll("[data-testid='settings-section']")).toHaveLength(4);
     expect(wrapper.find("[data-testid='settings-footer']").exists()).toBe(true);
+  });
+
+  it("shows one category at a time and keeps navigation outside the scroll area", async () => {
+    const wrapper = mount(App, { attachTo: document.body });
+    await flushPromises();
+    await wrapper.get("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(6);
+    expect(wrapper.findAll('[role="tabpanel"]').filter(panel => panel.isVisible())).toHaveLength(1);
+    expect(wrapper.get('#settings-panel-ai').isVisible()).toBe(true);
+    const scroll = wrapper.get('[data-testid="settings-scroll"]').element as HTMLElement;
+    expect(scroll.contains(wrapper.get('[data-testid="settings-navigation"]').element)).toBe(false);
+    scroll.scrollTop = 450;
+    await wrapper.get('[data-testid="settings-tab-experiments"]').trigger('click');
+    expect(scroll.scrollTop).toBe(0);
+    expect(wrapper.get('#settings-panel-ai').isVisible()).toBe(false);
+    expect(wrapper.get('#settings-panel-experiments').isVisible()).toBe(true);
+    expect(wrapper.get('[data-testid="feature-shareCards"]').isVisible()).toBe(true);
+    expect(wrapper.get('[data-testid="feature-pin"]').isVisible()).toBe(false);
+    expect(wrapper.findAll('[role="tabpanel"]').filter(panel => panel.isVisible())).toHaveLength(1);
+  });
+
+  it("reveals an invalid field in another category instead of silently blocking save", async () => {
+    const wrapper = mount(App, { attachTo: document.body });
+    await flushPromises();
+    await wrapper.get("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+    const baseURL = wrapper.get('#settings-panel-ai input[type="url"]');
+    await baseURL.setValue('invalid-url');
+    await wrapper.get('[data-testid="settings-tab-experiments"]').trigger('click');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.get('#settings-panel-ai').isVisible()).toBe(true);
+    expect(document.activeElement).toBe(baseURL.element);
+    expect(backendMocks.saveConfig).not.toHaveBeenCalled();
   });
 
   it("switches the settings theme and keeps the API key masked without a reveal control", async () => {
@@ -1870,6 +1906,37 @@ describe("settings drafts and history", () => {
   await flushPromises();
   return wrapper;
  }
+ it("retains edits across categories, discards on cancel and remembers the category", async () => {
+  const wrapper = await settings();
+  await wrapper.get('[data-testid="api-key-input"]').setValue('navigation-draft');
+  await wrapper.get('[data-testid="settings-tab-capture"]').trigger('click');
+  await wrapper.get('[data-testid="autostart-toggle"]').setValue(true);
+  await wrapper.get('[data-testid="settings-tab-experiments"]').trigger('click');
+  await wrapper.get('[data-testid="feature-shareCards"]').setValue(true);
+  await wrapper.get('[data-testid="settings-tab-ai"]').trigger('click');
+  expect((wrapper.get('[data-testid="api-key-input"]').element as HTMLInputElement).value).toBe('navigation-draft');
+  await wrapper.get('[data-testid="settings-tab-experiments"]').trigger('click');
+  expect((wrapper.get('[data-testid="feature-shareCards"]').element as HTMLInputElement).checked).toBe(true);
+  await wrapper.findAll('button').find(button => button.text() === '取消')!.trigger('click');
+  await wrapper.get("button[aria-label='Settings']").trigger('click');
+  await flushPromises();
+  expect(wrapper.get('#settings-panel-experiments').isVisible()).toBe(true);
+  expect((wrapper.get('[data-testid="feature-shareCards"]').element as HTMLInputElement).checked).toBe(false);
+  expect((wrapper.get('[data-testid="api-key-input"]').element as HTMLInputElement).value).toBe('');
+  expect((wrapper.get('[data-testid="autostart-toggle"]').element as HTMLInputElement).checked).toBe(false);
+  expect(backendMocks.saveConfig).not.toHaveBeenCalled();
+ });
+ it("saves edits from multiple categories together", async () => {
+  const wrapper = await settings();
+  await wrapper.get('[data-testid="api-key-input"]').setValue('multi-category-draft');
+  await wrapper.get('[data-testid="settings-tab-experiments"]').trigger('click');
+  await wrapper.get('[data-testid="feature-shareCards"]').setValue(true);
+  await wrapper.get('[data-testid="settings-tab-capture"]').trigger('click');
+  await wrapper.get('[data-testid="autostart-toggle"]').setValue(true);
+  await wrapper.get('form').trigger('submit');
+  await flushPromises();
+  expect(backendMocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({apiKey:'multi-category-draft',features:expect.objectContaining({shareCards:true})}),true);
+ });
  it("tests the unsaved connection without saving it", async () => {
   const wrapper = await settings();
   await wrapper.get("[data-testid='api-key-input']").setValue("draft-test-key");
@@ -1909,6 +1976,7 @@ describe("settings drafts and history", () => {
    translation:"[2] 世界\n[1] 你好", direction:"to-zh"
   }]);
   const wrapper = await settings();
+  await wrapper.get('[data-testid="settings-tab-library"]').trigger('click');
   expect(wrapper.get("time").attributes("datetime")).toBe("2026-08-31T10:20:30+08:00");
   expect(wrapper.get("time").text()).toContain("2026");
   expect(wrapper.get("details").text()).not.toContain("[1]");
@@ -1921,6 +1989,7 @@ describe("settings drafts and history", () => {
   backendMocks.getHistory.mockResolvedValueOnce([{ id:"failure", timestamp:"", source:"Hello", translation:"你好", direction:"to-zh" }]);
   backendMocks.copyText.mockRejectedValueOnce(new Error("clipboard busy"));
   const wrapper = await settings();
+  await wrapper.get('[data-testid="settings-tab-library"]').trigger('click');
   await wrapper.get("button[aria-label='Copy history entry']").trigger("click");
   await flushPromises();
   expect(wrapper.text()).toContain("复制失败");

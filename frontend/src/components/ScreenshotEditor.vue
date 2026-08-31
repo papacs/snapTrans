@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   ArrowUpRight,
+  Sparkles,
   Check,
   Copy,
   Circle,
@@ -16,6 +17,9 @@ import {
   Undo2,
   X
 } from "lucide-vue-next";
+import ExtensionWorkbench from "./ExtensionWorkbench.vue";
+import { normalizeFeatures, type FeatureFlags } from "../utils/features";
+import { mergeTextLines } from "../utils/extensions";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 
 import {
@@ -43,6 +47,8 @@ const props = defineProps<{
   sourceCanvas: HTMLCanvasElement;
   capture: CapturePayload;
   rect: Rect;
+  features?: FeatureFlags;
+  locale?: string;
 }>();
 
 const emit = defineEmits<{
@@ -51,6 +57,18 @@ const emit = defineEmits<{
   save: [dataUrl: string];
 }>();
 
+const featureFlags = computed(() => normalizeFeatures(props.features));
+const toolsOpen = ref(false);
+const toolsImage = ref("");
+const hasTools = computed(() => Object.entries(featureFlags.value).some(([key,value]) => value && !["textExtraction","historyTools"].includes(key)));
+const toolsOrigin = computed(() => {
+ const bounds=props.sourceCanvas.getBoundingClientRect();
+ const rect=mapCssRectToImageRect(props.rect,{width:bounds.width,height:bounds.height},{width:props.sourceCanvas.width,height:props.sourceCanvas.height},props.capture.displays);
+ return {x:(props.capture.originX??0)+rect.x,y:(props.capture.originY??0)+rect.y};
+});
+function openTools(){commitText();toolsImage.value=exportDataUrl();toolsOpen.value=Boolean(toolsImage.value);}
+function applyRedaction(rects:Rect[]){annotations.value.push({tool:"redact",rects});redraw();toolsOpen.value=false;}
+const originalExtractedText = ref("");
 const editorCanvasRef = ref<HTMLCanvasElement | null>(null);
 const textInputRef = ref<HTMLInputElement | null>(null);
 const activeTool = ref<AnnotationTool>("pen");
@@ -525,6 +543,7 @@ function onEditorKeyDown(event: KeyboardEvent): void {
     (!event.ctrlKey && !event.metaKey) ||
     event.shiftKey ||
     event.altKey ||
+    toolsOpen.value ||
     annotations.value.length === 0 ||
     textDraft.value !== null ||
     manualScrolling.value
@@ -602,6 +621,7 @@ async function extractImageText(): Promise<void> {
       return;
     }
     extractedText.value = result.text.trim();
+    originalExtractedText.value = extractedText.value;
     if (!extractedText.value) {
       textExtractionError.value = "\u672a\u8bc6\u522b\u5230\u6587\u5b57\uff0c\u53ef\u4ee5\u91cd\u65b0\u8bc6\u522b\u6216\u624b\u52a8\u8f93\u5165\u3002";
     }
@@ -767,6 +787,7 @@ function clamp(value: number, min: number, max: number): number {
       </button>
       <button
         class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition disabled:cursor-wait disabled:opacity-60"
+        v-if="featureFlags.textExtraction"
         :class="textExtractionOpen ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'"
         type="button"
         :title="'\u63d0\u53d6\u6587\u5b57'"
@@ -779,6 +800,7 @@ function clamp(value: number, min: number, max: number): number {
         <ScanText v-else class="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
 
+      <button v-if="hasTools" type="button" class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-emerald-700 hover:bg-emerald-50" :title="locale==='en'?'Extension tools':'扩展工具'" :aria-label="locale==='en'?'Extension tools':'扩展工具'" data-testid="screenshot-extensions" @click="openTools"><Sparkles class="h-[18px] w-[18px]"/></button>
       <span class="mx-1 h-6 w-px shrink-0 bg-slate-200" />
       <button
         class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-35"
@@ -907,6 +929,7 @@ function clamp(value: number, min: number, max: number): number {
       </div>
 
       <footer class="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3">
+        <div class="flex flex-wrap gap-2"><button type="button" class="text-xs text-emerald-700 disabled:opacity-40" :disabled="extractingText" @click="extractedText=mergeTextLines(extractedText)">{{locale==='en'?'Merge lines':'合并换行'}}</button><button type="button" class="text-xs text-slate-500 disabled:opacity-40" :disabled="extractingText" @click="extractedText=originalExtractedText">{{locale==='en'?'Original breaks':'恢复换行'}}</button></div>
         <span class="text-[11px] text-slate-400">{{ extractedText.length }} {{ "\u4e2a\u5b57\u7b26" }}</span>
         <button
           class="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-45"
@@ -931,4 +954,5 @@ function clamp(value: number, min: number, max: number): number {
       {{ scrollNotice }}
     </div>
   </section>
+    <ExtensionWorkbench v-if="toolsOpen" :features="featureFlags" :locale="locale??'zh-CN'" :image="toolsImage" :origin="toolsOrigin" allow-redaction @close="toolsOpen=false" @pinned="emit('cancel')" @redact="applyRedaction" />
 </template>
