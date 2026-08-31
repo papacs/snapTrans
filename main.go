@@ -61,7 +61,9 @@ func newAppOptions(app *App) *options.App {
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
 			DisableWindowIcon:    false,
-			ContentProtection:    true,
+			// Settings share this window. Capture hides it before reading the desktop;
+			// global content protection would black out settings screenshots.
+			ContentProtection: false,
 		},
 	}
 }

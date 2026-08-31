@@ -4,6 +4,7 @@ export interface SettingsMessages {
   title: string;
   subtitle: string;
   close: string;
+  minimize: string;
   chinese: string;
   english: string;
   useLightTheme: string;
@@ -77,6 +78,7 @@ const english: SettingsMessages = {
   title: "Settings",
   subtitle: "Configure capture, OCR, and translation behavior",
   close: "Close settings",
+  minimize: "Minimize to taskbar",
   chinese: "\u4e2d\u6587",
   english: "EN",
   useLightTheme: "Switch to light theme",
@@ -144,6 +146,7 @@ const chinese: SettingsMessages = {
   title: "\u8bbe\u7f6e",
   subtitle: "\u914d\u7f6e\u622a\u56fe\u3001OCR \u4e0e\u7ffb\u8bd1\u4f53\u9a8c",
   close: "\u5173\u95ed\u8bbe\u7f6e",
+  minimize: "\u6700\u5c0f\u5316\u5230\u4efb\u52a1\u680f",
   chinese: "\u4e2d\u6587",
   english: "EN",
   useLightTheme: "\u5207\u6362\u4e3a\u6d45\u8272\u4e3b\u9898",

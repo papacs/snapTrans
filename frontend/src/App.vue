@@ -10,6 +10,7 @@ import {
   Image as ImageIcon,
   Keyboard,
   Languages,
+  Minus,
   Moon,
   RefreshCw,
   Settings,
@@ -33,6 +34,7 @@ import {
   hideWindow,
   isAutoStartEnabled,
   loadConfig,
+  minimizeWindow,
   onBackendEvent,
   openLogFolder,
   processImage,
@@ -1696,7 +1698,7 @@ async function saveSettings(): Promise<void> {
             </div>
           </div>
           <div
-            class="flex items-center gap-2"
+            class="flex shrink-0 items-center gap-2"
             style="--wails-draggable: no-drag"
           >
             <button
@@ -1734,6 +1736,17 @@ async function saveSettings(): Promise<void> {
                 {{ settingsText.english }}
               </button>
             </div>
+            <button
+              data-testid="settings-minimize"
+              class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-zinc-800 dark:hover:text-white"
+              style="--wails-draggable: no-drag"
+              type="button"
+              :title="settingsText.minimize"
+              :aria-label="settingsText.minimize"
+              @click="minimizeWindow"
+            >
+              <Minus class="h-4 w-4" aria-hidden="true" />
+            </button>
             <button
               class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-zinc-800 dark:hover:text-white"
               style="--wails-draggable: no-drag"

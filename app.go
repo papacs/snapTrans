@@ -599,6 +599,11 @@ func (a *App) ShowCaptureWindow() error {
 	emittedAt := a.captureEmittedAt
 	a.mu.Unlock()
 
+	// Restore before fullscreen saves the native window placement; otherwise
+	// returning to settings could restore the minimized placement.
+	if runtime.WindowIsMinimised(a.ctx) {
+		runtime.WindowUnminimise(a.ctx)
+	}
 	if a.shouldPrepareCaptureWindow(originX, originY) {
 		runtime.WindowUnfullscreen(a.ctx)
 		moveWindowToDisplay(a.ctx, originX, originY)

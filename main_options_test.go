@@ -6,12 +6,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCaptureOverlayIsExcludedFromDesktopCapture(t *testing.T) {
+func TestSharedWindowAllowsSettingsScreenshots(t *testing.T) {
 	appOptions := newAppOptions(NewApp())
 
 	require.NotNil(t, appOptions.Windows)
 	require.True(t, appOptions.StartHidden)
-	require.True(t, appOptions.Windows.ContentProtection)
+	require.False(t, appOptions.Windows.ContentProtection, "settings share the capture window and must remain capturable")
 	require.False(t, appOptions.Windows.WebviewIsTransparent)
 	require.False(t, appOptions.Windows.WindowIsTranslucent)
 	require.Equal(t, uint8(255), appOptions.BackgroundColour.A)

@@ -150,7 +150,7 @@ func findManualScrollTarget(rect image.Rectangle) (manualScrollTarget, error) {
 }
 
 // captureManualScrollRegion renders the underlying top-level window into an
-// off-screen bitmap. It does not read the protected Wails overlay from the
+// off-screen bitmap. It does not read the Wails overlay from the
 // composed desktop, so the live frame remains available without hide/show.
 func captureManualScrollRegion(window uintptr, rect image.Rectangle) (image.Image, error) {
 	if window == 0 {
@@ -209,7 +209,7 @@ func captureManualScrollRegion(window uintptr, rect image.Rectangle) (image.Imag
 	}
 
 	// Some GPU-backed windows do not implement PrintWindow. Reading their
-	// window DC is the fallback and still avoids the protected desktop bitmap.
+	// window DC is the fallback and still avoids the composed desktop bitmap.
 	if !win.BitBlt(memoryDC, 0, 0, int32(width), int32(height), windowDC, 0, 0, win.SRCCOPY) {
 		return nil, errors.New("could not render the scrolling capture window")
 	}

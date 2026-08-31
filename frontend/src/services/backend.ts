@@ -337,6 +337,12 @@ export async function extractText(base64Image: string): Promise<OCRResultPayload
   };
 }
 
+// Keep the settings form mounted so taskbar restore retains unsaved changes.
+// Browser previews have no native window to minimize.
+export function minimizeWindow(): void {
+  window.runtime?.WindowMinimise?.();
+}
+
 export async function hideWindow(): Promise<void> {
   if (hasWailsBackend()) {
     await window.go!.main!.App!.HideWindow();

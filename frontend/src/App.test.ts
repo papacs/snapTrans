@@ -66,6 +66,7 @@ const backendMocks = vi.hoisted(() => {
     frontendReady: vi.fn(async () => {}),
     getHistory: vi.fn(async () => []),
     hideWindow: vi.fn(async () => {}),
+    minimizeWindow: vi.fn(() => {}),
     isDesktop: false,
     loadConfig: vi.fn(async () => ({ ...defaultConfig })),
     processImage: vi.fn(async (_image: string, _direction: string, _generation: number) => {}),
@@ -109,6 +110,7 @@ vi.mock("./services/backend", () => ({
   getHistory: backendMocks.getHistory,
   hasWailsBackend: () => backendMocks.isDesktop,
   hideWindow: backendMocks.hideWindow,
+  minimizeWindow: backendMocks.minimizeWindow,
   loadConfig: backendMocks.loadConfig,
   onBackendEvent: (eventName: string, callback: (payload: unknown) => void) => {
     const listeners = backendMocks.listeners.get(eventName) ?? new Set<(payload: unknown) => void>();
@@ -179,6 +181,7 @@ describe("App capture cancellation", () => {
   beforeEach(() => {
     backendMocks.listeners.clear();
     backendMocks.hideWindow.mockClear();
+    backendMocks.minimizeWindow.mockClear();
     backendMocks.copyImageDataUrl.mockClear();
     backendMocks.beginScrollingScreenshot.mockClear();
     backendMocks.cancelScrollingScreenshot.mockClear();
@@ -631,6 +634,32 @@ describe("App capture cancellation", () => {
 
     expect(wrapper.find("form").exists()).toBe(false);
     expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("minimizes settings without closing the form or losing unsaved edits", async () => {
+    backendMocks.isDesktop = true;
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.find("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+
+    const keyInput = wrapper.find("[data-testid='api-key-input']");
+    await keyInput.setValue("unsaved-test-key");
+    const minimizeButton = wrapper.get("[data-testid='settings-minimize']");
+    expect(minimizeButton.attributes("title")).toBe("最小化到任务栏");
+    expect(minimizeButton.attributes("style")).toContain("--wails-draggable: no-drag");
+    expect(minimizeButton.element.nextElementSibling?.getAttribute("aria-label")).toBe("Close");
+
+    await minimizeButton.trigger("click");
+    await flushPromises();
+
+    expect(backendMocks.minimizeWindow).toHaveBeenCalledTimes(1);
+    expect(backendMocks.hideWindow).not.toHaveBeenCalled();
+    expect(wrapper.find("[data-testid='settings-shell']").exists()).toBe(true);
+    expect((keyInput.element as HTMLInputElement).value).toBe("unsaved-test-key");
+
+    await wrapper.find("[data-testid='locale-en']").trigger("click");
+    expect(minimizeButton.attributes("aria-label")).toBe("Minimize to taskbar");
   });
 
   it("renders settings as a single-window shell with grouped content and fixed actions", async () => {

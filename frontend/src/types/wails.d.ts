@@ -53,6 +53,7 @@ declare global {
     runtime?: {
       EventsOn: <T = unknown>(eventName: string, callback: (payload: T) => void) => (() => void) | void;
       EventsOff?: (eventName: string) => void;
+      WindowMinimise?: () => void;
       ClipboardSetText?: (text: string) => Promise<void>;
     };
   }
