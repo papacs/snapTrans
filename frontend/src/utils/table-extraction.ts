@@ -6,6 +6,11 @@ export interface ExtractedTable {
   columns: number;
 }
 
+export interface TableSourceSize {
+  width: number;
+  height: number;
+}
+
 interface PositionedBlock extends OCRBlockPayload {
   text: string;
   centerY: number;
@@ -30,7 +35,39 @@ function joinCellText(current: string, next: string): string {
   return current + separator + clean;
 }
 
-export function inferTable(blocks: OCRBlockPayload[]): ExtractedTable {
+function looksLikePaginationRow(blocks: PositionedBlock[]): boolean {
+  const text = blocks.map((block) => block.text).join(" ");
+  return /\d+\s*(?:条|items?|rows?)\s*\/\s*(?:页|page)/iu.test(text)
+    || /(?:每页|per\s+page)\s*\d+/iu.test(text);
+}
+
+function horizontalTextScale(
+  blocks: PositionedBlock[],
+  typicalHeight: number,
+  sourceSize?: TableSourceSize,
+): number {
+  if (
+    sourceSize
+    && Number.isFinite(sourceSize.width)
+    && Number.isFinite(sourceSize.height)
+    && sourceSize.width > 0
+    && sourceSize.height > 0
+  ) {
+    // OCR x/width and y/height are normalized independently. Convert a
+    // text-line height into horizontal units before using it as x tolerance.
+    return typicalHeight * sourceSize.height / sourceSize.width;
+  }
+
+  return median(blocks.map((block) => {
+    const characters = Array.from(block.text.replace(/\s+/g, "")).length;
+    return block.width / Math.max(1, characters);
+  }));
+}
+
+export function inferTable(
+  blocks: OCRBlockPayload[],
+  sourceSize?: TableSourceSize,
+): ExtractedTable {
   const positioned: PositionedBlock[] = blocks
     .filter(
       (block) =>
@@ -72,9 +109,17 @@ export function inferTable(blocks: OCRBlockPayload[]): ExtractedTable {
   }
   rows.sort((a, b) => a.centerY - b.centerY);
 
-  const columnTolerance = Math.max(0.025, typicalHeight * 1.5);
+  while (rows.length > 1 && looksLikePaginationRow(rows[rows.length - 1]!.blocks)) {
+    rows.pop();
+  }
+
+  const tableBlocks = rows.flatMap((row) => row.blocks);
+  const columnTolerance = Math.min(
+    0.06,
+    Math.max(0.006, horizontalTextScale(tableBlocks, typicalHeight, sourceSize) * 1.5),
+  );
   const anchors: Array<{ x: number; count: number }> = [];
-  for (const block of [...positioned].sort((a, b) => a.x - b.x)) {
+  for (const block of [...tableBlocks].sort((a, b) => a.x - b.x)) {
     const nearest = anchors
       .map((anchor) => ({ anchor, distance: Math.abs(anchor.x - block.x) }))
       .filter(({ distance }) => distance <= columnTolerance)

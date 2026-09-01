@@ -389,7 +389,9 @@ describe("App capture cancellation", () => {
     window.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 520, clientY: 360 }));
     await flushPromises();
 
-    expect(wrapper.find("[data-testid='screenshot-toolbar']").exists()).toBe(true);
+    const screenshotToolbar = wrapper.get("[data-testid='screenshot-toolbar']");
+    expect(screenshotToolbar.classes()).toContain("flex-wrap");
+    expect(screenshotToolbar.classes()).not.toContain("overflow-x-auto");
     expect(backendMocks.processImage).not.toHaveBeenCalled();
 
     await wrapper.find("[data-testid='annotation-rectangle']").trigger("click");
@@ -709,6 +711,7 @@ describe("App capture cancellation", () => {
     await flushPromises();
 
     expect(wrapper.find("[data-testid='result-panel']").text()).toContain("OCR...");
+    expect(wrapper.get("[data-testid='result-actions']").classes()).toContain("flex-wrap");
     expect(backendMocks.translateRegion).toHaveBeenCalledTimes(1);
 
     const resultPanel = wrapper.find("[data-testid='result-panel']");

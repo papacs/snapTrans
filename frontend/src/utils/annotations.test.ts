@@ -18,9 +18,9 @@ describe("toolbarPosition", () => {
       toolbarPosition(
         { x: 700, y: 500, width: 260, height: 170 },
         { width: 1000, height: 700 },
-        { width: 560, height: 48 }
+        { width: 240, height: 48 }
       )
-    ).toEqual({ x: 400, y: 440 });
+    ).toEqual({ x: 700, y: 440 });
   });
 
   it("keeps the toolbar inside the right edge of the viewport", () => {

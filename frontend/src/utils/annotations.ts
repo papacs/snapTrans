@@ -33,15 +33,16 @@ export function toolbarPosition(
 ): Point {
   const padding = 8;
   const maxX = Math.max(padding, viewport.width - toolbar.width - padding);
-  const x = clamp(selection.x + selection.width - toolbar.width, padding, maxX);
   const below = selection.y + selection.height + gap;
   const above = selection.y - toolbar.height - gap;
   const maxY = Math.max(padding, viewport.height - toolbar.height - padding);
-  const y = below + toolbar.height <= viewport.height - padding
-    ? below
-    : above >= padding
-      ? above
-      : clamp(below, padding, maxY);
+  const fitsBelow = below + toolbar.height <= viewport.height - padding;
+  const movesAbove = !fitsBelow && above >= padding;
+  const preferredX = movesAbove
+    ? selection.x
+    : selection.x + selection.width - toolbar.width;
+  const x = clamp(preferredX, padding, maxX);
+  const y = fitsBelow ? below : movesAbove ? above : clamp(below, padding, maxY);
 
   return { x: Math.round(x), y: Math.round(y) };
 }

@@ -95,6 +95,7 @@ import { buildSourceRegions, layoutTranslations, OVERLAY_FONT_FAMILY } from "./u
 import { canvasTextMeasurer, leadingMarkerInset, paintTranslationOverlay } from "./utils/overlay-painter";
 import { nativeSelectionBackdrop } from "./utils/selection-backdrop";
 import { shortcutKeyFromKeyboardEvent } from "./utils/shortcut";
+import { toolbarPosition } from "./utils/annotations";
 import {
   normalizeSettingsLocale,
   settingsMessages,
@@ -107,6 +108,7 @@ type Phase = "idle" | "loading" | "ready" | "drawing" | "editing" | "processing"
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const captureLayerRef = ref<HTMLElement | null>(null);
 const resultPanelRef = ref<HTMLElement | null>(null);
+const resultActionsRef = ref<HTMLElement | null>(null);
 const phase = ref<Phase>("idle");
 const capture = ref<CapturePayload | null>(null);
 const dragStart = ref<Point | null>(null);
@@ -114,6 +116,8 @@ const selection = ref<Rect | null>(null);
 const resultRect = ref<Rect | null>(null);
 const textBlocks = ref<TextBlockPayload[]>([]);
 const viewport = reactive({ width: window.innerWidth, height: window.innerHeight });
+const resultActionsSize = reactive({ width: 320, height: 40 });
+let resultActionsResizeObserver: ResizeObserver | null = null;
 const translationText = ref("");
 const translationDirection = ref<TranslationDirection>("to-zh");
 const manualDirection = ref(false);
@@ -331,13 +335,36 @@ const resultActionsStyle = computed(() => {
   }
 
   const box = normalizeResultBox(rect, viewport);
-  const vertical =
-    box.y + box.height + 52 > viewport.height - 8
-      ? { bottom: "calc(100% + 8px)" }
-      : { top: "calc(100% + 8px)" };
-  const horizontal = box.x + 260 > viewport.width - 8 ? { right: "0px" } : { left: "0px" };
+  const panel = textBlocks.value.length > 0 && phase.value !== "error" ? rect : box;
+  const point = toolbarPosition(
+    panel,
+    viewport,
+    {
+      width: Math.min(resultActionsSize.width, Math.max(1, viewport.width - 16)),
+      height: resultActionsSize.height
+    },
+    8
+  );
 
-  return { ...vertical, ...horizontal };
+  return {
+    left: `${point.x - panel.x}px`,
+    top: `${point.y - panel.y}px`,
+    maxWidth: `${Math.max(1, viewport.width - 16)}px`
+  };
+});
+
+function measureResultActions(): void {
+  const bounds = resultActionsRef.value?.getBoundingClientRect();
+  if (bounds && bounds.width > 0 && bounds.height > 0) {
+    resultActionsSize.width = bounds.width;
+    resultActionsSize.height = bounds.height;
+  }
+}
+
+watch(resultActionsRef, (element, previous) => {
+  if (previous) resultActionsResizeObserver?.unobserve(previous);
+  if (element) resultActionsResizeObserver?.observe(element);
+  void nextTick(measureResultActions);
 });
 
 const isResultBusy = computed(() => phase.value === "processing" || phase.value === "streaming");
@@ -473,6 +500,9 @@ const unsubs: Array<() => void> = [];
 onMounted(async () => {
   window.addEventListener("resize", updateViewport);
   window.addEventListener("keydown", onKeyDown);
+  if (typeof globalThis.ResizeObserver === "function") {
+    resultActionsResizeObserver = new ResizeObserver(measureResultActions);
+  }
 
   unsubs.push(
     onBackendEvent<CapturePayload>("capture-start", async (payload) => {
@@ -575,6 +605,8 @@ onBeforeUnmount(() => {
   resetTranslationText();
   window.removeEventListener("resize", updateViewport);
   window.removeEventListener("keydown", onKeyDown);
+  resultActionsResizeObserver?.disconnect();
+  resultActionsResizeObserver = null;
   detachCaptureDragListeners();
   for (const unsub of unsubs) {
     unsub();
@@ -584,6 +616,7 @@ onBeforeUnmount(() => {
 function updateViewport(): void {
   viewport.width = window.innerWidth;
   viewport.height = window.innerHeight;
+  void nextTick(measureResultActions);
   if (capture.value?.selectedText && resultRect.value) {
     void nextTick(() => { const rect = nativeSelectionRect(); if (rect && resultRect.value) resultRect.value = rect; });
   }
@@ -1455,8 +1488,10 @@ async function saveSettings(): Promise<void> {
         <div class="overflow-auto whitespace-pre-wrap break-words text-sm leading-6">{{ cleanTranslationText }}</div>
       </aside>
       <div
-        class="absolute flex h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-2 shadow-[0_10px_32px_rgba(15,23,42,0.22)] backdrop-blur dark:border-slate-700/70 dark:bg-zinc-950/95"
+        ref="resultActionsRef"
+        class="absolute flex min-h-10 w-max flex-wrap items-center gap-2 rounded-md border border-white/70 bg-white/95 px-2 py-1 shadow-[0_10px_32px_rgba(15,23,42,0.22)] backdrop-blur dark:border-slate-700/70 dark:bg-zinc-950/95"
         :style="resultActionsStyle"
+        data-testid="result-actions"
       >
         <button v-if="hasResultTools" type="button" class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-emerald-700 hover:bg-emerald-50" :title="settingsLocale==='en'?'Extension tools':'扩展工具'" :aria-label="settingsLocale==='en'?'Extension tools':'扩展工具'" data-testid="result-extensions" :disabled="isResultBusy" @click="openResultTools"><Sparkles class="h-4 w-4"/></button>
         <button v-if="overlayLayout.truncated" type="button" class="whitespace-nowrap px-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"

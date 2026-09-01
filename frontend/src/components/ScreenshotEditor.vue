@@ -73,6 +73,7 @@ function openTools(){commitText();toolsImage.value=exportDataUrl();toolsOpen.val
 function applyRedaction(rects:Rect[]){annotations.value.push({tool:"redact",rects});redraw();toolsOpen.value=false;}
 const originalExtractedText = ref("");
 const editorCanvasRef = ref<HTMLCanvasElement | null>(null);
+const toolbarRef = ref<HTMLElement | null>(null);
 const textInputRef = ref<HTMLInputElement | null>(null);
 const activeTool = ref<AnnotationTool>("pen");
 const color = ref("#ff4d4f");
@@ -108,11 +109,12 @@ let drawing = false;
 let redrawFrame: number | null = null;
 let disposed = false;
 let scrollPollTimer: number | null = null;
+let toolbarResizeObserver: ResizeObserver | null = null;
 
 const SCROLL_POLL_INTERVAL_MS = 180;
 
-const TOOLBAR_WIDTH = 600;
-const TOOLBAR_HEIGHT = 48;
+const toolbarViewport = ref({ width: window.innerWidth, height: window.innerHeight });
+const toolbarSize = ref({ width: Math.min(720, Math.max(1, window.innerWidth - 16)), height: 48 });
 
 const editorStyle = computed(() => ({
   left: `${props.rect.x}px`,
@@ -124,10 +126,14 @@ const editorStyle = computed(() => ({
 const toolbarStyle = computed(() => {
   const point = toolbarPosition(
     props.rect,
-    { width: window.innerWidth, height: window.innerHeight },
-    { width: Math.min(TOOLBAR_WIDTH, window.innerWidth - 16), height: TOOLBAR_HEIGHT }
+    toolbarViewport.value,
+    toolbarSize.value
   );
-  return { left: `${point.x}px`, top: `${point.y}px`, maxWidth: "calc(100vw - 16px)" };
+  return {
+    left: `${point.x}px`,
+    top: `${point.y}px`,
+    maxWidth: `${Math.max(1, toolbarViewport.value.width - 16)}px`
+  };
 });
 
 const manualToolbarStyle = computed(() => {
@@ -223,6 +229,12 @@ const toolButtons: Array<{
 onMounted(() => {
   prepareCanvas();
   window.addEventListener("keydown", onEditorKeyDown);
+  window.addEventListener("resize", syncToolbarLayout);
+  if (typeof globalThis.ResizeObserver === "function") {
+    toolbarResizeObserver = new ResizeObserver(syncToolbarLayout);
+    if (toolbarRef.value) toolbarResizeObserver.observe(toolbarRef.value);
+  }
+  void nextTick(syncToolbarLayout);
 });
 
 onBeforeUnmount(() => {
@@ -244,7 +256,18 @@ onBeforeUnmount(() => {
   }
   detachDrawingListeners();
   window.removeEventListener("keydown", onEditorKeyDown);
+  window.removeEventListener("resize", syncToolbarLayout);
+  toolbarResizeObserver?.disconnect();
+  toolbarResizeObserver = null;
 });
+
+function syncToolbarLayout(): void {
+  toolbarViewport.value = { width: window.innerWidth, height: window.innerHeight };
+  const bounds = toolbarRef.value?.getBoundingClientRect();
+  if (bounds && bounds.width > 0 && bounds.height > 0) {
+    toolbarSize.value = { width: bounds.width, height: bounds.height };
+  }
+}
 
 function prepareCanvas(): void {
   const editor = editorCanvasRef.value;
@@ -717,7 +740,10 @@ async function extractImageTable(): Promise<void> {
   try {
     const result = await extractText(imageDataUrl);
     if (disposed || sequence !== tableExtractionSequence) return;
-    const table = inferTable(result.blocks);
+    const table = inferTable(result.blocks, {
+      width: baseCanvas?.width ?? 0,
+      height: baseCanvas?.height ?? 0
+    });
     if (table.rows < 2 || table.columns < 2) {
       tableExtractionError.value = props.locale === "en"
         ? "Could not identify a 2D table. Select a simple table with clear rows and columns."
@@ -858,7 +884,8 @@ function clamp(value: number, min: number, max: number): number {
     />
 
     <div
-      class="absolute z-50 flex h-12 items-center gap-1 overflow-x-auto rounded-[10px] border border-slate-200 bg-white px-2 shadow-[0_8px_24px_rgba(15,23,42,0.24)]"
+      ref="toolbarRef"
+      class="absolute z-50 flex min-h-12 w-max flex-wrap items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-2 py-1 shadow-[0_8px_24px_rgba(15,23,42,0.24)]"
       :style="toolbarStyle"
       data-testid="screenshot-toolbar"
       @mousedown.stop
