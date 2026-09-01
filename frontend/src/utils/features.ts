@@ -1,5 +1,6 @@
 export interface FeatureFlags {
   textExtraction: boolean;
+  tableExtraction: boolean;
   pin: boolean;
   textActions: boolean;
   redaction: boolean;
@@ -11,6 +12,7 @@ export interface FeatureFlags {
 }
 export const defaultFeatures: FeatureFlags = {
   textExtraction: true,
+  tableExtraction: true,
   pin: true,
   textActions: true,
   redaction: true,
@@ -43,6 +45,13 @@ export const featureDescriptions: Array<{
     en: "Extract text",
     help: "仅本地 OCR；编辑原文、保留换行或合并段落。",
     helpEn: "Local OCR, editable text and line-break controls.",
+  },
+  {
+    key: "tableExtraction",
+    zh: "提取表格",
+    en: "Extract table",
+    help: "截图涂鸦中本地识别规则表格，预览编辑后复制 TSV 或 Markdown。",
+    helpEn: "Locally recognize simple tables in screenshot mode; edit and copy TSV or Markdown.",
   },
   {
     key: "pin",

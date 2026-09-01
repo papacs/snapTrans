@@ -62,7 +62,7 @@ const tabs = computed(() =>
   featureDescriptions.filter(
     (f) =>
       props.features[f.key] &&
-      !["historyTools", "textExtraction"].includes(f.key) &&
+      !["historyTools", "textExtraction", "tableExtraction"].includes(f.key) &&
       (f.key !== "redaction" || props.allowRedaction),
   ),
 );

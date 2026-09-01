@@ -34,25 +34,25 @@ type Config struct {
 // persistedConfig accepts both the current generic LLM fields and the
 // DeepSeek-specific fields written by versions before LiteLLM support.
 type persistedConfig struct {
-	Features                  *Features `json:"features"`
-	UILanguage                string    `json:"uiLanguage"`
-	Theme                     string    `json:"theme"`
-	ShortcutKey               string    `json:"shortcutKey"`
-	ScreenshotShortcutKey     string    `json:"screenshotShortcutKey"`
-	APIKey                    string    `json:"apiKey"`
-	BaseURL                   string    `json:"baseURL"`
-	Model                     string    `json:"model"`
-	DeepSeekAPIKey            string    `json:"deepSeekAPIKey"`
-	DeepSeekBaseURL           string    `json:"deepSeekBaseURL"`
-	DeepSeekModel             string    `json:"deepSeekModel"`
-	RapidOCRPath              string    `json:"rapidOCRPath"`
-	RapidOCRTimeoutSeconds    int       `json:"rapidOCRTimeoutSeconds"`
-	TranslationTimeoutSeconds int       `json:"translationTimeoutSeconds"`
-	AutoDirection             *bool     `json:"autoDirection"`
-	SystemPrompt              string    `json:"systemPrompt"`
-	Glossary                  string    `json:"glossary"`
-	PersistentOCR             *bool     `json:"persistentOCR"`
-	AutoCopy                  *bool     `json:"autoCopy"`
+	Features                  *persistedFeatures `json:"features"`
+	UILanguage                string             `json:"uiLanguage"`
+	Theme                     string             `json:"theme"`
+	ShortcutKey               string             `json:"shortcutKey"`
+	ScreenshotShortcutKey     string             `json:"screenshotShortcutKey"`
+	APIKey                    string             `json:"apiKey"`
+	BaseURL                   string             `json:"baseURL"`
+	Model                     string             `json:"model"`
+	DeepSeekAPIKey            string             `json:"deepSeekAPIKey"`
+	DeepSeekBaseURL           string             `json:"deepSeekBaseURL"`
+	DeepSeekModel             string             `json:"deepSeekModel"`
+	RapidOCRPath              string             `json:"rapidOCRPath"`
+	RapidOCRTimeoutSeconds    int                `json:"rapidOCRTimeoutSeconds"`
+	TranslationTimeoutSeconds int                `json:"translationTimeoutSeconds"`
+	AutoDirection             *bool              `json:"autoDirection"`
+	SystemPrompt              string             `json:"systemPrompt"`
+	Glossary                  string             `json:"glossary"`
+	PersistentOCR             *bool              `json:"persistentOCR"`
+	AutoCopy                  *bool              `json:"autoCopy"`
 }
 
 func (p persistedConfig) Config() Config {

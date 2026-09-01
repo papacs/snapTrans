@@ -18,7 +18,7 @@ describe("extension settings", () => {
         group: "experiments",
       },
     });
-    expect(productivity.findAll('[role="switch"]')).toHaveLength(5);
+    expect(productivity.findAll('[role="switch"]')).toHaveLength(6);
     expect(
       productivity.find('[data-testid="feature-shareCards"]').exists(),
     ).toBe(false);

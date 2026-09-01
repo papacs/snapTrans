@@ -364,8 +364,21 @@ export async function extractText(base64Image: string): Promise<OCRResultPayload
 
   await delay(220);
   return {
-    text: "Browser preview: extracted screenshot text can be edited and copied here.",
-    blocks: []
+    text: "Feature This month Last month\nTranslation 128 104\nScreenshot 86 72\nSaved 41 35",
+    blocks: [
+      { text: "Feature", x: 0.06, y: 0.08, width: 0.22, height: 0.1 },
+      { text: "This month", x: 0.43, y: 0.08, width: 0.2, height: 0.1 },
+      { text: "Last month", x: 0.72, y: 0.08, width: 0.2, height: 0.1 },
+      { text: "Translation", x: 0.06, y: 0.31, width: 0.24, height: 0.1 },
+      { text: "128", x: 0.43, y: 0.31, width: 0.1, height: 0.1 },
+      { text: "104", x: 0.72, y: 0.31, width: 0.1, height: 0.1 },
+      { text: "Screenshot", x: 0.06, y: 0.54, width: 0.24, height: 0.1 },
+      { text: "86", x: 0.43, y: 0.54, width: 0.08, height: 0.1 },
+      { text: "72", x: 0.72, y: 0.54, width: 0.08, height: 0.1 },
+      { text: "Saved", x: 0.06, y: 0.77, width: 0.16, height: 0.1 },
+      { text: "41", x: 0.43, y: 0.77, width: 0.08, height: 0.1 },
+      { text: "35", x: 0.72, y: 0.77, width: 0.08, height: 0.1 }
+    ]
   };
 }
 
@@ -532,15 +545,49 @@ function createFallbackCapture(mode: "translate" | "screenshot"): CapturePayload
   context.font = `${Math.max(22, Math.round(canvas.width * 0.022))}px Segoe UI, sans-serif`;
   context.fillText("Release the mouse to stream the result in place.", cardX + 48, cardY + 170);
 
-  context.fillStyle = "rgba(255, 255, 255, 0.78)";
-  const targetWidth = Math.min(520, canvas.width * 0.34);
-  const targetHeight = Math.min(210, canvas.height * 0.22);
+  context.fillStyle = "rgba(255, 255, 255, 0.94)";
+  const targetWidth = Math.min(600, canvas.width * 0.4);
+  const targetHeight = Math.min(240, canvas.height * 0.26);
   const targetX = Math.max(48, canvas.width - targetWidth - 80);
-  const targetY = Math.max(cardY + cardHeight + 64, canvas.height - targetHeight - 96);
+  const targetY = Math.max(cardY + cardHeight + 48, canvas.height - targetHeight - 72);
   context.fillRect(targetX, targetY, targetWidth, targetHeight);
-  context.fillStyle = "#0f766e";
-  context.font = `${Math.max(24, Math.round(canvas.width * 0.024))}px Segoe UI, sans-serif`;
-  context.fillText("OCR target area", targetX + 48, targetY + targetHeight / 2 + 12);
+  const demoRows = [
+    ["Feature", "This month", "Last month"],
+    ["Translation", "128", "104"],
+    ["Screenshot", "86", "72"],
+    ["Saved", "41", "35"]
+  ];
+  const demoColumns = [0, 0.44, 0.72, 1];
+  const demoRowHeight = targetHeight / demoRows.length;
+  context.strokeStyle = "#cbd5e1";
+  context.lineWidth = 2;
+  context.font = `${Math.max(14, Math.round(targetWidth * 0.03))}px Segoe UI, sans-serif`;
+  demoRows.forEach((row, rowIndex) => {
+    if (rowIndex === 0) {
+      context.fillStyle = "#ecfdf5";
+      context.fillRect(targetX, targetY, targetWidth, demoRowHeight);
+    }
+    row.forEach((cell, columnIndex) => {
+      context.fillStyle = rowIndex === 0 ? "#047857" : "#334155";
+      context.fillText(
+        cell,
+        targetX + demoColumns[columnIndex]! * targetWidth + 16,
+        targetY + rowIndex * demoRowHeight + demoRowHeight * 0.66
+      );
+    });
+  });
+  for (let row = 0; row <= demoRows.length; row++) {
+    context.beginPath();
+    context.moveTo(targetX, targetY + row * demoRowHeight);
+    context.lineTo(targetX + targetWidth, targetY + row * demoRowHeight);
+    context.stroke();
+  }
+  for (const column of demoColumns) {
+    context.beginPath();
+    context.moveTo(targetX + column * targetWidth, targetY);
+    context.lineTo(targetX + column * targetWidth, targetY + targetHeight);
+    context.stroke();
+  }
 
   return {
     image: canvas.toDataURL("image/png"),

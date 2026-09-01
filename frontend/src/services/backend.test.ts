@@ -31,7 +31,7 @@ describe("native boundary", () => {
 describe("extension storage",()=>{
  it("migrates old browser settings without enabling experiments",async()=>{
   localStorage.setItem("snaptrans.config",JSON.stringify({features:{pin:false}}));
-  const cfg=await loadConfig();expect(cfg.features.pin).toBe(false);expect(cfg.features.textExtraction).toBe(true);expect(cfg.features.memeExplanation).toBe(false);
+  const cfg=await loadConfig();expect(cfg.features.pin).toBe(false);expect(cfg.features.textExtraction).toBe(true);expect(cfg.features.tableExtraction).toBe(true);expect(cfg.features.memeExplanation).toBe(false);
   localStorage.removeItem("snaptrans.config");
  });
  it("clears recent history but keeps explicit saves",async()=>{

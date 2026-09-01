@@ -9,6 +9,7 @@ import {
   Download,
   Grid3X3,
   LoaderCircle,
+  Table2,
   Pencil,
   ScanText,
   Smile,
@@ -18,8 +19,10 @@ import {
   X
 } from "lucide-vue-next";
 import ExtensionWorkbench from "./ExtensionWorkbench.vue";
+import TableExtractionPanel from "./TableExtractionPanel.vue";
 import { normalizeFeatures, type FeatureFlags } from "../utils/features";
 import { mergeTextLines } from "../utils/extensions";
+import { inferTable, tableToMarkdown, tableToTSV } from "../utils/table-extraction";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 
 import {
@@ -60,7 +63,7 @@ const emit = defineEmits<{
 const featureFlags = computed(() => normalizeFeatures(props.features));
 const toolsOpen = ref(false);
 const toolsImage = ref("");
-const hasTools = computed(() => Object.entries(featureFlags.value).some(([key,value]) => value && !["textExtraction","historyTools"].includes(key)));
+const hasTools = computed(() => Object.entries(featureFlags.value).some(([key,value]) => value && !["textExtraction","tableExtraction","historyTools"].includes(key)));
 const toolsOrigin = computed(() => {
  const bounds=props.sourceCanvas.getBoundingClientRect();
  const rect=mapCssRectToImageRect(props.rect,{width:bounds.width,height:bounds.height},{width:props.sourceCanvas.width,height:props.sourceCanvas.height},props.capture.displays);
@@ -90,6 +93,13 @@ const extractedText = ref("");
 const textExtractionError = ref("");
 const copiedExtractedText = ref(false);
 const extractedTextRef = ref<HTMLTextAreaElement | null>(null);
+const tableExtractionOpen = ref(false);
+const extractingTable = ref(false);
+const tableCells = ref<string[][]>([]);
+const tableExtractionError = ref("");
+const copiedTableFormat = ref<"tsv" | "markdown" | "">("");
+let tableExtractionSequence = 0;
+let copiedTableTimer: number | null = null;
 let extractionSequence = 0;
 let copiedTextTimer: number | null = null;
 let baseCanvas: HTMLCanvasElement | null = null;
@@ -165,6 +175,23 @@ const extractionPanelStyle = computed(() => {
   return { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` };
 });
 
+
+const tablePanelStyle = computed(() => {
+  const gap = 12;
+  const padding = 8;
+  const width = Math.min(640, Math.max(360, Math.round(window.innerWidth * 0.48)), Math.max(160, window.innerWidth - padding * 2));
+  const height = Math.min(Math.max(300, props.rect.height), Math.max(200, window.innerHeight - padding * 2));
+  const right = props.rect.x + props.rect.width + gap;
+  const left = props.rect.x - width - gap;
+  const x = right + width <= window.innerWidth - padding
+    ? right
+    : left >= padding
+      ? left
+      : Math.max(padding, window.innerWidth - width - padding);
+  const y = clamp(props.rect.y, padding, Math.max(padding, window.innerHeight - height - padding));
+  return { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` };
+});
+
 const textDraftStyle = computed(() => {
   const draft = textDraft.value;
   const canvas = editorCanvasRef.value;
@@ -202,6 +229,11 @@ onBeforeUnmount(() => {
   disposed = true;
   if (redrawFrame !== null) window.cancelAnimationFrame(redrawFrame);
   extractionSequence += 1;
+  tableExtractionSequence += 1;
+  if (copiedTableTimer !== null) {
+    window.clearTimeout(copiedTableTimer);
+    copiedTableTimer = null;
+  }
   if (copiedTextTimer !== null) {
     window.clearTimeout(copiedTextTimer);
     copiedTextTimer = null;
@@ -608,6 +640,7 @@ async function extractImageText(): Promise<void> {
     return;
   }
 
+  closeTableExtraction();
   const sequence = ++extractionSequence;
   textExtractionOpen.value = true;
   extractingText.value = true;
@@ -670,6 +703,65 @@ async function copyExtractedText(): Promise<void> {
     textExtractionError.value = error instanceof Error ? error.message : "\u590d\u5236\u6587\u5b57\u5931\u8d25";
   }
 }
+
+async function extractImageTable(): Promise<void> {
+  const imageDataUrl = baseCanvas?.toDataURL("image/png") ?? "";
+  if (!imageDataUrl || extractingTable.value) return;
+  closeTextExtraction();
+  const sequence = ++tableExtractionSequence;
+  tableExtractionOpen.value = true;
+  extractingTable.value = true;
+  tableCells.value = [];
+  tableExtractionError.value = "";
+  copiedTableFormat.value = "";
+  try {
+    const result = await extractText(imageDataUrl);
+    if (disposed || sequence !== tableExtractionSequence) return;
+    const table = inferTable(result.blocks);
+    if (table.rows < 2 || table.columns < 2) {
+      tableExtractionError.value = props.locale === "en"
+        ? "Could not identify a 2D table. Select a simple table with clear rows and columns."
+        : "未识别出二维表格，请重新框选行列清晰的规则表格。";
+      return;
+    }
+    tableCells.value = table.cells;
+  } catch (error) {
+    if (disposed || sequence !== tableExtractionSequence) return;
+    tableExtractionError.value = error instanceof Error && error.message === "TABLE_TOO_LARGE"
+      ? (props.locale === "en" ? "The table is too large (maximum 100 rows and 30 columns)." : "表格过大，最多支持 100 行、30 列。")
+      : error instanceof Error
+        ? error.message
+        : (props.locale === "en" ? "Table recognition failed" : "表格识别失败");
+  } finally {
+    if (sequence === tableExtractionSequence) extractingTable.value = false;
+  }
+}
+
+function closeTableExtraction(): void {
+  tableExtractionSequence += 1;
+  tableExtractionOpen.value = false;
+  extractingTable.value = false;
+  tableExtractionError.value = "";
+  copiedTableFormat.value = "";
+}
+
+async function copyExtractedTable(format: "tsv" | "markdown"): Promise<void> {
+  if (extractingTable.value || !tableCells.value.length) return;
+  try {
+    const text = format === "tsv" ? tableToTSV(tableCells.value) : tableToMarkdown(tableCells.value);
+    await copyText(text);
+    tableExtractionError.value = "";
+    copiedTableFormat.value = format;
+    if (copiedTableTimer !== null) window.clearTimeout(copiedTableTimer);
+    copiedTableTimer = window.setTimeout(() => {
+      copiedTableFormat.value = "";
+      copiedTableTimer = null;
+    }, 1200);
+  } catch (error) {
+    tableExtractionError.value = error instanceof Error ? error.message : (props.locale === "en" ? "Copy failed" : "复制表格失败");
+  }
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -798,6 +890,21 @@ function clamp(value: number, min: number, max: number): number {
       >
         <LoaderCircle v-if="extractingText" class="h-[18px] w-[18px] animate-spin" aria-hidden="true" />
         <ScanText v-else class="h-[18px] w-[18px]" aria-hidden="true" />
+      </button>
+
+      <button
+        v-if="featureFlags.tableExtraction"
+        type="button"
+        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition disabled:cursor-wait disabled:opacity-60"
+        :class="tableExtractionOpen ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'"
+        :title="locale === 'en' ? 'Extract table' : '提取表格'"
+        :aria-label="locale === 'en' ? 'Extract table' : '提取表格'"
+        :disabled="extractingTable"
+        data-testid="screenshot-extract-table"
+        @click="extractImageTable"
+      >
+        <LoaderCircle v-if="extractingTable" class="h-[18px] w-[18px] animate-spin" aria-hidden="true" />
+        <Table2 v-else class="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
 
       <button v-if="hasTools" type="button" class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-emerald-700 hover:bg-emerald-50" :title="locale==='en'?'Extension tools':'扩展工具'" :aria-label="locale==='en'?'Extension tools':'扩展工具'" data-testid="screenshot-extensions" @click="openTools"><Sparkles class="h-[18px] w-[18px]"/></button>
@@ -944,6 +1051,21 @@ function clamp(value: number, min: number, max: number): number {
         </button>
       </footer>
     </aside>
+
+
+    <TableExtractionPanel
+      v-if="tableExtractionOpen"
+      :cells="tableCells"
+      :loading="extractingTable"
+      :error="tableExtractionError"
+      :copied="copiedTableFormat"
+      :locale="locale ?? 'zh-CN'"
+      :panel-style="tablePanelStyle"
+      @update:cells="tableCells = $event"
+      @retry="extractImageTable"
+      @close="closeTableExtraction"
+      @copy="copyExtractedTable"
+    />
 
     <div
       v-if="scrollNotice"

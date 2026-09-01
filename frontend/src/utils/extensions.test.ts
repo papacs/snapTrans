@@ -15,6 +15,7 @@ describe("feature migration", () => {
       pin: false,
       shareCards: true,
       textExtraction: true,
+      tableExtraction: true,
       memeExplanation: false,
       learningCards: false,
       imageCompare: false,

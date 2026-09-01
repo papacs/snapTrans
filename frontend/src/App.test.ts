@@ -9,7 +9,7 @@ const backendMocks = vi.hoisted(() => {
   type Listener = (payload: unknown) => void;
   const listeners = new Map<string, Set<Listener>>();
   const defaultConfig = {
-    features: {textExtraction:true, pin:true, textActions:true, redaction:true, historyTools:true, memeExplanation:false, learningCards:false, shareCards:false, imageCompare:false},
+    features: {textExtraction:true, tableExtraction:true, pin:true, textActions:true, redaction:true, historyTools:true, memeExplanation:false, learningCards:false, shareCards:false, imageCompare:false},
     uiLanguage: "zh-CN" as const,
     theme: "light" as const,
     shortcutKey: "Alt+Q",
@@ -65,7 +65,7 @@ const backendMocks = vi.hoisted(() => {
     copyText: vi.fn(async () => {}),
     extractText: vi.fn(async () => ({
       text: "\u622a\u56fe\u91cc\u7684\u6587\u5b57\u53ef\u4ee5\u7f16\u8f91\u548c\u590d\u5236\u3002",
-      blocks: []
+      blocks: [] as import("./services/backend").OCRBlockPayload[]
     })),
     frontendReady: vi.fn(async () => {}),
     getHistory: vi.fn(async (): Promise<import("./services/backend").HistoryEntry[]> => []),
@@ -470,6 +470,58 @@ describe("App capture cancellation", () => {
     expect(backendMocks.copyText).toHaveBeenCalledWith("\u7f16\u8f91\u540e\u7684\u8bc6\u522b\u6587\u5b57");
   });
 
+  it("extracts a screenshot table, lets users edit cells, and copies TSV or Markdown", async () => {
+    backendMocks.extractText.mockResolvedValueOnce({
+      text: "品名 数量 苹果 2 香蕉 3",
+      blocks: [
+        { text: "品名", x: 0.08, y: 0.08, width: 0.16, height: 0.08 },
+        { text: "数量", x: 0.62, y: 0.09, width: 0.12, height: 0.08 },
+        { text: "苹果", x: 0.09, y: 0.34, width: 0.14, height: 0.08 },
+        { text: "2", x: 0.63, y: 0.35, width: 0.05, height: 0.08 },
+        { text: "香蕉", x: 0.08, y: 0.60, width: 0.14, height: 0.08 },
+        { text: "3", x: 0.62, y: 0.61, width: 0.05, height: 0.08 },
+      ],
+    });
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    backendMocks.emit("capture-start", {
+      image: "data:image/png;base64,ZmFrZQ==",
+      width: 800,
+      height: 600,
+      originX: 0,
+      originY: 0,
+      source: "browser",
+      mode: "screenshot",
+    });
+    await flushPromises();
+
+    const captureLayer = wrapper.find("section.cursor-crosshair");
+    await captureLayer.trigger("mousedown", { button: 0, clientX: 80, clientY: 70 });
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 520, clientY: 360 }));
+    window.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 520, clientY: 360 }));
+    await flushPromises();
+
+    await wrapper.find("[data-testid='screenshot-extract-table']").trigger("click");
+    await flushPromises();
+
+    const panel = wrapper.find("[data-testid='table-extraction-panel']");
+    expect(panel.exists()).toBe(true);
+    expect(backendMocks.extractText).toHaveBeenCalledWith("data:image/png;base64,c2VsZWN0aW9u");
+    expect(wrapper.find("[data-testid='text-extraction-panel']").exists()).toBe(false);
+
+    await panel.find("[data-testid='table-cell-1-1']").setValue("12");
+    await panel.find("[data-testid='copy-table-tsv']").trigger("click");
+    await flushPromises();
+    expect(backendMocks.copyText).toHaveBeenCalledWith("品名\t数量\n苹果\t12\n香蕉\t3");
+
+    await panel.find("[data-testid='copy-table-markdown']").trigger("click");
+    await flushPromises();
+    expect(backendMocks.copyText).toHaveBeenLastCalledWith(
+      "| 品名 | 数量 |\n| --- | --- |\n| 苹果 | 12 |\n| 香蕉 | 3 |",
+    );
+  });
   it("keeps the native capture visible beneath the screenshot annotation layer", async () => {
     const wrapper = mount(App);
     await flushPromises();

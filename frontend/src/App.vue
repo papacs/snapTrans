@@ -180,7 +180,7 @@ const markdown = new MarkdownIt({ breaks: true, linkify: false, html: false });
 const config = reactive<AppConfig>({ ...defaultConfig });
 const savedConfig = reactive<AppConfig>({ ...defaultConfig });
 const featureFlags = computed(() => normalizeFeatures(savedConfig.features));
-const hasResultTools = computed(() => Object.entries(featureFlags.value).some(([key,value]) => value && !["historyTools","redaction","textExtraction"].includes(key)));
+const hasResultTools = computed(() => Object.entries(featureFlags.value).some(([key,value]) => value && !["historyTools","redaction","textExtraction","tableExtraction"].includes(key)));
 const visibleHistory = computed(() => filterLibrary(historyEntries.value.filter(e=>e.kind!=="learning"),featureFlags.value.historyTools?historyQuery.value:"",featureFlags.value.historyTools&&favoritesOnly.value?"favorites":"all"));
 watch(() => featureFlags.value.imageCompare, enabled => {if(!enabled)clearComparisonBaseline();});
 const settingsLocale = computed(() => normalizeSettingsLocale(config.uiLanguage));
