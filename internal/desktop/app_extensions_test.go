@@ -1,4 +1,4 @@
-package main
+package desktop
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 )
 
 func TestDisabledActionsCannotStartOrCancelExistingWork(t *testing.T) {
-	app := NewApp()
+	app := NewApp(nil)
 	app.cfg = config.Default()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -24,7 +24,7 @@ func TestDisabledActionsCannotStartOrCancelExistingWork(t *testing.T) {
 	require.Empty(t, app.extensionRequestID)
 }
 func TestNewCaptureCancelsTextAction(t *testing.T) {
-	app := NewApp()
+	app := NewApp(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	app.extensionProcessing = cancel

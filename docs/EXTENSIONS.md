@@ -12,8 +12,8 @@
 ## 模块与数据
 
 - `internal/config/features.go`：开关与旧配置默认值迁移。
-- `app_extensions.go`、`internal/translator/actions.go`：独立文本操作与固定提示词。使用独立取消上下文、请求 ID 和 `text-action` 事件，不复用翻译的行编号协议。屏幕文字放入用户消息，明确视为数据而非指令。
-- `pins_windows.go`：原生置顶位图窗，各自拥有消息线程；物理坐标、显示器工作区夹取、DPI 变化、托盘恢复。PNG 解码前检查格式和像素数。
+- `internal/desktop/app_extensions.go`、`internal/translator/actions.go`：独立文本操作与固定提示词。使用独立取消上下文、请求 ID 和 `text-action` 事件，不复用翻译的行编号协议。屏幕文字放入用户消息，明确视为数据而非指令。
+- `internal/desktop/pins_windows.go`：原生置顶位图窗，各自拥有消息线程；物理坐标、显示器工作区夹取、DPI 变化、托盘恢复。PNG 解码前检查格式和像素数。
 - `internal/history/library.go`：最近翻译最多 50 条；收藏及学习卡片保留到用户取消收藏或删除。清空最近记录不会误删显式保存内容。
 - `frontend/src/components/ExtensionWorkbench.vue`：共用工具面板，关闭时取消流并忽略晚到结果；联网操作先显示文字发送说明。
 - `frontend/src/utils/extensions.ts`：换行、隐私框、同尺寸像素比较、卡片渲染和导出文本。图片不上传。

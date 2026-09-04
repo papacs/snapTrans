@@ -16,10 +16,11 @@ $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $normalizedVersion = $Version.TrimStart("v")
 $packageName = "snapTrans-v$normalizedVersion-windows-x64"
 
-$appSource = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "app.go")
+$appVersionPath = Join-Path $repoRoot "internal/desktop/app.go"
+$appSource = Get-Content -Raw -LiteralPath $appVersionPath
 $versionMatch = [regex]::Match($appSource, 'const appVersion = "([^"]+)"')
 if (-not $versionMatch.Success) {
-    throw "Could not read appVersion from app.go"
+    throw "Could not read appVersion from $appVersionPath"
 }
 if ($versionMatch.Groups[1].Value -ne $normalizedVersion) {
     throw "Requested version $normalizedVersion does not match appVersion $($versionMatch.Groups[1].Value)"

@@ -31,5 +31,5 @@ Thanks for considering contributing to snapTrans.
 ## Release Checklist
 
 1. Run the full verification suite (frontend tests, type check, build; `go test ./...`).
-2. Bump `appVersion` in `app.go` and note changes in `docs/RELEASE-NOTES.md`.
+2. Bump `appVersion` in `internal/desktop/app.go` and note changes in `docs/RELEASE-NOTES.md`.
 3. Run `wails build` and smoke-test the packaged exe: capture, translate, settings, tray, quit.

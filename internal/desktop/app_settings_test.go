@@ -1,4 +1,4 @@
-package main
+package desktop
 
 import (
 	"context"
@@ -23,7 +23,7 @@ func TestConnectionUsesUnsavedDraft(t *testing.T) {
 		_, _ = w.Write([]byte("{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}]}"))
 	}))
 	defer server.Close()
-	app := NewApp()
+	app := NewApp(nil)
 	app.cfg = config.Default()
 	previous := app.cfg
 	draft := config.Default()
@@ -90,7 +90,7 @@ func TestOCRCacheDoesNotRetainErrorsOrLateResults(t *testing.T) {
 	require.False(t, cache.valid)
 }
 func TestOCRWorkerTracksActualPathAndTimeout(t *testing.T) {
-	app := NewApp()
+	app := NewApp(nil)
 	cfg := config.Default()
 	cfg.RapidOCRPath = "missing-test-ocr"
 	app.cfg = cfg

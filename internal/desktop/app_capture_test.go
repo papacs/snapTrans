@@ -1,4 +1,4 @@
-package main
+package desktop
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 )
 
 func TestBeginCaptureCoalescesConcurrentRequests(t *testing.T) {
-	app := NewApp()
+	app := NewApp(nil)
 
 	wasVisible, _, started := app.beginCapture()
 	require.True(t, started)
@@ -25,7 +25,7 @@ func TestBeginCaptureCoalescesConcurrentRequests(t *testing.T) {
 }
 
 func TestBeginCaptureOnlyRequestsHideDelayForVisibleWindow(t *testing.T) {
-	app := NewApp()
+	app := NewApp(nil)
 	app.windowVisible = true
 
 	wasVisible, _, started := app.beginCapture()
@@ -36,7 +36,7 @@ func TestBeginCaptureOnlyRequestsHideDelayForVisibleWindow(t *testing.T) {
 }
 
 func TestCaptureWindowPreparationIsReusedOnSameDisplay(t *testing.T) {
-	app := NewApp()
+	app := NewApp(nil)
 
 	require.True(t, app.shouldPrepareCaptureWindow(0, 0))
 	require.False(t, app.shouldPrepareCaptureWindow(0, 0))
@@ -45,7 +45,7 @@ func TestCaptureWindowPreparationIsReusedOnSameDisplay(t *testing.T) {
 }
 
 func TestCaptureWindowPreparationIsInvalidatedForSettings(t *testing.T) {
-	app := NewApp()
+	app := NewApp(nil)
 
 	require.True(t, app.shouldPrepareCaptureWindow(0, 0))
 	app.invalidateCaptureWindowPreparation()
@@ -53,7 +53,7 @@ func TestCaptureWindowPreparationIsInvalidatedForSettings(t *testing.T) {
 }
 
 func TestSettingsRequestWaitsForFrontendReady(t *testing.T) {
-	app := NewApp()
+	app := NewApp(nil)
 
 	require.False(t, app.requestSettingsOpen())
 	require.True(t, app.settingsPending)
@@ -64,7 +64,7 @@ func TestSettingsRequestWaitsForFrontendReady(t *testing.T) {
 }
 
 func TestTranslateRegionRejectsInvalidRegion(t *testing.T) {
-	app := NewApp()
+	app := NewApp(nil)
 
 	require.Error(t, app.TranslateRegion(TranslateRegionRequest{Width: 4, Height: 10}, "to-zh", 1))
 	require.Error(t, app.TranslateRegion(TranslateRegionRequest{X: 0, Y: 0, Width: 20000, Height: 100}, "to-zh", 1))
@@ -72,7 +72,7 @@ func TestTranslateRegionRejectsInvalidRegion(t *testing.T) {
 }
 
 func TestTranslateRegionRequiresCapturedFrame(t *testing.T) {
-	app := NewApp()
+	app := NewApp(nil)
 	app.ctx = context.Background()
 
 	err := app.TranslateRegion(TranslateRegionRequest{X: 0, Y: 0, Width: 100, Height: 100}, "to-zh", 1)

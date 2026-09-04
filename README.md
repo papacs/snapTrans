@@ -293,9 +293,9 @@ go test ./...
 
 ```text
 snapTrans/
-├── app.go                         # Wails 绑定、工作流、托盘与快捷键
-├── screen_windows.go              # Windows 窗口/显示器能力
+├── main.go                        # 进程入口、单实例保护与资源嵌入
 ├── internal/
+│   ├── desktop/                   # Wails 控制器、工作流与 Windows 原生界面
 │   ├── capture/                   # 屏幕捕获、DPI 与显示器元数据
 │   ├── config/                    # 用户配置、默认值与环境变量
 │   ├── hotkeys/                   # 全局快捷键注册
@@ -305,12 +305,14 @@ snapTrans/
 │   ├── autostart/                 # Windows 开机自启
 │   ├── logfile/                   # 本地诊断日志
 │   └── singleinstance/            # 单实例保护
-└── frontend/src/
-    ├── App.vue                    # 捕获、翻译和设置主状态机
-    ├── components/                # 截图标注等独立组件
-    ├── services/backend.ts        # Wails 调用边界与浏览器 fallback
-    ├── utils/selection.ts         # 坐标映射、裁剪与翻译布局
-    └── utils/annotations.ts       # 标注几何与 Canvas 渲染
+├── frontend/src/
+│   ├── App.vue                    # 捕获、翻译和设置主状态机
+│   ├── components/                # 截图标注等独立组件
+│   ├── services/backend.ts        # Wails 调用边界与浏览器 fallback
+│   ├── utils/selection.ts         # 坐标映射、裁剪与翻译布局
+│   └── utils/annotations.ts       # 标注几何与 Canvas 渲染
+├── scripts/                       # 发布包等可复现维护脚本
+└── website/                       # Cloudflare Pages 双语官网
 ```
 
 核心数据流：

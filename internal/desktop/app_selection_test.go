@@ -1,4 +1,4 @@
-package main
+package desktop
 
 import (
 	"github.com/stretchr/testify/require"
@@ -10,7 +10,7 @@ import (
 )
 
 func TestNewCaptureInvalidatesOldSelection(t *testing.T) {
-	app := NewApp()
+	app := NewApp(nil)
 	app.selectedText = &capture.SelectedText{ID: "old"}
 	_, first, started := app.beginCapture()
 	require.True(t, started)
@@ -25,7 +25,7 @@ func TestNewCaptureInvalidatesOldSelection(t *testing.T) {
 	require.ErrorContains(t, app.TranslateSelection("old", "to-zh", 1), "expired")
 }
 func TestClosedCaptureCannotRepublishSource(t *testing.T) {
-	app := NewApp()
+	app := NewApp(nil)
 	_, epoch, _ := app.beginCapture()
 	result := capture.Result{
 		Width: 400, Height: 300, Frame: image.NewRGBA(image.Rect(0, 0, 400, 300)), ImageBytes: []byte("fixture"),
@@ -43,7 +43,7 @@ func TestClosedCaptureCannotRepublishSource(t *testing.T) {
 	require.ErrorContains(t, app.TranslateSelection("current", "to-zh", 1), "expired")
 }
 func TestInvalidSelectionIDDoesNotCancelActiveTranslation(t *testing.T) {
-	app := NewApp()
+	app := NewApp(nil)
 	app.selectedText = &capture.SelectedText{ID: "current"}
 	canceled := false
 	app.processing = func() { canceled = true }

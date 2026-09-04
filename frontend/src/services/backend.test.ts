@@ -6,7 +6,7 @@ describe("native boundary", () => {
  it("sends the draft and autostart together to the desktop", async () => {
   const save = vi.fn(async () => {});
   const test = vi.fn(async () => {});
-  window.go = {main:{App:{SaveSettings:save, TestConnection:test}}} as unknown as Window["go"];
+  window.go = {desktop:{App:{SaveSettings:save, TestConnection:test}}} as unknown as Window["go"];
   const draft = {...defaultConfig, apiKey:"test-key"};
   await saveConfig(draft, true);
   await testConnection(draft);

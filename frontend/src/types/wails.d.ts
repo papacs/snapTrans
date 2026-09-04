@@ -20,7 +20,7 @@ import type {
 declare global {
   interface Window {
     go?: {
-      main?: {
+      desktop?: {
         App?: {
           StartTextAction: (request: import("../services/backend").TextActionRequest) => Promise<void>;
           CancelTextAction: (id: string) => Promise<void>;

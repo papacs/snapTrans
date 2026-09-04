@@ -1,4 +1,4 @@
-package main
+package desktop
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 )
 
 func TestSharedWindowAllowsSettingsScreenshots(t *testing.T) {
-	appOptions := newAppOptions(NewApp())
+	appOptions := NewOptions(NewApp(nil), nil)
 
 	require.NotNil(t, appOptions.Windows)
 	require.True(t, appOptions.StartHidden)

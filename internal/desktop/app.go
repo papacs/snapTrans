@@ -1,8 +1,7 @@
-package main
+package desktop
 
 import (
 	"context"
-	_ "embed"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -29,9 +28,6 @@ import (
 	"github.com/getlantern/systray"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
-
-//go:embed build/windows/icon.ico
-var trayIcon []byte
 
 type workflowError struct {
 	Generation int    `json:"generation"`
@@ -65,7 +61,8 @@ type sentinelPayload struct {
 }
 
 type App struct {
-	ctx context.Context
+	ctx      context.Context
+	trayIcon []byte
 
 	configStore  *config.Store
 	historyStore *history.Store
@@ -107,8 +104,8 @@ type App struct {
 	scrollOverlay    uintptr
 }
 
-func NewApp() *App {
-	return &App{captureAssets: newCaptureAssets()}
+func NewApp(trayIcon []byte) *App {
+	return &App{captureAssets: newCaptureAssets(), trayIcon: trayIcon}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -883,8 +880,8 @@ func (a *App) startTray() {
 }
 
 func (a *App) onTrayReady() {
-	if len(trayIcon) > 0 {
-		systray.SetIcon(trayIcon)
+	if len(a.trayIcon) > 0 {
+		systray.SetIcon(a.trayIcon)
 	}
 	systray.SetTitle("snapTrans")
 	systray.SetTooltip("snapTrans · Select text or capture to translate")

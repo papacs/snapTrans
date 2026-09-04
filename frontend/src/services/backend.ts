@@ -173,7 +173,7 @@ export const defaultConfig: AppConfig = {
 };
 
 export function hasWailsBackend(): boolean {
-  return Boolean(window.go?.main?.App);
+  return Boolean(window.go?.desktop?.App);
 }
 
 export function onBackendEvent<T>(eventName: EventName, callback: Listener<T>): () => void {
@@ -193,7 +193,7 @@ export function onBackendEvent<T>(eventName: EventName, callback: Listener<T>): 
 
 export async function loadConfig(): Promise<AppConfig> {
   if (hasWailsBackend()) {
-    const loaded = await window.go!.main!.App!.LoadConfig();
+    const loaded = await window.go!.desktop!.App!.LoadConfig();
     return normalizeLoadedConfig(loaded);
   }
 
@@ -221,16 +221,16 @@ function normalizeLoadedConfig(loaded: Partial<AppConfig> | null | undefined): A
 
 export async function frontendReady(): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.FrontendReady();
+    await window.go!.desktop!.App!.FrontendReady();
   }
 }
 
 export async function saveConfig(config: AppConfig, autoStart?: boolean): Promise<void> {
   if (hasWailsBackend()) {
     if (autoStart === undefined) {
-      await window.go!.main!.App!.SaveConfig(config);
+      await window.go!.desktop!.App!.SaveConfig(config);
     } else {
-      await window.go!.main!.App!.SaveSettings(config, autoStart);
+      await window.go!.desktop!.App!.SaveSettings(config, autoStart);
     }
     return;
   }
@@ -241,7 +241,7 @@ export async function saveConfig(config: AppConfig, autoStart?: boolean): Promis
 
 export async function triggerCapture(): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.TriggerCapture();
+    await window.go!.desktop!.App!.TriggerCapture();
     return;
   }
 
@@ -250,7 +250,7 @@ export async function triggerCapture(): Promise<void> {
 
 export async function triggerScreenshot(): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.TriggerScreenshot();
+    await window.go!.desktop!.App!.TriggerScreenshot();
     return;
   }
 
@@ -259,7 +259,7 @@ export async function triggerScreenshot(): Promise<void> {
 
 export async function showCaptureWindow(): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.ShowCaptureWindow();
+    await window.go!.desktop!.App!.ShowCaptureWindow();
   }
 }
 
@@ -268,7 +268,7 @@ let fallbackScrollFrames = 1;
 
 export async function beginScrollingScreenshot(region: ScrollCaptureRegion): Promise<ManualScrollStatus> {
   if (hasWailsBackend()) {
-    return window.go!.main!.App!.BeginScrollingScreenshot(region);
+    return window.go!.desktop!.App!.BeginScrollingScreenshot(region);
   }
 
   fallbackScrollRegion = region;
@@ -278,7 +278,7 @@ export async function beginScrollingScreenshot(region: ScrollCaptureRegion): Pro
 
 export async function stepScrollingScreenshot(): Promise<ScrollCaptureStepResult> {
   if (hasWailsBackend()) {
-    return window.go!.main!.App!.StepScrollingScreenshot();
+    return window.go!.desktop!.App!.StepScrollingScreenshot();
   }
   if (!fallbackScrollRegion) {
     throw new Error("no scrolling capture is active");
@@ -294,7 +294,7 @@ export async function stepScrollingScreenshot(): Promise<ScrollCaptureStepResult
 
 export async function finishScrollingScreenshot(): Promise<CapturePayload> {
   if (hasWailsBackend()) {
-    return window.go!.main!.App!.FinishScrollingScreenshot();
+    return window.go!.desktop!.App!.FinishScrollingScreenshot();
   }
   if (!fallbackScrollRegion) {
     throw new Error("no scrolling capture is active");
@@ -306,14 +306,14 @@ export async function finishScrollingScreenshot(): Promise<CapturePayload> {
 
 export async function cancelScrollingScreenshot(): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.CancelScrollingScreenshot();
+    await window.go!.desktop!.App!.CancelScrollingScreenshot();
   }
   fallbackScrollRegion = null;
 }
 
 export async function showSettingsWindow(): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.ShowSettingsWindow();
+    await window.go!.desktop!.App!.ShowSettingsWindow();
   }
 }
 
@@ -323,7 +323,7 @@ export async function processImage(
   generation = 0
 ): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.ProcessImage(base64Crop, direction, generation);
+    await window.go!.desktop!.App!.ProcessImage(base64Crop, direction, generation);
     return;
   }
 
@@ -336,7 +336,7 @@ export async function translateRegion(
   generation = 0
 ): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.TranslateRegion(region, direction, generation);
+    await window.go!.desktop!.App!.TranslateRegion(region, direction, generation);
     return;
   }
 
@@ -345,7 +345,7 @@ export async function translateRegion(
 
 export async function translateSelection(id: string, direction: TranslationDirection, generation: number): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.TranslateSelection(id, direction, generation);
+    await window.go!.desktop!.App!.TranslateSelection(id, direction, generation);
     return;
   }
   throw new Error("Native text selection is only available in the desktop app.");
@@ -353,7 +353,7 @@ export async function translateSelection(id: string, direction: TranslationDirec
 
 export async function extractText(base64Image: string): Promise<OCRResultPayload> {
   if (hasWailsBackend()) {
-    const result = await window.go!.main!.App!.ExtractText(base64Image);
+    const result = await window.go!.desktop!.App!.ExtractText(base64Image);
     return {
       text: typeof result?.text === "string" ? result.text : "",
       blocks: Array.isArray(result?.blocks) ? result.blocks : []
@@ -388,13 +388,13 @@ export function minimizeWindow(): void {
 
 export async function hideWindow(): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.HideWindow();
+    await window.go!.desktop!.App!.HideWindow();
   }
 }
 
 export async function getHistory(): Promise<HistoryEntry[]> {
   if (hasWailsBackend()) {
-    const entries = await window.go!.main!.App!.GetHistory();
+    const entries = await window.go!.desktop!.App!.GetHistory();
     return Array.isArray(entries) ? entries : [];
   }
 
@@ -412,7 +412,7 @@ export async function getHistory(): Promise<HistoryEntry[]> {
 
 export async function clearHistory(): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.ClearHistory();
+    await window.go!.desktop!.App!.ClearHistory();
     return;
   }
 
@@ -422,7 +422,7 @@ export async function clearHistory(): Promise<void> {
 
 export async function testConnection(config: AppConfig): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.TestConnection(config);
+    await window.go!.desktop!.App!.TestConnection(config);
     return;
   }
 
@@ -431,7 +431,7 @@ export async function testConnection(config: AppConfig): Promise<void> {
 
 export async function getEnvironmentStatus(): Promise<EnvironmentStatus> {
   if (hasWailsBackend()) {
-    return window.go!.main!.App!.GetEnvironmentStatus();
+    return window.go!.desktop!.App!.GetEnvironmentStatus();
   }
 
   return {
@@ -445,33 +445,33 @@ export async function getEnvironmentStatus(): Promise<EnvironmentStatus> {
 
 export async function setAutoStart(enabled: boolean): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.SetAutoStart(enabled);
+    await window.go!.desktop!.App!.SetAutoStart(enabled);
   }
 }
 
 export async function isAutoStartEnabled(): Promise<boolean> {
   if (hasWailsBackend()) {
-    return window.go!.main!.App!.IsAutoStartEnabled();
+    return window.go!.desktop!.App!.IsAutoStartEnabled();
   }
   return localStorage.getItem("snaptrans.autostart") === "true";
 }
 
 export async function getVersion(): Promise<string> {
   if (hasWailsBackend()) {
-    return window.go!.main!.App!.GetVersion();
+    return window.go!.desktop!.App!.GetVersion();
   }
   return "browser-preview";
 }
 
 export async function openLogFolder(): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.main!.App!.OpenLogFolder();
+    await window.go!.desktop!.App!.OpenLogFolder();
   }
 }
 
 export async function saveScreenshot(dataUrl: string): Promise<string> {
   if (hasWailsBackend()) {
-    return window.go!.main!.App!.SaveScreenshot(dataUrl);
+    return window.go!.desktop!.App!.SaveScreenshot(dataUrl);
   }
 
   const link = document.createElement("a");
@@ -671,7 +671,7 @@ export interface TextActionRequest { id: string; text: string; action: TextActio
 export interface TextActionEvent { id: string; token?: string; error?: string; done: boolean }
 const fallbackActionTimers = new Map<string, number>();
 export async function startTextAction(request: TextActionRequest): Promise<void> {
-  if (hasWailsBackend()) { await window.go!.main!.App!.StartTextAction(request); return; }
+  if (hasWailsBackend()) { await window.go!.desktop!.App!.StartTextAction(request); return; }
   for (const id of fallbackActionTimers.keys()) await cancelTextAction(id);
   const timer = window.setTimeout(() => {
     fallbackActionTimers.delete(request.id);
@@ -680,17 +680,17 @@ export async function startTextAction(request: TextActionRequest): Promise<void>
   fallbackActionTimers.set(request.id, timer);
 }
 export async function cancelTextAction(id: string): Promise<void> {
-  if (hasWailsBackend()) { await window.go!.main!.App!.CancelTextAction(id); return; }
+  if (hasWailsBackend()) { await window.go!.desktop!.App!.CancelTextAction(id); return; }
   window.clearTimeout(fallbackActionTimers.get(id)); fallbackActionTimers.delete(id);
 }
 export async function setHistoryFavorite(id: string, favorite: boolean): Promise<void> {
-  if (hasWailsBackend()) {await window.go!.main!.App!.SetHistoryFavorite(id,favorite); return;}
+  if (hasWailsBackend()) {await window.go!.desktop!.App!.SetHistoryFavorite(id,favorite); return;}
   const entries = await getHistory(); const entry = entries.find(e=>e.id===id);
   if (!entry) throw new Error("History entry no longer exists");
   entry.favorite=favorite; localStorage.setItem("snaptrans.history",JSON.stringify(entries));
 }
 export async function saveLearningCard(source: string, meaning: string, example: string): Promise<void> {
-  if (hasWailsBackend()) {await window.go!.main!.App!.SaveLearningCard(source,meaning,example); return;}
+  if (hasWailsBackend()) {await window.go!.desktop!.App!.SaveLearningCard(source,meaning,example); return;}
   if (!source.trim() || !meaning.trim()) throw new Error("Original and meaning are required");
   const entries=await getHistory();
   if(entries.some(e=>e.kind==="learning" && e.source===source && e.translation===meaning && e.example===example)) return;
@@ -698,15 +698,15 @@ export async function saveLearningCard(source: string, meaning: string, example:
   localStorage.setItem("snaptrans.history",JSON.stringify(entries));
 }
 export async function deleteSavedEntry(id: string): Promise<void> {
-  if(hasWailsBackend()){await window.go!.main!.App!.DeleteSavedEntry(id);return;}
+  if(hasWailsBackend()){await window.go!.desktop!.App!.DeleteSavedEntry(id);return;}
   localStorage.setItem("snaptrans.history",JSON.stringify((await getHistory()).filter(e=>e.id!==id)));
 }
 export async function pinImage(image: string, x=80, y=80): Promise<void> {
-  if(hasWailsBackend()){await window.go!.main!.App!.PinImage({image,x:Math.round(x),y:Math.round(y)});return;}
+  if(hasWailsBackend()){await window.go!.desktop!.App!.PinImage({image,x:Math.round(x),y:Math.round(y)});return;}
   throw new Error("桌面贴钉仅在 Windows 应用中可用。 / Pins require the Windows desktop app.");
 }
 export async function exportMarkdown(text: string): Promise<string> {
-  if(hasWailsBackend()) return window.go!.main!.App!.ExportMarkdown(text);
+  if(hasWailsBackend()) return window.go!.desktop!.App!.ExportMarkdown(text);
   const url=URL.createObjectURL(new Blob([text],{type:"text/markdown;charset=utf-8"}));
   const link=document.createElement("a");link.href=url;link.download="snapTrans-cards.md";link.click();
   window.setTimeout(()=>URL.revokeObjectURL(url),1000);return link.download;
