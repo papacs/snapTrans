@@ -3,9 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f4f7f4" />
-    <meta name="description" content="snapTrans 是一款面向 Windows 的轻量截图翻译工具：选中文字或框选屏幕，松开鼠标，译文原位流式出现。" />
-    <meta property="og:title" content="snapTrans — 框一下，译文就在原处" />
+    <meta name="theme-color" content="#0b0e0d" />
+    <meta name="description" content="snapTrans 是一款 Windows 截图翻译工具：框选屏幕，松开鼠标，本地 OCR 与流式翻译立即在原处开始。" />
+    <meta property="og:title" content="snapTrans — 看见外语，框一下就懂" />
     <meta property="og:description" content="本地 OCR、原位流式翻译、截图标注与滚动长截图。" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://snaptrans.heyluckyme.com/" />
@@ -13,170 +13,88 @@
     <link rel="canonical" href="https://snaptrans.heyluckyme.com/" />
     <link rel="alternate" hreflang="zh-CN" href="https://snaptrans.heyluckyme.com/" />
     <link rel="alternate" hreflang="en" href="https://snaptrans.heyluckyme.com/en/" />
+    <link rel="alternate" hreflang="x-default" href="https://snaptrans.heyluckyme.com/" />
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/site.webmanifest" />
     <link rel="stylesheet" href="/assets/site.css" />
-    <title>snapTrans — 框一下，译文就在原处</title>
+    <title>snapTrans — 看见外语，框一下就懂</title>
   </head>
   <body>
     <a class="skip-link" href="#main">跳到主要内容</a>
     <header class="site-header" data-header>
       <div class="shell nav-wrap">
-        <a class="brand" href="/" aria-label="snapTrans 首页">
-          <span class="brand-mark" aria-hidden="true">S</span>
-          <span>snapTrans</span>
-        </a>
-        <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" data-nav-toggle>
-          <span></span><span></span>
-          <span class="sr-only">打开导航</span>
-        </button>
+        <a class="brand" href="/" aria-label="snapTrans 首页"><span class="brand-mark" aria-hidden="true"><i></i><i></i></span><span>snapTrans</span></a>
+        <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" data-nav-toggle><span></span><span></span><span class="sr-only">打开导航</span></button>
         <nav class="site-nav" id="site-nav" aria-label="主导航" data-nav>
-          <a href="#workflow">怎么用</a>
-          <a href="#features">功能</a>
-          <a href="#privacy">隐私</a>
-          <a href="#pricing">价格</a>
-          <a href="/support">帮助</a>
-          <a class="lang-switch" href="/en/" lang="en">EN</a>
-          <a class="nav-github" href="https://github.com/papacs/snapTrans" rel="noreferrer">GitHub</a>
+          <a href="#workflow">工作方式</a><a href="#features">能力</a><a href="#privacy">隐私</a><a href="#pricing">价格</a><a href="/support">帮助</a><a class="lang-switch" href="/en/" lang="en">EN</a><a class="nav-download" href="https://github.com/papacs/snapTrans/releases/latest" rel="noreferrer">下载 v0.2.0 <span>↗</span></a>
         </nav>
       </div>
     </header>
 
     <main id="main">
-      <section class="hero shell">
-        <div class="hero-copy reveal">
-          <div class="eyebrow"><span></span>Windows 10 / 11</div>
-          <h1>框一下，<br /><em>译文就在原处。</em></h1>
-          <p class="hero-lead">选中文字，或者框选屏幕。松开鼠标后，本地 OCR 与流式翻译立刻开始，不再多点一次确认。</p>
-          <div class="hero-actions">
-            <a class="button primary" href="mailto:admin@heyluckyme.com?subject=snapTrans%20首发通知">获取首发通知</a>
-            <a class="button secondary" href="https://github.com/papacs/snapTrans" rel="noreferrer">查看源代码 <span aria-hidden="true">↗</span></a>
+      <section class="hero">
+        <div class="shell hero-grid">
+          <div class="hero-copy reveal">
+            <p class="eyebrow"><span>Windows 10 / 11</span><span>开源</span><span>本地 OCR</span></p>
+            <h1>看见外语，<br /><em>框一下就懂。</em></h1>
+            <p class="hero-lead">不用截图、粘贴、切窗口。选中文字或框住屏幕，松开鼠标，译文就在原处流式出现。</p>
+            <div class="hero-actions"><a class="button button-light" href="https://github.com/papacs/snapTrans/releases/latest" rel="noreferrer">下载 Windows 版 <span aria-hidden="true">↓</span></a><a class="button button-line" href="https://github.com/papacs/snapTrans" rel="noreferrer">查看 GitHub <span aria-hidden="true">↗</span></a></div>
+            <p class="availability"><span class="status-dot"></span>v0.2.0 已发布 · Microsoft Store 版本准备中</p>
           </div>
-          <p class="availability"><span class="status-dot"></span>Microsoft Store 版本准备中 · 当前核心功能免费</p>
-        </div>
-        <div class="hero-visual reveal delay-1">
-          <div class="window-chrome" aria-hidden="true">
-            <i></i><i></i><i></i><span>翻译结果</span>
+          <div class="hero-product reveal delay-1">
+            <div class="product-label"><span>LIVE / TRANSLATION</span><strong>Alt + Q</strong></div>
+            <div class="capture-frame"><span class="corner corner-tl"></span><span class="corner corner-tr"></span><span class="corner corner-bl"></span><span class="corner corner-br"></span><img src="/assets/translation.png" alt="snapTrans 在网页选区内原位显示中文翻译结果" width="1120" height="720" /></div>
+            <div class="process-rail" role="group" aria-label="翻译步骤"><span><b>01</b> 框选</span><span><b>02</b> 松开</span><span><b>03</b> 原位阅读</span></div>
           </div>
-          <img src="/assets/translation.png" alt="snapTrans 在网页选区内原位显示中文翻译结果" width="1120" height="720" />
-          <div class="floating-note"><strong>Alt + Q</strong><span>选词或框选翻译</span></div>
         </div>
       </section>
 
-      <section class="proof-strip" aria-label="产品特点">
-        <div class="shell proof-grid">
-          <div><strong>本地 OCR</strong><span>截图像素留在电脑里</span></div>
-          <div><strong>原位流式</strong><span>不用切换窗口找译文</span></div>
-          <div><strong>密钥自持</strong><span>兼容 OpenAI API 服务</span></div>
-          <div><strong>零遥测</strong><span>不收集使用行为</span></div>
-        </div>
-      </section>
+      <section class="signal-strip" aria-label="产品特点"><div class="shell signal-grid"><div><span>01</span><strong>本地识别</strong><small>截图像素不离开电脑</small></div><div><span>02</span><strong>原位翻译</strong><small>保持当前阅读上下文</small></div><div><span>03</span><strong>密钥自持</strong><small>兼容 OpenAI API 服务</small></div><div><span>04</span><strong>没有遥测</strong><small>不收集使用行为</small></div></div></section>
 
-      <section class="section shell" id="workflow">
-        <div class="section-heading reveal">
-          <p class="kicker">不离开当前窗口</p>
-          <h2>一次动作，完成整段翻译。</h2>
-          <p>snapTrans 把截图、识别、翻译和阅读压缩进同一个手势里。</p>
-        </div>
-        <ol class="steps">
-          <li class="reveal"><span>01</span><div><h3>按下快捷键</h3><p>默认使用 Alt + Q。已有文字选区时直接读取，否则进入截图框选。</p></div></li>
-          <li class="reveal delay-1"><span>02</span><div><h3>松开鼠标</h3><p>没有确认按钮。选区完成后立刻开始本地 OCR 与方向判断。</p></div></li>
-          <li class="reveal delay-2"><span>03</span><div><h3>原位阅读</h3><p>译文在原选区内流式出现，复制、反向翻译或继续当前工作。</p></div></li>
+      <section class="section workflow shell" id="workflow">
+        <div class="section-index reveal"><span>01</span><p>核心工作流</p></div>
+        <div class="section-intro reveal"><p class="kicker">快，不是少一个按钮</p><h2>翻译不该打断阅读。</h2><p>snapTrans 把截图、OCR、翻译和结果展示压缩进同一个动作。没有确认弹窗，也不用寻找另一个输入框。</p></div>
+        <ol class="workflow-list">
+          <li class="reveal"><span>01</span><div><h3>按下快捷键</h3><p>默认 Alt + Q。有可靠文字选区时直接读取，否则进入屏幕框选。</p></div><kbd>Alt + Q</kbd></li>
+          <li class="reveal"><span>02</span><div><h3>松开鼠标</h3><p>本地 RapidOCR 立即识别文字，并判断翻译方向。</p></div><i>0 次确认</i></li>
+          <li class="reveal"><span>03</span><div><h3>继续阅读</h3><p>译文在原选区内逐字出现。复制、反向翻译，或者直接继续工作。</p></div><i>原位显示</i></li>
         </ol>
       </section>
 
-      <section class="section feature-section" id="features">
-        <div class="shell">
-          <div class="section-heading split reveal">
-            <div><p class="kicker">为真实工作流设计</p><h2>截图只是入口，理解才是结果。</h2></div>
-            <p>从外语网页、软件界面到规则表格，不用把内容搬进另一个翻译窗口。</p>
+      <section class="section capability-section" id="features"><div class="shell">
+        <div class="section-index light reveal"><span>02</span><p>不止翻译</p></div>
+        <div class="capability-heading reveal"><h2>为屏幕上的内容而做。</h2><p>外语网页、桌面软件、长页面和规则表格，都从同一个熟悉的框选动作开始。</p></div>
+        <div class="capability-layout">
+          <figure class="editor-shot reveal"><img src="/assets/annotation.png" alt="snapTrans 截图编辑器展示矩形、箭头和工具栏标注" loading="lazy" /><figcaption><span>CAPTURE MODE</span><b>Alt + W</b></figcaption></figure>
+          <div class="capability-list">
+            <article class="reveal"><span>01</span><div><h3>截图与标注</h3><p>矩形、圆形、箭头、文字、画笔、马赛克和序号标注；工具栏贴着选区，不遮挡内容。</p></div></article>
+            <article class="reveal"><span>02</span><div><h3>滚动长截图</h3><p>自己控制滚动节奏，实时查看拼接结果，页面到哪就停在哪。</p></div></article>
+            <article class="reveal"><span>03</span><div><h3>表格提取</h3><p>本地识别规则表格，检查单元格后复制为 TSV 或 Markdown。</p></div></article>
+            <article class="reveal"><span>04</span><div><h3>多屏与高 DPI</h3><p>面向混合缩放比例和多显示器校准选区坐标，减少截图偏移。</p></div></article>
           </div>
-          <div class="feature-grid">
-            <article class="feature-card feature-main reveal">
-              <div class="feature-copy"><span class="chip">核心体验</span><h3>本地识别，流式翻译</h3><p>RapidOCR 在本机提取文字，只把识别后的文本发送给你选择的模型服务。支持 DeepSeek、LiteLLM 与其他 OpenAI-compatible API。</p></div>
-              <img src="/assets/translation.png" alt="英文网页被框选后在原处显示中文译文" loading="lazy" />
-            </article>
-            <article class="feature-card reveal delay-1">
-              <div class="icon-box">↗</div><h3>截图与标注</h3><p>矩形、圆形、箭头、文字、画笔、马赛克和序号标注，工具栏始终贴着选区。</p>
-            </article>
-            <article class="feature-card reveal delay-2">
-              <div class="icon-box">↕</div><h3>滚动长截图</h3><p>手动控制滚动节奏，实时预览拼接结果，随时结束并继续标注。</p>
-            </article>
-            <article class="feature-card reveal">
-              <div class="icon-box">▦</div><h3>表格提取</h3><p>本地 OCR 推断规则表格，检查和编辑单元格后复制为 TSV 或 Markdown。</p>
-            </article>
-            <article class="feature-card reveal delay-1">
-              <div class="icon-box">⌁</div><h3>多屏与高 DPI</h3><p>针对 Windows 多显示器与缩放比例做坐标映射，减少框选与结果位置偏移。</p>
-            </article>
-          </div>
-          <figure class="product-shot reveal">
-            <img src="/assets/annotation.png" alt="snapTrans 截图编辑器展示矩形与箭头标注" loading="lazy" />
-            <figcaption><span>Alt + W</span> 截图、标注或向下滚动拼接</figcaption>
-          </figure>
         </div>
+      </div></section>
+
+      <section class="section privacy-section" id="privacy"><div class="shell privacy-layout">
+        <div class="section-index reveal"><span>03</span><p>数据边界</p></div>
+        <div class="privacy-statement reveal"><p class="kicker">隐私不是一句口号</p><h2>截图留在电脑。<br />模型只看到文字。</h2><p>捕获与 OCR 全程在本地进行。只有当你主动翻译、解释或摘要时，识别出的文字才会发送到你自己配置的模型服务。</p><a class="text-link" href="/privacy">查看完整隐私政策 <span>→</span></a></div>
+        <div class="privacy-facts reveal delay-1"><div><strong>LOCAL</strong><p>RapidOCR 在本机运行，不上传截图像素。</p></div><div><strong>ENCRYPTED</strong><p>API Key 使用 Windows DPAPI 加密保存在当前设备。</p></div><div><strong>YOUR PROVIDER</strong><p>DeepSeek、自建 LiteLLM 或其他兼容端点，由你决定。</p></div><div><strong>NO TELEMETRY</strong><p>没有产品分析；诊断日志只写在本机。</p></div></div>
+      </div></section>
+
+      <section class="section pricing-section shell" id="pricing">
+        <div class="section-index reveal"><span>04</span><p>简单定价</p></div>
+        <div class="pricing-layout"><div class="pricing-copy reveal"><p class="kicker">核心功能始终可用</p><h2>先免费用。<br />喜欢，再支持。</h2><p>你使用自己的 API Key，snapTrans 不限制截图或翻译次数。支持者计划只关闭提醒并增加标识，不锁住核心功能。</p></div><div class="price-ticket reveal delay-1"><div class="ticket-top"><span>SUPPORTER / ONE TIME</span><span>计划中</span></div><strong><sup>¥</sup>39</strong><ul><li>一次购买，不自动续费</li><li>关闭支持提醒</li><li>获得支持者标识</li><li>核心功能对所有人开放</li></ul><a class="button button-dark" href="mailto:admin@heyluckyme.com?subject=snapTrans%20支持者计划">上线时告诉我 <span>→</span></a></div></div>
       </section>
 
-      <section class="section privacy-section" id="privacy">
-        <div class="shell privacy-grid">
-          <div class="privacy-copy reveal">
-            <p class="kicker">隐私说明，不绕弯子</p>
-            <h2>你的截图，留在你的电脑。</h2>
-            <p>截图与 OCR 都在本地完成。只有在你主动翻译、解释或摘要时，识别出的文字才会发送给你配置的模型服务。</p>
-            <a class="text-link" href="/privacy">阅读完整隐私政策 <span>→</span></a>
-          </div>
-          <div class="privacy-list reveal delay-1">
-            <div><span>01</span><p><strong>不上传截图</strong>模型服务接收文字，不接收截图像素。</p></div>
-            <div><span>02</span><p><strong>密钥本地加密</strong>API Key 使用 Windows DPAPI 加密保存。</p></div>
-            <div><span>03</span><p><strong>没有遥测</strong>应用不发送行为统计，诊断日志只写在本机。</p></div>
-            <div><span>04</span><p><strong>由你选择服务商</strong>可以使用 DeepSeek、自建 LiteLLM 或其他兼容端点。</p></div>
-          </div>
-        </div>
+      <section class="section faq-section shell">
+        <div class="section-index reveal"><span>05</span><p>常见问题</p></div>
+        <div class="faq-layout"><h2 class="reveal">开始前，<br />你可能想知道。</h2><div class="faq-list"><details class="reveal"><summary>一定要配置 API Key 吗？</summary><p>截图和本地 OCR 不需要。在线翻译需要配置 DeepSeek、LiteLLM 或其他 OpenAI-compatible 服务的 API Key，服务商可能单独收费。</p></details><details class="reveal"><summary>截图会被发送给模型吗？</summary><p>不会。RapidOCR 在电脑本地识别截图，翻译时只发送识别出来的文字。</p></details><details class="reveal"><summary>支持 macOS 吗？</summary><p>当前目标是 Windows 10/11。macOS 版本在规划中，截图权限、快捷键和密钥存储需要分别适配。</p></details><details class="reveal"><summary>Microsoft Store 版本什么时候上线？</summary><p>正在准备商店认证。现在可以先从 GitHub Releases 下载 v0.2.0。</p></details></div></div>
       </section>
 
-      <section class="section shell" id="pricing">
-        <div class="pricing-card reveal">
-          <div>
-            <p class="kicker">价格从第一天就简单</p>
-            <h2>核心功能，免费使用。</h2>
-            <p>用户使用自己的 API Key，因此 snapTrans 不限制截图或翻译次数。一次性支持者计划将在正式发布后推出，不自动续费。</p>
-          </div>
-          <div class="price-box">
-            <span>计划价格</span>
-            <strong>¥39 <small>/ 一次性</small></strong>
-            <p>关闭支持提醒，并获得支持者标识。不会锁住核心功能。</p>
-            <a class="button dark" href="mailto:admin@heyluckyme.com?subject=snapTrans%20支持者计划">告诉我上线时间</a>
-          </div>
-        </div>
-      </section>
-
-      <section class="section shell faq-section">
-        <div class="section-heading reveal"><p class="kicker">常见问题</p><h2>开始前，你可能想知道。</h2></div>
-        <div class="faq-list">
-          <details class="reveal"><summary>一定要配置 API Key 吗？</summary><p>截图和本地 OCR 不需要。在线翻译需要配置 DeepSeek、LiteLLM 或其他 OpenAI-compatible 服务的 API Key。服务商可能单独收费。</p></details>
-          <details class="reveal"><summary>截图会被发送给模型吗？</summary><p>不会。RapidOCR 在电脑本地识别截图，翻译时只发送识别出来的文字。你主动使用解释、摘要等功能时也只发送文字。</p></details>
-          <details class="reveal"><summary>支持 macOS 吗？</summary><p>当前正式目标是 Windows 10/11。macOS 版本在规划中，系统截图、权限、快捷键和密钥存储需要分别适配。</p></details>
-          <details class="reveal"><summary>什么时候可以从 Microsoft Store 下载？</summary><p>正在准备 MSIX 打包、隐私材料和商店认证。可以邮件联系我们，获取首发通知。</p></details>
-        </div>
-      </section>
-
-      <section class="final-cta">
-        <div class="shell reveal">
-          <p class="kicker">不打断，就更快</p>
-          <h2>少截一点，理解快一点。</h2>
-          <div><a class="button light" href="mailto:admin@heyluckyme.com?subject=snapTrans%20首发通知">获取首发通知</a><a class="button ghost" href="https://github.com/papacs/snapTrans" rel="noreferrer">GitHub ↗</a></div>
-        </div>
-      </section>
+      <section class="final-cta"><div class="shell reveal"><div><span>snapTrans / Windows</span><h2>少切一次窗口，<br />多留一点注意力。</h2></div><a class="button button-light" href="https://github.com/papacs/snapTrans/releases/latest" rel="noreferrer">下载 Windows 版 <span>↓</span></a></div></section>
     </main>
 
-    <footer class="site-footer">
-      <div class="shell footer-grid">
-        <div><a class="brand" href="/"><span class="brand-mark">S</span><span>snapTrans</span></a><p>Capture less. Understand faster.</p></div>
-        <div><strong>产品</strong><a href="#features">功能</a><a href="#privacy">隐私</a><a href="#pricing">价格</a></div>
-        <div><strong>支持</strong><a href="/support">使用帮助</a><a href="mailto:admin@heyluckyme.com">联系我们</a><a href="https://github.com/papacs/snapTrans/issues" rel="noreferrer">反馈问题</a></div>
-        <div><strong>法律</strong><a href="/privacy">隐私政策</a><a href="/terms">服务条款</a><a href="https://github.com/papacs/snapTrans/blob/main/LICENSE" rel="noreferrer">开源许可</a></div>
-      </div>
-      <div class="shell footer-bottom"><span>© <span data-year>2026</span> snapTrans contributors</span><span>admin@heyluckyme.com</span></div>
-    </footer>
+    <footer class="site-footer"><div class="shell footer-grid"><div><a class="brand" href="/"><span class="brand-mark"><i></i><i></i></span><span>snapTrans</span></a><p>屏幕上的内容，原地读懂。</p></div><div><strong>产品</strong><a href="#features">能力</a><a href="#privacy">隐私</a><a href="#pricing">价格</a><a href="https://github.com/papacs/snapTrans/releases/latest">下载</a></div><div><strong>支持</strong><a href="/support">使用帮助</a><a href="mailto:admin@heyluckyme.com">联系我们</a><a href="https://github.com/papacs/snapTrans/issues" rel="noreferrer">反馈问题</a></div><div><strong>法律</strong><a href="/privacy">隐私政策</a><a href="/terms">服务条款</a><a href="https://github.com/papacs/snapTrans/blob/main/LICENSE" rel="noreferrer">开源许可</a></div></div><div class="shell footer-bottom"><span>© <span data-year>2026</span> snapTrans contributors</span><span>admin@heyluckyme.com</span></div></footer>
     <script src="/assets/site.js" defer></script>
   </body>
 </html>
