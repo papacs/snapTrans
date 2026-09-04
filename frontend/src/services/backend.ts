@@ -54,7 +54,6 @@ export interface ManualScrollStatus {
 }
 
 export interface ScrollCaptureStepResult {
-  currentImage: string;
   previewImage: string;
   frames: number;
   width: number;
@@ -285,7 +284,6 @@ export async function stepScrollingScreenshot(): Promise<ScrollCaptureStepResult
     throw new Error("no scrolling capture is active");
   }
   return {
-    currentImage: "",
     previewImage: "",
     frames: fallbackScrollFrames,
     width: fallbackScrollRegion.width,

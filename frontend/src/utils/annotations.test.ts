@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { renderAnnotation, toolbarPosition } from "./annotations";
+import { nextStepNumber, renderAnnotation, toolbarPosition } from "./annotations";
 
 describe("toolbarPosition", () => {
   it("right-aligns the toolbar below the selection when space is available", () => {
@@ -64,5 +64,45 @@ describe("arrow rendering", () => {
     expect(fill).toHaveBeenCalledTimes(1);
     const headBase = lineTo.mock.calls.slice(-2);
     expect(Math.abs(headBase[0][1] - headBase[1][1])).toBeGreaterThanOrEqual(18);
+  });
+});
+
+describe("numbered callout rendering", () => {
+  it("reuses the last number after undoing the last callout", () => {
+    const first = { tool: "step" as const, point: { x: 10, y: 10 }, number: 1, color: "#ef4444", fontSize: 18 };
+    const second = { tool: "step" as const, point: { x: 20, y: 20 }, number: 2, color: "#ef4444", fontSize: 18 };
+
+    expect(nextStepNumber([first, second])).toBe(3);
+    expect(nextStepNumber([first])).toBe(2);
+  });
+
+  it("draws a filled circular badge with a centered step number", () => {
+    const arc = vi.fn();
+    const fill = vi.fn();
+    const fillText = vi.fn();
+    const stroke = vi.fn();
+    const context = {
+      arc,
+      beginPath: vi.fn(),
+      fill,
+      fillText,
+      measureText: vi.fn(() => ({ actualBoundingBoxAscent: 9, actualBoundingBoxDescent: 3 })),
+      restore: vi.fn(),
+      save: vi.fn(),
+      stroke
+    } as unknown as CanvasRenderingContext2D;
+
+    renderAnnotation(context, {
+      tool: "step",
+      point: { x: 80, y: 60 },
+      number: 3,
+      color: "#ef4444",
+      fontSize: 18
+    });
+
+    expect(arc).toHaveBeenCalledWith(80, 60, 16, 0, Math.PI * 2);
+    expect(fill).toHaveBeenCalledTimes(1);
+    expect(stroke).toHaveBeenCalledTimes(1);
+    expect(fillText).toHaveBeenCalledWith("3", 80, 63);
   });
 });

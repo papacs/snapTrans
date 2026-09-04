@@ -151,19 +151,26 @@ snapTrans 将“截图、识别、翻译、阅读”压缩成一次自然的鼠�
 
 ## 📦 快速开始
 
-### 运行已构建版本
+### 下载发布版
 
-Windows 发布目录应保持如下结构：
+从 [GitHub Releases](https://github.com/papacs/snapTrans/releases) 下载最新的
+`snapTrans-vX.Y.Z-windows-x64.zip` 并完整解压。发布包已经包含 RapidOCR-json
+程序和所需模型，不需要另外下载 OCR 文件。
+
+解压后的目录结构如下：
 
 ```text
-build/bin/
+snapTrans-vX.Y.Z-windows-x64/
 ├── snapTrans.exe
+├── LICENSE
+├── RELEASE-NOTES.md
+├── THIRD-PARTY-NOTICES.md
 └── RapidOCR-json_v0.2.0/
     ├── RapidOCR-json.exe
     └── models/
 ```
 
-1. 运行 `build/bin/snapTrans.exe`，应用会进入系统托盘。
+1. 运行 `snapTrans.exe`，应用会进入系统托盘。
 2. 右键托盘图标，打开 `Settings`。
 3. 配置 API Key、Base URL 和模型名称。
 4. 确认 RapidOCR 路径，保存设置。
@@ -325,7 +332,7 @@ snapTrans/
 - 截图和 OCR 处理保留在本机；翻译服务仅接收 OCR 提取出的文本。
 - API Key 保存在用户本地配置中，不应写入源码或提交到 Git。
 - snapTrans 不包含遥测；错误和耗时只写入本地日志。
-- 发布包需要由使用者自行准备 RapidOCR 程序与模型文件。
+- GitHub Release 便携包包含 RapidOCR-json v0.2.0 及所需模型；源码构建者需要自行准备该依赖。
 
 ## 🤝 参与贡献
 

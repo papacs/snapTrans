@@ -10,18 +10,16 @@ frontend/dist/*
 frontend/wailsjs/
 frontend/package.json.md5
 
-build/bin/*
-!build/bin/snapTrans.exe
-!build/bin/RapidOCR-json_v0.2.0/
-!build/bin/RapidOCR-json_v0.2.0/**
+build/bin/
 build/bin/RapidOCR-json_v0.2.0.7z
 build/*/bin/
 *.exe
 *.dll
 *.so
 *.dylib
-!build/bin/snapTrans.exe
-!build/bin/RapidOCR-json_v0.2.0/RapidOCR-json.exe
+
+# Local release artifacts
+dist/
 
 coverage/
 .vite/

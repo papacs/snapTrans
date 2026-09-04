@@ -147,7 +147,11 @@ func TestManualScrollingSessionEncodesUserScrolledFrames(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, firstStep.Appended)
 	require.Equal(t, 2, firstStep.Frames)
-	require.NotEmpty(t, firstStep.CurrentImageBytes)
+	// The selected area is a native input/rendering hole that already exposes
+	// the live target window. Returning another full-size PNG for that same
+	// area only stalls the next sample; steps should carry the small stitched
+	// preview instead.
+	require.Empty(t, firstStep.CurrentImageBytes)
 	require.NotEmpty(t, firstStep.PreviewImageBytes)
 	secondStep, err := session.CaptureNext()
 	require.NoError(t, err)

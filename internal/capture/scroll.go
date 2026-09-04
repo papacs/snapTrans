@@ -142,7 +142,7 @@ func (session *ManualScrollCapture) CaptureNext() (ManualScrollSnapshot, error) 
 		}, nil
 	}
 
-	return session.snapshotLocked(frame, appended)
+	return session.snapshotLocked(appended)
 }
 
 func (session *ManualScrollCapture) Status() ManualScrollStatus {
@@ -156,18 +156,13 @@ func (session *ManualScrollCapture) Status() ManualScrollStatus {
 	return status
 }
 
-func (session *ManualScrollCapture) snapshotLocked(current image.Image, appended bool) (ManualScrollSnapshot, error) {
-	currentBytes, err := encodePNGBytesWithLevel(current, png.BestSpeed)
-	if err != nil {
-		return ManualScrollSnapshot{}, err
-	}
+func (session *ManualScrollCapture) snapshotLocked(appended bool) (ManualScrollSnapshot, error) {
 	preview := session.stitcher.thumbnail(240, 4096)
 	previewBytes, err := encodePNGBytesWithLevel(preview, png.BestSpeed)
 	if err != nil {
 		return ManualScrollSnapshot{}, err
 	}
 	return ManualScrollSnapshot{
-		CurrentImageBytes: currentBytes,
 		PreviewImageBytes: previewBytes,
 		Frames:            session.stitcher.frameCount(),
 		Width:             session.stitcher.frames[0].Bounds().Dx(),

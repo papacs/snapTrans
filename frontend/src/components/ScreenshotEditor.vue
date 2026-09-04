@@ -9,6 +9,7 @@ import {
   Download,
   Grid3X3,
   LoaderCircle,
+  ListOrdered,
   Table2,
   Pencil,
   ScanText,
@@ -39,6 +40,7 @@ import {
 } from "../services/backend";
 import {
   createPixelatedCanvas,
+  nextStepNumber,
   renderAnnotations,
   toolbarPosition,
   type Annotation,
@@ -85,7 +87,6 @@ const manualScrolling = ref(false);
 const finishingScroll = ref(false);
 const scrollNotice = ref("");
 const scrollProgress = ref<ManualScrollStatus>({ frames: 1, width: 0, height: 0 });
-const currentFrameImage = ref("");
 const stitchedPreviewImage = ref("");
 const scrollStepPending = ref(false);
 const textExtractionOpen = ref(false);
@@ -223,7 +224,8 @@ const toolButtons: Array<{
   { tool: "arrow", label: "箭头", icon: ArrowUpRight },
   { tool: "pen", label: "画笔", icon: Pencil },
   { tool: "mosaic", label: "马赛克", icon: Grid3X3 },
-  { tool: "text", label: "文字", icon: Type }
+  { tool: "text", label: "文字", icon: Type },
+  { tool: "step", label: "序号", icon: ListOrdered }
 ];
 
 onMounted(() => {
@@ -352,6 +354,17 @@ function onMouseDown(event: MouseEvent): void {
     redraw();
     return;
   }
+  if (activeTool.value === "step") {
+    annotations.value.push({
+      tool: "step",
+      point,
+      number: nextStepNumber(annotations.value),
+      color: color.value,
+      fontSize: 18 * scale
+    });
+    redraw();
+    return;
+  }
 
   drawing = true;
   if (activeTool.value === "pen" || activeTool.value === "mosaic") {
@@ -399,8 +412,7 @@ async function captureDownwardScroll(): Promise<void> {
   manualScrolling.value = true;
   scrollNotice.value = "";
   scrollProgress.value = { frames: 1, width: imageRect.width, height: imageRect.height };
-  currentFrameImage.value = baseCanvas?.toDataURL("image/png") ?? "";
-  stitchedPreviewImage.value = currentFrameImage.value;
+  stitchedPreviewImage.value = baseCanvas?.toDataURL("image/png") ?? "";
   await nextTick();
 
   try {
@@ -451,9 +463,8 @@ async function pollScrollingCapture(): Promise<void> {
   try {
     const result = await stepScrollingScreenshot();
     scrollProgress.value = { frames: result.frames, width: result.width, height: result.height };
-    if (result.appended && result.currentImage && result.previewImage) {
-      await Promise.all([preloadImage(result.currentImage), preloadImage(result.previewImage)]);
-      currentFrameImage.value = result.currentImage;
+    if (result.appended && result.previewImage) {
+      await preloadImage(result.previewImage);
       stitchedPreviewImage.value = result.previewImage;
       scrollNotice.value = "";
     }
@@ -805,7 +816,6 @@ function clamp(value: number, min: number, max: number): number {
       :style="editorStyle"
       data-testid="manual-scroll-current"
     >
-      <img :src="currentFrameImage" class="h-full w-full object-fill" alt="当前滚动画面" draggable="false" />
     </div>
 
     <aside

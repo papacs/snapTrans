@@ -1,8 +1,12 @@
-# Release Notes Template
+# snapTrans v0.2.0
 
-Copy this template for each release and fill in the details.
+发布日期：2026-09-04
 
-## v0.2.0 - 2026-08-04
+这是 snapTrans 的首个公开 Windows 便携版。下载
+`snapTrans-v0.2.0-windows-x64.zip` 后完整解压，直接运行 `snapTrans.exe`；
+RapidOCR-json 和所需模型已包含在压缩包内。
+
+此版本尚未进行代码签名，Windows SmartScreen 可能在首次运行时显示未知发布者提示。
 
 ### Added
 
@@ -18,6 +22,9 @@ Copy this template for each release and fill in the details.
 - Retry and Copy OCR actions in the result box
 - Local diagnostic logs (`logs/snaptrans.log`)
 - GitHub Actions CI
+- Screenshot annotations: rectangle, ellipse, arrow, pen, mosaic, text and numbered callouts
+- Manual scrolling capture with a stitched preview
+- Rule-based table extraction with editable TSV / Markdown export
 
 ### Changed
 
@@ -36,6 +43,14 @@ Copy this template for each release and fill in the details.
 
 ### Verification
 
-- [ ] `go test ./...` passes
-- [ ] `cd frontend && npm test && npm run typecheck && npm run build` passes
-- [ ] `wails build` smoke-tested on Windows 10/11
+- [x] `go test ./...` passes
+- [x] `cd frontend && npm test && npm run typecheck && npm run build` passes
+- [x] `wails build` completes on Windows
+
+### Package contents
+
+- `snapTrans.exe`
+- RapidOCR-json v0.2.0 executable and models
+- Project README and setup instructions
+- snapTrans MIT license
+- RapidOCR-json third-party notice and MIT license

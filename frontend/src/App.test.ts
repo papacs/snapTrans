@@ -44,7 +44,6 @@ const backendMocks = vi.hoisted(() => {
       height: 290
     })),
     stepScrollingScreenshot: vi.fn(async () => ({
-      currentImage: "data:image/png;base64,Y3VycmVudA==",
       previewImage: "data:image/png;base64,cHJldmlldw==",
       frames: 2,
       width: 440,
@@ -594,7 +593,7 @@ describe("App capture cancellation", () => {
     expect(backendMocks.stepScrollingScreenshot).toHaveBeenCalledWith();
     expect(backendMocks.showCaptureWindow).toHaveBeenCalledTimes(showCallsBeforePoll);
     expect(wrapper.find("[data-testid='manual-scroll-preview']").text()).toContain("2 帧");
-    expect(wrapper.find("img[alt='当前滚动画面']").attributes("src")).toContain("Y3VycmVudA==");
+    expect(wrapper.find("img[alt='当前滚动画面']").exists()).toBe(false);
     expect(wrapper.find("img[alt='完整滚动截图预览']").attributes("src")).toContain("cHJldmlldw==");
 
     await wrapper.find("[data-testid='manual-scroll-complete']").trigger("click");

@@ -7,8 +7,14 @@
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "http://127.0.0.1:5173",
   "author": {
-    "name": "",
-    "email": ""
+    "name": "snapTrans contributors",
+    "email": "admin@heyluckyme.com"
+  },
+  "info": {
+    "companyName": "snapTrans contributors",
+    "productName": "snapTrans",
+    "productVersion": "0.2.0",
+    "copyright": "Copyright © 2026 snapTrans contributors",
+    "comments": "Local screenshot OCR and in-place translation for Windows"
   }
 }
-

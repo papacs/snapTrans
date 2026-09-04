@@ -351,7 +351,6 @@ type ScrollCaptureRequest struct {
 }
 
 type ScrollCaptureStepResult struct {
-	CurrentImage string `json:"currentImage"`
 	PreviewImage string `json:"previewImage"`
 	Frames       int    `json:"frames"`
 	Width        int    `json:"width"`
@@ -449,9 +448,6 @@ func (a *App) StepScrollingScreenshot() (ScrollCaptureStepResult, error) {
 		Height:       snapshot.Height,
 		Appended:     snapshot.Appended,
 		LimitReached: snapshot.LimitReached,
-	}
-	if len(snapshot.CurrentImageBytes) > 0 {
-		result.CurrentImage = a.captureAssets.Store(snapshot.CurrentImageBytes)
 	}
 	if len(snapshot.PreviewImageBytes) > 0 {
 		result.PreviewImage = a.captureAssets.Store(snapshot.PreviewImageBytes)

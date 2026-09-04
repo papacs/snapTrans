@@ -1,6 +1,6 @@
 import type { Point, Rect, Size } from "./selection";
 
-export type AnnotationTool = "rectangle" | "ellipse" | "arrow" | "pen" | "mosaic" | "text" | "sticker";
+export type AnnotationTool = "rectangle" | "ellipse" | "arrow" | "pen" | "mosaic" | "text" | "sticker" | "step";
 
 export type Annotation =
   | { tool: "redact"; rects: Rect[] }
@@ -23,7 +23,21 @@ export type Annotation =
       text: string;
       color: string;
       fontSize: number;
+    }
+  | {
+      tool: "step";
+      point: Point;
+      number: number;
+      color: string;
+      fontSize: number;
     };
+
+export function nextStepNumber(annotations: Annotation[]): number {
+  return annotations.reduce(
+    (largest, annotation) => annotation.tool === "step" ? Math.max(largest, annotation.number) : largest,
+    0
+  ) + 1;
+}
 
 export function toolbarPosition(
   selection: Rect,
@@ -111,6 +125,9 @@ export function renderAnnotation(
       context.textBaseline = "top";
       context.fillText(annotation.text, annotation.point.x, annotation.point.y);
       break;
+    case "step":
+      drawStepCallout(context, annotation.point, annotation.number, annotation.color, annotation.fontSize);
+      break;
   }
 
   context.restore();
@@ -143,6 +160,31 @@ export function createPixelatedCanvas(source: HTMLCanvasElement, blockSize: numb
 function applyStroke(context: CanvasRenderingContext2D, color: string, width: number): void {
   context.strokeStyle = color;
   context.lineWidth = width;
+}
+
+function drawStepCallout(
+  context: CanvasRenderingContext2D,
+  point: Point,
+  number: number,
+  color: string,
+  fontSize: number
+): void {
+  const radius = Math.max(12, fontSize - 2);
+  context.beginPath();
+  context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+  context.fillStyle = color;
+  context.fill();
+  context.strokeStyle = "#ffffff";
+  context.lineWidth = Math.max(2, fontSize / 8);
+  context.stroke();
+
+  context.fillStyle = "#ffffff";
+  context.font = `700 ${fontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+  context.textAlign = "center";
+  context.textBaseline = "alphabetic";
+  const metrics = context.measureText(String(number));
+  const baselineOffset = (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
+  context.fillText(String(number), point.x, point.y + baselineOffset);
 }
 
 function drawPolyline(context: CanvasRenderingContext2D, points: Point[]): void {
