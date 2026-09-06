@@ -148,6 +148,20 @@ func TestResolveExecutablePathFindsExecutableInsideConfiguredDirectory(t *testin
 	require.Equal(t, rapidOCR, resolved)
 }
 
+func TestResolveExecutablePathFindsBundledFolderFromUnrelatedWorkingDirectory(t *testing.T) {
+	temp := t.TempDir()
+	bin := filepath.Join(temp, "portable app")
+	bundle := filepath.Join(bin, "RapidOCR-json_v0.2.0")
+	require.NoError(t, os.MkdirAll(bundle, 0o755))
+	executable := filepath.Join(bundle, "RapidOCR-json.exe")
+	require.NoError(t, os.WriteFile(executable, []byte("bin"), 0o755))
+
+	resolved, err := ResolveExecutablePath("./RapidOCR-json_v0.2.0", filepath.Join(temp, "unrelated"), filepath.Join(bin, "snapTrans.exe"))
+
+	require.NoError(t, err)
+	require.Equal(t, executable, resolved)
+}
+
 func TestNewRapidOCRCommandUsesImageArgumentAndExecutableDirectory(t *testing.T) {
 	executable := filepath.Join("C:", "tools", "RapidOCR-json_v0.2.0", "RapidOCR-json.exe")
 	imagePath := filepath.Join("C:", "Users", "dell", "AppData", "Local", "Temp", "snaptrans.png")

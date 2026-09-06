@@ -37,7 +37,7 @@ No confirm button should appear between mouse release and translation start.
 3. Run `npm install` inside `frontend/`.
 4. Copy `.env.sample` to `.env`.
 5. Fill `DEEPSEEK_API_KEY`.
-6. Unzip `RapidOCR-json_v0.2.0` next to `build/bin/snapTrans.exe`, or set `RAPIDOCR_EXE_PATH` to the RapidOCR folder or executable path.
+6. On Windows x64, `wails build` / the initial `wails dev` build automatically prepares RapidOCR and models. The first build needs GitHub Releases and npm registry access. To reuse local files without moving them, run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ensure-rapidocr.ps1 -SourceDirectory <OCR folder>` first.
 
 ## Verification
 
@@ -45,4 +45,5 @@ No confirm button should appear between mouse release and translation start.
 - Frontend type check: `cd frontend && npm run typecheck`
 - Frontend build: `cd frontend && npm run build`
 - Backend tests after Go is installed: `go test ./...`
+- OCR dependency setup tests: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ensure-rapidocr.test.ps1`
 - Desktop dev run after Wails is installed: `wails dev`

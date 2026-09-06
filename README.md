@@ -230,7 +230,7 @@ SNAPTRANS_AUTO_COPY=false
 - Go 1.22+
 - Node.js 22+ 与 npm
 - Wails v2 CLI
-- RapidOCR-json v0.2.0
+- RapidOCR-json v0.2.0（Windows x64 构建时自动准备）
 - DeepSeek、LiteLLM 或其他 OpenAI-compatible API 凭据
 
 ### 安装与启动
@@ -266,6 +266,24 @@ cd ..
 
 wails build
 ```
+
+Windows x64 下，`wails build`（以及 `wails dev` 的初次编译）会通过构建钩子自动准备
+RapidOCR-json v0.2.0 和模型，输出到 `build/bin/RapidOCR-json_v0.2.0/`。
+首次需要联网访问 GitHub Releases 和 npm registry；下载固定版本并校验 SHA-256，
+缓存保存在 `build/ocr-cache/`。已有完整 OCR 输出目录时直接复用，无需再次下载。
+下载或解压失败会中止构建并提示原因。
+
+已有项目根目录下的 `RapidOCR-json_v0.2.0/` 会自动复制到构建输出，原目录保留。
+其他位置的完整 OCR 目录也可手动复用，无需移动原文件：
+
+```powershell
+.\scripts\ensure-rapidocr.ps1 -SourceDirectory 'D:\Tools\RapidOCR-json_v0.2.0'
+wails build
+```
+
+分发时请保留 `snapTrans.exe` 同级的整个 OCR 文件夹，或运行
+`.\scripts\package-release.ps1 -Version 0.2.0` 生成包含依赖的 ZIP。
+OCR 二进制、模型和下载缓存均不提交到源码仓库。
 
 ## ✅ 质量验证
 
@@ -334,7 +352,7 @@ snapTrans/
 - 截图和 OCR 处理保留在本机；翻译服务仅接收 OCR 提取出的文本。
 - API Key 保存在用户本地配置中，不应写入源码或提交到 Git。
 - snapTrans 不包含遥测；错误和耗时只写入本地日志。
-- GitHub Release 便携包包含 RapidOCR-json v0.2.0 及所需模型；源码构建者需要自行准备该依赖。
+- GitHub Release 便携包包含 RapidOCR-json v0.2.0 及所需模型；Windows x64 源码构建会自动准备该依赖，首次构建需要联网。
 
 ## 🤝 参与贡献
 

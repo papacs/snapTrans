@@ -29,6 +29,10 @@ if ($versionMatch.Groups[1].Value -ne $normalizedVersion) {
 if (-not [IO.Path]::IsPathRooted($RapidOCRSource)) {
     $RapidOCRSource = Join-Path $repoRoot $RapidOCRSource
 }
+if (-not (Test-Path -LiteralPath $RapidOCRSource) -and
+    [IO.Path]::GetFullPath($RapidOCRSource) -eq [IO.Path]::GetFullPath((Join-Path $repoRoot 'build/bin/RapidOCR-json_v0.2.0'))) {
+    & (Join-Path $PSScriptRoot 'ensure-rapidocr.ps1')
+}
 $rapidOCRPath = (Resolve-Path -LiteralPath $RapidOCRSource).Path
 $rapidOCRExecutable = Join-Path $rapidOCRPath "RapidOCR-json.exe"
 $rapidOCRModels = Join-Path $rapidOCRPath "models"

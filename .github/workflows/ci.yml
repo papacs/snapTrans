@@ -54,3 +54,9 @@ jobs:
         run: npm ci && npm run build
       - name: Build desktop app
         run: wails build
+      - name: Verify OCR build dependency
+        shell: powershell
+        run: |
+          ./scripts/ensure-rapidocr.test.ps1
+          if (-not (Test-Path build/bin/RapidOCR-json_v0.2.0/RapidOCR-json.exe)) { throw 'OCR executable missing from build output' }
+          if (-not (Test-Path build/bin/RapidOCR-json_v0.2.0/models/*.onnx)) { throw 'OCR models missing from build output' }
