@@ -285,3 +285,68 @@ html[lang="zh-CN"] .hero h1 em { white-space: nowrap; }
   .support-grid { grid-template-columns: 1fr; }
   .support-card { min-height: auto; padding: 25px; }
 }
+
+/* A responsive, typeset product preview keeps the translation legible at every size. */
+.hero-product { padding-left: 0; }
+.product-label { left: 0; }
+.reading-demo { position: relative; overflow: hidden; border: 1px solid #4a554c; border-radius: 14px; background: #fafbf6; color: #21382e; box-shadow: 0 32px 90px #0006, 0 0 85px #b8ff3d09; }
+.demo-chrome { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 20px; border-bottom: 1px solid #d8ded4; background: #e9ede5; color: #626e61; font: 11px/1.4 Consolas, monospace; }
+.demo-dots { display: flex; gap: 5px; }
+.demo-dots i { width: 6px; height: 6px; border: 1px solid #929e8b; border-radius: 50%; }
+.demo-page { padding: 25px 35px 22px; background: radial-gradient(ellipse at 100% 0, #eef4e4, transparent 65%), #fafbf6; }
+.demo-masthead { display: flex; justify-content: space-between; align-items: center; padding-bottom: 22px; margin-bottom: 29px; border-bottom: 1px solid #dbe2d5; font: 10px/1.4 Consolas, monospace; letter-spacing: 0.1em; color: #6a7768; }
+.demo-masthead > span:first-child { display: flex; align-items: center; gap: 7px; color: #2a4939; font-weight: 700; letter-spacing: 0.17em; }
+.demo-masthead i { width: 7px; height: 12px; border-radius: 5px; background: #42694c; }
+.demo-category { margin-bottom: 13px; color: #6c7c60; font: 10px/1.3 Consolas, monospace; letter-spacing: 0.13em; }
+.demo-page h3 { margin-bottom: 12px; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(27px, 2.6vw, 38px); font-weight: 400; line-height: 1.13; letter-spacing: -0.045em; }
+.demo-deck { margin-bottom: 35px; color: #75816f; font-size: 12px; }
+.demo-selection { position: relative; padding: 20px 23px; border: 1px solid #6b9942; background: #f2f7eb; box-shadow: 0 10px 30px #3556230a; }
+.selection-tag { position: absolute; top: -12px; right: 12px; padding: 3px 9px; color: #253b15; background: #c4f58b; border-radius: 4px; font-size: 10px; line-height: 1.6; }
+.selection-handle { position: absolute; width: 6px; height: 6px; border: 1px solid #59822f; background: #fff; }
+.handle-tl { top: -3px; left: -3px; }.handle-tr { top: -3px; right: -3px; }.handle-bl { bottom: -3px; left: -3px; }.handle-br { bottom: -3px; right: -3px; }
+.demo-original { margin-bottom: 16px; color: #687861; font-family: Georgia, 'Times New Roman', serif; font-size: 15px; line-height: 1.6; }
+.demo-translation { padding-top: 13px; border-top: 1px solid #d6e3c8; }
+.translation-label { color: #567044; font: 9px/1.5 Consolas, monospace; letter-spacing: 0.08em; }
+.demo-translation p { margin: 7px 0 0; color: #233d29; font-size: clamp(17px, 1.6vw, 22px); font-weight: 500; line-height: 1.75; letter-spacing: 0.02em; }
+.demo-caret { display: inline-block; height: 1em; width: 2px; margin-left: 5px; vertical-align: -0.08em; background: #5b8e30; }
+.demo-bottom { display: flex; justify-content: space-between; gap: 10px; margin-top: 26px; color: #73816b; font-size: 10px; }
+.demo-status { display: flex; justify-content: space-between; gap: 10px; padding: 12px 20px; color: #b9c6b7; background: #1b281f; font-size: 10px; }
+.demo-status > span:first-child { display: flex; align-items: center; gap: 7px; }
+.demo-status i { width: 5px; height: 5px; border-radius: 50%; background: var(--signal); }
+.demo-status > span:last-child { color: #d6e6cd; font-weight: 600; }
+@media (max-width: 1040px) {
+  .hero-product { width: 100%; max-width: 720px; margin-inline: auto; }
+  .demo-page h3 { font-size: 38px; }
+  .demo-translation p { font-size: 22px; }
+}
+@media (max-width: 540px) {
+  .demo-chrome { padding: 12px; font-size: 9px; }
+  .demo-page { padding: 23px 19px 18px; }
+  .demo-masthead { font-size: 8px; margin-bottom: 23px; }
+  .demo-page h3 { font-size: 29px; }
+  .demo-selection { padding: 19px 14px; }
+  .demo-translation p { font-size: 17px; }
+  .demo-status { padding-inline: 13px; }
+}
+/* Optional, one-time support: amounts are suggestions, QR codes remain originals. */
+.support-panel { padding: 32px; border: 1px solid #c5d2bb; border-radius: 16px; background: #eef3e7; }
+.support-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; color: #4e6840; font: 600 10px/1.5 Consolas, monospace; letter-spacing: .1em; }
+.support-heading > span:last-child { font-size: 27px; }
+.support-panel h3 { margin-bottom: 12px; font-size: 27px; line-height: 1.25; letter-spacing: -.03em; }
+.support-panel > p { color: #53604d; font-size: 14px; }
+.support-amounts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 23px 0 17px; }
+.support-amounts > span { padding: 6px 13px; border: 1px solid #c3d1b6; border-radius: 6px; color: #355123; background: #f9fbf5; font-size: 15px; font-weight: 600; }
+.support-amounts small { width: 100%; margin-top: 3px; color: #617056; font-size: 11px; }
+.support-panel .support-promise { line-height: 1.9; }
+.support-methods { display: grid; gap: 10px; margin-top: 23px; }
+.support-method { overflow: hidden; border: 1px solid #bccdae; border-radius: 8px; background: #fafcf7; }
+.support-method summary { display: flex; align-items: center; justify-content: space-between; padding: 13px 17px; color: #263d1d; font-size: 14px; font-weight: 650; cursor: pointer; list-style: none; }
+.support-method summary::-webkit-details-marker { display: none; }
+.support-method summary:hover { background: #e5efda; }
+.support-method summary:focus-visible, .support-code a:focus-visible { outline: 2px solid #426d2c; outline-offset: -3px; }
+.support-method[open] summary > span { transform: rotate(45deg); }
+.support-code { padding: 5px 17px 18px; text-align: center; }
+.support-code img { width: min(100%, 280px); height: auto; margin: 0 auto 12px; }
+.support-code a { display: inline-block; margin: 4px 9px; color: #315620; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+.support-panel .support-help { margin: 18px 0 0; color: #627059; font-size: 12px; line-height: 1.8; }
+@media (max-width: 540px) { .support-panel { padding: 23px; }.support-panel h3 { font-size: 24px; } }

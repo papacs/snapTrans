@@ -16,7 +16,7 @@
     <link rel="alternate" hreflang="x-default" href="https://snaptrans.heyluckyme.com/" />
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/site.webmanifest" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260904" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260908-support" />
     <title>snapTrans — See it. Select it. Understand it.</title>
   </head>
   <body>
@@ -39,11 +39,27 @@
             <h1>See it.<br /><em>Select it. Understand it.</em></h1>
             <p class="hero-lead">No screenshot, paste, or window switching. Select text or draw around the screen, release the mouse, and read the translation where the original was.</p>
             <div class="hero-actions"><a class="button button-light" href="https://github.com/papacs/snapTrans/releases/latest" rel="noreferrer">Download for Windows <span aria-hidden="true">↓</span></a><a class="button button-line" href="https://github.com/papacs/snapTrans" rel="noreferrer">View on GitHub <span aria-hidden="true">↗</span></a></div>
-            <p class="availability"><span class="status-dot"></span>v0.2.0 available · Microsoft Store release in progress</p>
+            <p class="availability"><span class="status-dot"></span>v0.2.0 available</p>
           </div>
           <div class="hero-product reveal delay-1">
-            <div class="product-label"><span>LIVE / TRANSLATION</span><strong>Alt + Q</strong></div>
-            <div class="capture-frame"><span class="corner corner-tl"></span><span class="corner corner-tr"></span><span class="corner corner-bl"></span><span class="corner corner-br"></span><img src="/assets/translation.png" alt="snapTrans displays a Chinese translation directly inside a selected webpage region" width="1120" height="720" /></div>
+            <div class="product-label"><span>IN-PLACE / PREVIEW</span><strong>Alt + Q</strong></div>
+            <div class="reading-demo" role="img" aria-label="Illustrated preview of English text translated into Chinese within the selected region">
+              <div class="demo-chrome"><span class="demo-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>fieldnotes / reading room</span><span aria-hidden="true">↗</span></div>
+              <div class="demo-page">
+                <div class="demo-masthead"><span><i></i> FIELDNOTES</span><span>ESSAYS / 004</span></div>
+                <p class="demo-category">ON TOOLS &amp; ATTENTION</p>
+                <h3 lang="en">A little less switching.<br />A little more focus.</h3>
+                <p class="demo-deck" lang="en">Good tools make room for what matters.</p>
+                <div class="demo-selection">
+                  <span class="selection-tag">RELEASE → TRANSLATE</span>
+                  <span class="selection-handle handle-tl"></span><span class="selection-handle handle-tr"></span><span class="selection-handle handle-bl"></span><span class="selection-handle handle-br"></span>
+                  <p class="demo-original" lang="en">Stay with the words.<br />Let the translation come to you.</p>
+                  <div class="demo-translation"><span class="translation-label">EN → 简体中文</span><p lang="zh-CN">让注意力，留在内容上。<br />让翻译，来到你眼前。<span class="demo-caret" aria-hidden="true"></span></p></div>
+                </div>
+                <div class="demo-bottom"><span>Keep reading. Stay in context.</span><span>01 / 03</span></div>
+              </div>
+              <div class="demo-status"><span><i></i>Local OCR · In-place translation</span><span>snapTrans</span></div>
+            </div>
             <div class="process-rail" role="group" aria-label="Translation steps"><span><b>01</b> Select</span><span><b>02</b> Release</span><span><b>03</b> Read in place</span></div>
           </div>
         </div>
@@ -83,7 +99,21 @@
 
       <section class="section pricing-section shell" id="pricing">
         <div class="section-index reveal"><span>04</span><p>Open source &amp; sponsorship</p></div>
-        <div class="pricing-layout"><div class="pricing-copy reveal"><p class="kicker">MIT licensed · Free forever</p><h2>Free to use.<br />Sponsor it if you like it.</h2><p>snapTrans itself is free and does not meter capture, OCR, translation, or markup. Online translation uses your own API key; any usage charges come only from the model provider you choose.</p></div><div class="price-ticket reveal delay-1"><div class="ticket-top"><span>VOLUNTARY SPONSORSHIP</span><span>In preparation</span></div><strong><sup>$</sup>5.99</strong><ul><li>Suggested amount, entirely optional</li><li>A one-time sponsorship, not a purchase</li><li>Sponsorship never changes available features</li><li>Helps cover maintenance, signing, and releases</li></ul><a class="button button-dark" href="mailto:admin@heyluckyme.com?subject=snapTrans%20sponsorship%20updates">Tell me when sponsorship opens <span>→</span></a></div></div>
+        <div class="pricing-layout">
+          <div class="pricing-copy reveal"><p class="kicker">MIT licensed · Free forever</p><h2>Free to use.<br />A little thanks goes a long way.</h2><p>snapTrans itself is free and does not meter capture, OCR, translation, or markup. Online translation uses your own API key; any usage charges come only from the model provider you choose.</p></div>
+          <div class="support-panel reveal delay-1">
+            <div class="support-heading"><span>SUPPORT THE PROJECT</span><span aria-hidden="true">☕</span></div>
+            <h3>Buy the developer a coffee</h3>
+            <p>If snapTrans helps you, a small tip helps keep the project maintained.</p>
+            <div class="support-amounts"><span>¥5</span><span>¥10</span><span>¥20</span><small>Suggestions in CNY · Any amount</small></div>
+            <p class="support-promise">One-time · Optional · No subscription<br />All features stay free for everyone.</p>
+            <div class="support-methods">
+              <details class="support-method"><summary>Support via WeChat <span aria-hidden="true">＋</span></summary><div class="support-code"><img src="/assets/support-wechat.jpg" alt="Developer's WeChat collection QR code; recipient: 666(*聪)" width="1118" height="1524" loading="lazy" /><a href="/assets/support-wechat.jpg" target="_blank" rel="noopener">View original ↗</a><a href="/assets/support-wechat.jpg" download="snapTrans-wechat.jpg">Save QR image ↓</a></div></details>
+              <details class="support-method"><summary>Support via Alipay <span aria-hidden="true">＋</span></summary><div class="support-code"><img src="/assets/support-alipay.jpg" alt="Developer's Alipay collection QR code; recipient: PAPA(*聪)" width="1080" height="1620" loading="lazy" /><a href="/assets/support-alipay.jpg" target="_blank" rel="noopener">View original ↗</a><a href="/assets/support-alipay.jpg" download="snapTrans-alipay.jpg">Save QR image ↓</a></div></details>
+            </div>
+            <p class="support-help">Scan with the matching app, or save the image and scan it from your photo library. Enter your amount in the payment app and check the recipient before paying. Thank you!</p>
+          </div>
+        </div>
       </section>
 
       <section class="section faq-section shell">

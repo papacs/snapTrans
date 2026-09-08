@@ -16,7 +16,7 @@
     <link rel="alternate" hreflang="x-default" href="https://snaptrans.heyluckyme.com/" />
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/site.webmanifest" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260904" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260908-support" />
     <title>snapTrans — 看见外语，框一下就懂</title>
   </head>
   <body>
@@ -39,11 +39,27 @@
             <h1>看见外语，<br /><em>框一下就懂。</em></h1>
             <p class="hero-lead">不用截图、粘贴、切窗口。选中文字或框住屏幕，松开鼠标，译文就在原处流式出现。</p>
             <div class="hero-actions"><a class="button button-light" href="https://github.com/papacs/snapTrans/releases/latest" rel="noreferrer">下载 Windows 版 <span aria-hidden="true">↓</span></a><a class="button button-line" href="https://github.com/papacs/snapTrans" rel="noreferrer">查看 GitHub <span aria-hidden="true">↗</span></a></div>
-            <p class="availability"><span class="status-dot"></span>v0.2.0 已发布 · Microsoft Store 版本准备中</p>
+            <p class="availability"><span class="status-dot"></span>v0.2.0 已发布</p>
           </div>
           <div class="hero-product reveal delay-1">
-            <div class="product-label"><span>LIVE / TRANSLATION</span><strong>Alt + Q</strong></div>
-            <div class="capture-frame"><span class="corner corner-tl"></span><span class="corner corner-tr"></span><span class="corner corner-bl"></span><span class="corner corner-br"></span><img src="/assets/translation.png" alt="snapTrans 在网页选区内原位显示中文翻译结果" width="1120" height="720" /></div>
+            <div class="product-label"><span>原位翻译 / 效果示意</span><strong>Alt + Q</strong></div>
+            <div class="reading-demo" role="img" aria-label="效果示意：框选英文段落，松开鼠标后在原选区内显示中文译文">
+              <div class="demo-chrome"><span class="demo-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>fieldnotes / reading room</span><span aria-hidden="true">↗</span></div>
+              <div class="demo-page">
+                <div class="demo-masthead"><span><i></i> FIELDNOTES</span><span>ESSAYS / 004</span></div>
+                <p class="demo-category">ON TOOLS &amp; ATTENTION</p>
+                <h3 lang="en">A little less switching.<br />A little more focus.</h3>
+                <p class="demo-deck" lang="en">Good tools make room for what matters.</p>
+                <div class="demo-selection">
+                  <span class="selection-tag">松开鼠标，即刻翻译</span>
+                  <span class="selection-handle handle-tl"></span><span class="selection-handle handle-tr"></span><span class="selection-handle handle-bl"></span><span class="selection-handle handle-br"></span>
+                  <p class="demo-original" lang="en">Stay with the words.<br />Let the translation come to you.</p>
+                  <div class="demo-translation"><span class="translation-label">EN → 简体中文</span><p lang="zh-CN">让注意力，留在内容上。<br />让翻译，来到你眼前。<span class="demo-caret" aria-hidden="true"></span></p></div>
+                </div>
+                <div class="demo-bottom"><span>不用切换窗口，继续沉浸阅读。</span><span>01 / 03</span></div>
+              </div>
+              <div class="demo-status"><span><i></i>本地识别 · 原位翻译</span><span>snapTrans</span></div>
+            </div>
             <div class="process-rail" role="group" aria-label="翻译步骤"><span><b>01</b> 框选</span><span><b>02</b> 松开</span><span><b>03</b> 原位阅读</span></div>
           </div>
         </div>
@@ -83,7 +99,21 @@
 
       <section class="section pricing-section shell" id="pricing">
         <div class="section-index reveal"><span>04</span><p>开源与赞助</p></div>
-        <div class="pricing-layout"><div class="pricing-copy reveal"><p class="kicker">MIT 开源 · 永久免费</p><h2>免费使用。<br />喜欢，可以赞助。</h2><p>snapTrans 本身不收费，也不限制截图、OCR、翻译或标注次数。在线翻译使用你自己的 API Key，相关费用仅由你选择的模型服务商收取。</p></div><div class="price-ticket reveal delay-1"><div class="ticket-top"><span>VOLUNTARY SPONSORSHIP</span><span>筹备中</span></div><strong><sup>¥</sup>39</strong><ul><li>建议赞助额，完全自愿</li><li>一次性赞助，不是购买软件</li><li>赞助与否不影响任何功能</li><li>用于维护、签名与发布成本</li></ul><a class="button button-dark" href="mailto:admin@heyluckyme.com?subject=snapTrans%20赞助入口通知">赞助入口上线时告诉我 <span>→</span></a></div></div>
+        <div class="pricing-layout">
+          <div class="pricing-copy reveal"><p class="kicker">MIT 开源 · 永久免费</p><h2>免费使用。<br />喜欢，随意赞赏。</h2><p>snapTrans 本身不收费，也不限制截图、OCR、翻译或标注次数。在线翻译使用你自己的 API Key，相关费用仅由你选择的模型服务商收取。</p></div>
+          <div class="support-panel reveal delay-1">
+            <div class="support-heading"><span>SUPPORT THE PROJECT</span><span aria-hidden="true">☕</span></div>
+            <h3>请开发者喝杯咖啡</h3>
+            <p>如果 snapTrans 帮到了你，欢迎用一杯咖啡支持后续维护。</p>
+            <div class="support-amounts"><span>¥5</span><span>¥10</span><span>¥20</span><small>仅供参考，金额随意</small></div>
+            <p class="support-promise">单次 · 自愿 · 无订阅<br />赞赏与否不影响任何功能。</p>
+            <div class="support-methods">
+              <details class="support-method"><summary>微信赞赏 <span aria-hidden="true">＋</span></summary><div class="support-code"><img src="/assets/support-wechat.jpg" alt="开发者提供的微信收款二维码，收款人显示为 666(*聪)" width="1118" height="1524" loading="lazy" /><a href="/assets/support-wechat.jpg" target="_blank" rel="noopener">查看原图 ↗</a><a href="/assets/support-wechat.jpg" download="snapTrans-wechat.jpg">保存二维码 ↓</a></div></details>
+              <details class="support-method"><summary>支付宝赞赏 <span aria-hidden="true">＋</span></summary><div class="support-code"><img src="/assets/support-alipay.jpg" alt="开发者提供的支付宝收款二维码，收款人显示为 PAPA(*聪)" width="1080" height="1620" loading="lazy" /><a href="/assets/support-alipay.jpg" target="_blank" rel="noopener">查看原图 ↗</a><a href="/assets/support-alipay.jpg" download="snapTrans-alipay.jpg">保存二维码 ↓</a></div></details>
+            </div>
+            <p class="support-help">打开对应应用扫码，或保存图片后从相册识别。金额请在支付应用内填写，付款前核对收款人。感谢你的支持！</p>
+          </div>
+        </div>
       </section>
 
       <section class="section faq-section shell">

@@ -365,6 +365,19 @@ snapTrans/
 
 更多开发约定请查看 [AGENTS.md](AGENTS.md)，待办事项请查看 [docs/TODO.md](docs/TODO.md)。
 
+## ☕ 请开发者喝杯咖啡
+
+snapTrans 免费开源。如果它帮到了你，欢迎通过微信或支付宝进行小额赞赏，支持后续维护。
+
+**单次、自愿、无订阅，赞赏与否不影响任何功能。** 建议 ¥5 / ¥10 / ¥20（人民币），金额随意，请在支付应用内填写。在线翻译的模型服务费用仍由你自行承担。
+
+| 微信赞赏 | 支付宝赞赏 |
+| :---: | :---: |
+| <img src="website/assets/support-wechat.jpg" alt="微信收款二维码，收款人 666(*聪)" width="240" /> | <img src="website/assets/support-alipay.jpg" alt="支付宝收款二维码，收款人 PAPA(*聪)" width="240" /> |
+| [查看微信原图](website/assets/support-wechat.jpg) | [查看支付宝原图](website/assets/support-alipay.jpg) |
+
+打开对应应用扫码，或保存原图后从相册识别；付款前请核对收款人。感谢你的支持！
+
 ## 📄 License
 
 本项目基于 [MIT License](LICENSE) 开源。
