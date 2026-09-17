@@ -1081,7 +1081,7 @@ type EnvironmentStatus struct {
 const autostartValueName = "snapTrans"
 
 // appVersion is shown in the settings window and log output.
-const appVersion = "0.2.0"
+const appVersion = "0.2.1"
 
 func (a *App) GetVersion() string {
 	return appVersion

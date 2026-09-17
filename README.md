@@ -282,7 +282,7 @@ wails build
 ```
 
 分发时请保留 `snapTrans.exe` 同级的整个 OCR 文件夹，或运行
-`.\scripts\package-release.ps1 -Version 0.2.0` 生成包含依赖的 ZIP。
+`.\scripts\package-release.ps1 -Version 0.2.1` 生成包含依赖的 ZIP。
 OCR 二进制、模型和下载缓存均不提交到源码仓库。
 
 ## ✅ 质量验证
