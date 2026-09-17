@@ -12,7 +12,7 @@
 [![Vue](https://img.shields.io/badge/Vue-3-42B883?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 
-[界面预览](#screenshots) · [快速开始](#-快速开始) · [核心功能](#-核心功能) · [配置说明](#%EF%B8%8F-配置说明) · [本地开发](#-本地开发) · [项目架构](#%EF%B8%8F-项目架构)
+[请开发者喝杯咖啡](#donate) · [界面预览](#screenshots) · [快速开始](#-快速开始) · [核心功能](#-核心功能) · [配置说明](#%EF%B8%8F-配置说明) · [本地开发](#-本地开发) · [项目架构](#%EF%B8%8F-项目架构)
 
 <a href="docs/images/translation.png">
   <img src="docs/images/translation.png" width="960" alt="snapTrans 原位翻译：选区内显示中文译文，下方提供扩展、复制和切换翻译方向工具" />
@@ -365,6 +365,8 @@ snapTrans/
 
 更多开发约定请查看 [AGENTS.md](AGENTS.md)，待办事项请查看 [docs/TODO.md](docs/TODO.md)。
 
+<a id="donate"></a>
+
 ## ☕ 请开发者喝杯咖啡
 
 snapTrans 免费开源。如果它帮到了你，欢迎通过微信或支付宝进行小额赞赏，支持后续维护。
@@ -373,10 +375,12 @@ snapTrans 免费开源。如果它帮到了你，欢迎通过微信或支付宝�
 
 | 微信赞赏 | 支付宝赞赏 |
 | :---: | :---: |
-| <img src="website/assets/support-wechat.jpg" alt="微信收款二维码，收款人 666(*聪)" width="240" /> | <img src="website/assets/support-alipay.jpg" alt="支付宝收款二维码，收款人 PAPA(*聪)" width="240" /> |
-| [查看微信原图](website/assets/support-wechat.jpg) | [查看支付宝原图](website/assets/support-alipay.jpg) |
+| <img src="website/assets/support-wechat.png" alt="微信收款二维码，收款人 666(*聪)" width="240" /> | <img src="website/assets/support-alipay.png" alt="支付宝收款二维码，收款人 PAPA(*聪)" width="240" /> |
+| [查看微信原图](website/assets/support-wechat.png) | [查看支付宝原图](website/assets/support-alipay.png) |
 
 打开对应应用扫码，或保存原图后从相册识别；付款前请核对收款人。感谢你的支持！
+
+也可以前往[官网赞赏区](https://snaptrans.heyluckyme.com/#donate)，展开二维码、查看或保存原图。
 
 ## 📄 License
 

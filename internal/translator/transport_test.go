@@ -16,30 +16,41 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-func TestThinkingDisabledOnlyForOfficialV4Requests(t *testing.T) {
-	for _, endpoint := range []string{"https://api.deepseek.com", "https://gateway.example", "https://api.deepseek.com.proxy.example"} {
-		for _, model := range []string{"deepseek-v4-flash", "custom-model"} {
-			t.Run(endpoint+"/"+model, func(t *testing.T) {
-				request, err := http.NewRequest("POST", endpoint+"/chat/completions", strings.NewReader("{\"model\":\""+model+"\",\"messages\":[]}"))
+func TestThinkingDisabledForDeepSeekV4ModelsAcrossCompatibleEndpoints(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		model    string
+		want     bool
+	}{
+		{name: "official model", endpoint: "https://api.deepseek.com", model: "deepseek-v4-flash", want: true},
+		{name: "provider-prefixed model", endpoint: "https://bifrost.heyluckyme.com/v1", model: "deepseek/deepseek-v4-flash", want: true},
+		{name: "compatible gateway", endpoint: "https://gateway.example/v1", model: "deepseek-v4-pro", want: true},
+		{name: "unrelated model", endpoint: "https://gateway.example/v1", model: "custom-model", want: false},
+		{name: "lookalike model", endpoint: "https://gateway.example/v1", model: "deepseek-v4-flash-preview", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request, err := http.NewRequest("POST", tt.endpoint+"/chat/completions", strings.NewReader("{\"model\":\""+tt.model+"\",\"messages\":[]}"))
+			require.NoError(t, err)
+			transport := translationTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				data, err := io.ReadAll(r.Body)
 				require.NoError(t, err)
-				transport := translationTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-					data, err := io.ReadAll(r.Body)
-					require.NoError(t, err)
-					var body map[string]json.RawMessage
-					require.NoError(t, json.Unmarshal(data, &body))
-					if endpoint == "https://api.deepseek.com" && model == "deepseek-v4-flash" {
-						require.JSONEq(t, "{\"type\":\"disabled\"}", string(body["thinking"]))
-						require.Equal(t, int64(len(data)), r.ContentLength)
-					} else {
-						require.NotContains(t, body, "thinking")
-					}
-					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(""))}, nil
-				})}
-				response, err := transport.RoundTrip(request)
-				require.NoError(t, err)
-				response.Body.Close()
-			})
-		}
+				var body map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(data, &body))
+				if tt.want {
+					require.JSONEq(t, "{\"type\":\"disabled\"}", string(body["thinking"]))
+					require.Equal(t, int64(len(data)), r.ContentLength)
+				} else {
+					require.NotContains(t, body, "thinking")
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(""))}, nil
+			})}
+			response, err := transport.RoundTrip(request)
+			require.NoError(t, err)
+			response.Body.Close()
+		})
 	}
 }
 
