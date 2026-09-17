@@ -47,6 +47,7 @@ func (a *App) TriggerTranslation() error {
 	if !started {
 		return nil
 	}
+	a.prewarmTranslationConnection()
 	a.cancelProcessing()
 	go func() {
 		defer a.finishCapture()

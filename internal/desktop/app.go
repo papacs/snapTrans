@@ -83,6 +83,8 @@ type App struct {
 	ocrWorkerConfig     ocrWorkerSettings
 	ocrCache            ocrResultCache
 	settingsMu          sync.Mutex
+	translationWarmMu   sync.Mutex
+	translationWarm     translationWarmState
 	trayOnce            sync.Once
 
 	captureOriginX   int
@@ -517,6 +519,9 @@ func (a *App) triggerCaptureMode(mode string) error {
 	wasVisible, epoch, started := a.beginCapture()
 	if !started {
 		return nil
+	}
+	if mode == "translate" {
+		a.prewarmTranslationConnection()
 	}
 
 	go func() {

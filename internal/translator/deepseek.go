@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"regexp"
 	"strings"
 	"unicode"
@@ -76,6 +77,36 @@ func NewOpenAICompatible(options Options) *OpenAICompatible {
 		options.Model = "deepseek-v4-flash"
 	}
 	return &OpenAICompatible{options: options}
+}
+
+// Warm establishes an authenticated HTTP connection without invoking a model.
+// The shared default transport can then reuse the connection for translation.
+func (d *OpenAICompatible) Warm(ctx context.Context) error {
+	if strings.TrimSpace(d.options.APIKey) == "" {
+		return errors.New("LLM API key is required")
+	}
+	endpoint := strings.TrimRight(d.options.BaseURL, "/") + "/models"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("prepare connection warm-up: %w", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+d.options.APIKey)
+	request.Header.Set("Accept", "application/json")
+
+	response, err := translationHTTPClient().Do(request)
+	if err != nil {
+		return fmt.Errorf("warm connection: %w", err)
+	}
+	defer response.Body.Close()
+	const maxResponseBytes = 1 << 20
+	read, err := io.Copy(io.Discard, io.LimitReader(response.Body, maxResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("read connection warm-up response: %w", err)
+	}
+	if read > maxResponseBytes {
+		return errors.New("connection warm-up response is too large")
+	}
+	return nil
 }
 
 // Ping verifies the configured API key, base URL, and model with a minimal

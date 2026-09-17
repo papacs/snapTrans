@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/stretchr/testify/require"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,6 +53,37 @@ func TestThinkingDisabledForDeepSeekV4ModelsAcrossCompatibleEndpoints(t *testing
 			response.Body.Close()
 		})
 	}
+}
+
+func TestWarmReusesConnectionForTranslation(t *testing.T) {
+	var connections atomic.Int32
+	var modelRequests atomic.Int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/models":
+			modelRequests.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"data":[]}`)
+		case "/chat/completions":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"[1] 你好\"}}]}\n\ndata: [DONE]\n\n")
+		default:
+			http.NotFound(w, request)
+		}
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			connections.Add(1)
+		}
+	}
+	server.Start()
+	defer server.Close()
+
+	client := NewOpenAICompatible(Options{APIKey: "test", BaseURL: server.URL, Model: "test"})
+	require.NoError(t, client.Warm(context.Background()))
+	require.NoError(t, client.Translate(context.Background(), "Hello", DirectionToChinese, func(string) {}))
+	require.Equal(t, int32(1), modelRequests.Load())
+	require.Equal(t, int32(1), connections.Load())
 }
 
 func TestIncompleteTranslationAfterRecoveryReturnsError(t *testing.T) {
