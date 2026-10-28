@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -66,7 +67,7 @@ func TestWarmReusesConnectionForTranslation(t *testing.T) {
 			_, _ = io.WriteString(w, `{"data":[]}`)
 		case "/chat/completions":
 			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"[1] 你好\"}}]}\n\ndata: [DONE]\n\n")
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"[1] 你好\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
 		default:
 			http.NotFound(w, request)
 		}
@@ -86,6 +87,33 @@ func TestWarmReusesConnectionForTranslation(t *testing.T) {
 	require.Equal(t, int32(1), connections.Load())
 }
 
+func TestCompletedStreamsDrainTerminatorAndReuseHTTPConnection(t *testing.T) {
+	var connections atomic.Int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"[1] done\"},\"finish_reason\":\"stop\"}]}\n\n")
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			connections.Add(1)
+		}
+	}
+	server.Start()
+	defer server.Close()
+	client := NewOpenAICompatible(Options{APIKey: "test", BaseURL: server.URL, Model: "test"})
+	for _, source := range []string{"First distinct sentence.", "Second distinct sentence."} {
+		require.NoError(t, client.Translate(context.Background(), source, DirectionToChinese, func(string) {}))
+	}
+	require.Equal(t, int32(1), connections.Load(), "successful streaming must keep the HTTP connection reusable")
+}
+
 func TestIncompleteTranslationAfterRecoveryReturnsError(t *testing.T) {
 	for _, recovered := range []bool{false, true} {
 		t.Run(map[bool]string{false: "still missing", true: "recovered"}[recovered], func(t *testing.T) {
@@ -96,7 +124,7 @@ func TestIncompleteTranslationAfterRecoveryReturnsError(t *testing.T) {
 				if n == 2 && recovered {
 					content = "[2] 世界"
 				}
-				payload, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]string{"content": content}}}})
+				payload, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]string{"content": content}, "finish_reason": "stop"}}})
 				w.Header().Set("Content-Type", "text/event-stream")
 				_, _ = w.Write([]byte("data: " + string(payload) + "\n\ndata: [DONE]\n\n"))
 			}))

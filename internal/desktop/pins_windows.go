@@ -179,8 +179,9 @@ func pinWindowProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
 		resizePin(hwnd, int(r.Left), int(r.Top), int(r.Right-r.Left), int(r.Bottom-r.Top))
 		return 0
 	case 0x02E0: // WM_DPICHANGED: use the monitor's suggested physical bounds.
-		r := (*win.RECT)(unsafe.Pointer(lParam))
-		resizePin(hwnd, int(r.Left), int(r.Top), int(r.Right-r.Left), int(r.Bottom-r.Top))
+		if r, ok := readPinSuggestedRect(lParam); ok {
+			resizePin(hwnd, int(r.Left), int(r.Top), int(r.Right-r.Left), int(r.Bottom-r.Top))
+		}
 		return 0
 	case win.WM_KEYDOWN:
 		if wParam == win.VK_ESCAPE {
@@ -196,6 +197,20 @@ func pinWindowProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
 		return 0
 	}
 	return win.DefWindowProc(hwnd, msg, wParam, lParam)
+}
+
+// Copy the native callback's borrowed RECT while the message is being handled.
+// ReadProcessMemory accepts a native address and rejects unreadable pointers;
+// Go must not turn the arbitrary LPARAM integer into a managed pointer.
+func readPinSuggestedRect(address uintptr) (win.RECT, bool) {
+	var rect win.RECT
+	var read uintptr
+	if address == 0 {
+		return rect, false
+	}
+	size := unsafe.Sizeof(rect)
+	err := windows.ReadProcessMemory(windows.CurrentProcess(), address, (*byte)(unsafe.Pointer(&rect)), size, &read)
+	return rect, err == nil && read == size && rect.Right > rect.Left && rect.Bottom > rect.Top
 }
 func closeAllPins() {
 	pinWindows.Range(func(key, value any) bool { win.PostMessage(key.(win.HWND), win.WM_CLOSE, 0, 0); return true })

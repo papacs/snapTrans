@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"image"
+	"snaptrans/internal/capture"
 	"snaptrans/internal/config"
 	"snaptrans/internal/translator"
 	"strings"
@@ -11,19 +13,28 @@ import (
 )
 
 type TextActionRequest struct {
-	ID     string `json:"id"`
-	Text   string `json:"text"`
-	Action string `json:"action"`
+	ID        string                  `json:"id"`
+	Text      string                  `json:"text"`
+	Action    string                  `json:"action"`
+	Scene     string                  `json:"scene"`
+	Intent    string                  `json:"intent"`
+	Region    *TranslateRegionRequest `json:"region,omitempty"`
+	InputMode string                  `json:"inputMode,omitempty"`
 }
 type TextActionEvent struct {
-	ID    string `json:"id"`
-	Token string `json:"token,omitempty"`
-	Error string `json:"error,omitempty"`
-	Done  bool   `json:"done"`
+	ID     string `json:"id"`
+	Token  string `json:"token,omitempty"`
+	Error  string `json:"error,omitempty"`
+	Done   bool   `json:"done"`
+	Source string `json:"source,omitempty"`
+	Stage  string `json:"stage,omitempty"`
+	Image  string `json:"image,omitempty"`
 }
 
 func actionEnabled(f config.Features, action string) bool {
 	switch action {
+	case "reply":
+		return true
 	case "explain", "summarize":
 		return f.TextActions
 	case "meme":
@@ -37,12 +48,31 @@ func actionEnabled(f config.Features, action string) bool {
 func (a *App) StartTextAction(request TextActionRequest) error {
 	a.mu.Lock()
 	cfg := a.cfg.WithDefaults()
+	frame := a.frame
 	a.mu.Unlock()
 	if !actionEnabled(cfg.Features, request.Action) {
 		return errors.New("this text action is disabled in settings")
 	}
-	if strings.TrimSpace(request.ID) == "" || len(request.ID) > 128 || strings.TrimSpace(request.Text) == "" || len(request.Text) > 100000 {
+	if strings.TrimSpace(request.ID) == "" || len(request.ID) > 128 || (strings.TrimSpace(request.Text) == "" && (request.Action != "reply" || request.Region == nil)) || len(request.Text) > 100000 || len(request.Intent) > 8000 {
 		return errors.New("invalid text action request (maximum 100 KB)")
+	}
+	if request.Action == "reply" {
+		mode := replyInputMode(cfg, request)
+		if mode != "ocr" && mode != "image" {
+			return errors.New("unknown reply input mode")
+		}
+		if mode == "image" && (request.Region == nil || frame == nil) {
+			return errors.New("direct image input needs a captured region; capture again or choose OCR text")
+		}
+		if request.Scene != "" && request.Scene != "work" && request.Scene != "social" && request.Scene != "general" {
+			return errors.New("unknown reply scene")
+		}
+		if request.Region != nil && !validRegion(*request.Region) {
+			return errors.New("invalid reply region")
+		}
+		if strings.TrimSpace(request.Text) == "" && frame == nil {
+			return errors.New("no captured frame is available; capture again")
+		}
 	}
 	a.mu.Lock()
 	if a.extensionProcessing != nil {
@@ -67,8 +97,49 @@ func (a *App) StartTextAction(request TextActionRequest) error {
 				a.extensionRequestID = ""
 			}
 		}()
-		client := translator.NewOpenAICompatible(translator.Options{APIKey: cfg.APIKey, BaseURL: cfg.BaseURL, Model: cfg.Model})
-		err := client.TextAction(ctx, request.Text, request.Action, cfg.UILanguage, func(token string) { emit(TextActionEvent{ID: request.ID, Token: token}) })
+		client := translator.NewOpenAICompatible(translationOptions(cfg))
+		started := time.Now()
+		preparedAt := started
+		inputMode := "text"
+		if request.Action == "reply" && request.Region != nil {
+			inputMode = replyInputMode(cfg, request)
+		}
+		first := true
+		onToken := func(token string) {
+			if first && token != "" {
+				first = false
+				if a.log != nil {
+					a.log.Infof("action=%s input_mode=%s prepare_ms=%d model_first_token_ms=%d first_token_ms=%d", request.Action, inputMode, preparedAt.Sub(started).Milliseconds(), time.Since(preparedAt).Milliseconds(), time.Since(started).Milliseconds())
+				}
+			}
+			emit(TextActionEvent{ID: request.ID, Token: token})
+		}
+		var err error
+		if request.Action == "reply" {
+			if replyInputMode(cfg, request) == "image" {
+				var dataURL string
+				region := request.Region
+				dataURL, err = capture.EncodeVisionCrop(frame, image.Rect(region.X, region.Y, region.X+region.Width, region.Y+region.Height))
+				if err == nil {
+					emit(TextActionEvent{ID: request.ID, Stage: "writing", Image: dataURL})
+					preparedAt = time.Now()
+					err = client.Reply(ctx, request.Text, request.Scene, request.Intent, cfg.UILanguage, onToken, dataURL)
+				}
+			} else {
+				if strings.TrimSpace(request.Text) == "" {
+					emit(TextActionEvent{ID: request.ID, Stage: "ocr"})
+				}
+				var source string
+				source, err = a.replySource(ctx, cfg, request, frame)
+				if err == nil {
+					emit(TextActionEvent{ID: request.ID, Stage: "writing", Source: source})
+					preparedAt = time.Now()
+					err = client.Reply(ctx, source, request.Scene, request.Intent, cfg.UILanguage, onToken)
+				}
+			}
+		} else {
+			err = client.TextAction(ctx, request.Text, request.Action, cfg.UILanguage, onToken)
+		}
 		if errors.Is(ctx.Err(), context.Canceled) {
 			return
 		}

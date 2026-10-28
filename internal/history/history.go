@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"snaptrans/internal/jsonfile"
 )
 
 type Entry struct {
@@ -81,25 +84,45 @@ func (s *Store) Clear() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := os.Remove(s.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := s.removeQuarantinesLocked(); err != nil {
 		return err
+	}
+	// Remove the recovery copy first; a failed cleanup leaves the live data
+	// intact and reports failure instead of silently resurrecting deleted items.
+	for _, path := range []string{s.path + ".bak", s.path} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 	return nil
 }
 
 func (s *Store) loadLocked() ([]Entry, error) {
-	raw, err := os.ReadFile(s.path)
+	var entries []Entry
+	_, err := jsonfile.ReadValidated(s.path, func(raw []byte) error {
+		var decoded []Entry
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return err
+		}
+		entries = decoded
+		return nil
+	})
 	if err != nil {
+		if errors.Is(err, jsonfile.ErrCorrupt) {
+			// Preserve the damaged file for manual recovery, then allow new activity.
+			for _, path := range []string{s.path, s.path + ".bak"} {
+				if err := os.Rename(path, fmt.Sprintf("%s.corrupt-%d", path, time.Now().UnixNano())); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return nil, err
+				}
+			}
+			return []Entry{}, nil
+		}
 		if errors.Is(err, os.ErrNotExist) {
 			return []Entry{}, nil
 		}
 		return nil, err
 	}
 
-	var entries []Entry
-	if err := json.Unmarshal(raw, &entries); err != nil {
-		return nil, fmt.Errorf("history: parse %s: %w", s.path, err)
-	}
 	if entries == nil {
 		entries = []Entry{}
 	}
@@ -107,12 +130,39 @@ func (s *Store) loadLocked() ([]Entry, error) {
 }
 
 func (s *Store) saveLocked(entries []Entry) error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-		return err
-	}
 	raw, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, raw, 0o600)
+	return jsonfile.Write(s.path, raw)
+}
+
+func (s *Store) saveDeletedLocked(entries []Entry) error {
+	raw, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := jsonfile.Reset(s.path, raw); err != nil {
+		return err
+	}
+	return s.removeQuarantinesLocked()
+}
+
+func (s *Store) removeQuarantinesLocked() error {
+	files, err := os.ReadDir(filepath.Dir(s.path))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	name := filepath.Base(s.path)
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), name+".corrupt-") || strings.HasPrefix(file.Name(), name+".bak.corrupt-") {
+			if err := os.Remove(filepath.Join(filepath.Dir(s.path), file.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

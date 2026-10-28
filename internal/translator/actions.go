@@ -30,7 +30,7 @@ func actionPrompt(action, locale string) (string, error) {
 // TextAction shares transport and streaming, but never uses translation's
 // numbered-line protocol or custom translation-only instructions.
 func (d *OpenAICompatible) TextAction(ctx context.Context, source, action, locale string, onToken func(string)) error {
-	if strings.TrimSpace(d.options.APIKey) == "" {
+	if d.options.Provider != "codex" && strings.TrimSpace(d.options.APIKey) == "" {
 		return errors.New("LLM API key is required")
 	}
 	if strings.TrimSpace(source) == "" || len(source) > 100000 {
@@ -40,10 +40,7 @@ func (d *OpenAICompatible) TextAction(ctx context.Context, source, action, local
 	if err != nil {
 		return err
 	}
-	cfg := openai.DefaultConfig(d.options.APIKey)
-	cfg.BaseURL = d.options.BaseURL
-	cfg.HTTPClient = translationHTTPClient()
-	_, err = streamTranslationRequest(ctx, openai.NewClientWithConfig(cfg), openai.ChatCompletionRequest{
+	_, err = d.stream(ctx, openai.ChatCompletionRequest{
 		Model: d.options.Model, Stream: true,
 		Messages: []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleSystem, Content: prompt}, {Role: openai.ChatMessageRoleUser, Content: source}},
 	}, onToken)

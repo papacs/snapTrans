@@ -76,7 +76,7 @@ func (s *Store) DeleteSaved(id string) error {
 	}
 	for i, e := range entries {
 		if e.ID == id {
-			return s.saveLocked(append(entries[:i], entries[i+1:]...))
+			return s.saveDeletedLocked(append(entries[:i], entries[i+1:]...))
 		}
 	}
 	return errors.New("history entry no longer exists")
@@ -99,5 +99,5 @@ func (s *Store) ClearRecent() error {
 			saved = append(saved, e)
 		}
 	}
-	return s.saveLocked(saved)
+	return s.saveDeletedLocked(saved)
 }

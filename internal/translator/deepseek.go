@@ -5,21 +5,29 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
+
+	"snaptrans/internal/codex"
 
 	openai "github.com/sashabaranov/go-openai"
 )
 
 type Options struct {
-	Source       string
-	APIKey       string
-	BaseURL      string
-	Model        string
-	SystemPrompt string
-	Glossary     string
+	Provider             string
+	CodexPath            string
+	CodexReasoningEffort string
+	Source               string
+	APIKey               string
+	BaseURL              string
+	Model                string
+	SystemPrompt         string
+	Glossary             string
+	FastTranslation      bool
 }
 
 type Direction string
@@ -73,7 +81,7 @@ func NewOpenAICompatible(options Options) *OpenAICompatible {
 	if strings.TrimSpace(options.BaseURL) == "" {
 		options.BaseURL = "https://api.deepseek.com"
 	}
-	if strings.TrimSpace(options.Model) == "" {
+	if strings.TrimSpace(options.Model) == "" && options.Provider != "codex" {
 		options.Model = "deepseek-v4-flash"
 	}
 	return &OpenAICompatible{options: options}
@@ -109,9 +117,32 @@ func (d *OpenAICompatible) Warm(ctx context.Context) error {
 	return nil
 }
 
-// Ping verifies the configured API key, base URL, and model with a minimal
-// chat completion request.
-func (d *OpenAICompatible) Ping(ctx context.Context) error {
+// Ping verifies the selected input mode using only synthetic test content.
+func (d *OpenAICompatible) Ping(ctx context.Context, imageInput ...bool) error {
+	message := openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: "ping"}
+	maxTokens := 1
+	var images []string
+	imageProbe := len(imageInput) > 0 && imageInput[0]
+	if imageProbe {
+		var err error
+		message, err = connectionVisionProbe()
+		if err != nil {
+			return err
+		}
+		images = []string{message.MultiContent[1].ImageURL.URL}
+		maxTokens = 16
+	}
+	if d.options.Provider == "codex" {
+		input := message.Content
+		if imageProbe {
+			input = message.MultiContent[0].Text
+		}
+		answer, err := codex.StreamFast(ctx, d.options.CodexPath, d.options.Model, "Answer the test request only. Do not use tools.", input, d.options.CodexReasoningEffort, func(string) {}, images...)
+		if err == nil && imageProbe {
+			err = validateVisionProbeAnswer(answer)
+		}
+		return err
+	}
 	if strings.TrimSpace(d.options.APIKey) == "" {
 		return errors.New("LLM API key is required")
 	}
@@ -121,40 +152,62 @@ func (d *OpenAICompatible) Ping(ctx context.Context) error {
 	clientConfig.HTTPClient = translationHTTPClient()
 	client := openai.NewClientWithConfig(clientConfig)
 
-	_, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: d.options.Model,
-		Messages: []openai.ChatCompletionMessage{
-			{Role: openai.ChatMessageRoleUser, Content: "ping"},
-		},
-		MaxTokens: 1,
+	response, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		Model:     d.options.Model,
+		Messages:  []openai.ChatCompletionMessage{message},
+		MaxTokens: maxTokens,
 	})
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)
+	}
+	if imageProbe {
+		if len(response.Choices) == 0 {
+			return errors.New("image connection test returned no answer")
+		}
+		return validateVisionProbeAnswer(response.Choices[0].Message.Content)
 	}
 	return nil
 }
 
 func (d *OpenAICompatible) Translate(ctx context.Context, sourceText string, direction Direction, onToken func(string)) error {
-	if strings.TrimSpace(d.options.APIKey) == "" {
+	d = d.forTranslation()
+	if d.options.Provider != "codex" && strings.TrimSpace(d.options.APIKey) == "" {
 		return errors.New("LLM API key is required")
 	}
 	if strings.TrimSpace(sourceText) == "" {
 		return errors.New("source text is empty")
 	}
 
-	clientConfig := openai.DefaultConfig(d.options.APIKey)
-	clientConfig.BaseURL = d.options.BaseURL
-	clientConfig.HTTPClient = translationHTTPClient()
-	client := openai.NewClientWithConfig(clientConfig)
 	direction = NormalizeDirection(string(direction))
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	key := translationMemoKey(d.options, "text", sourceText, direction)
+	if cached, ok := recentTranslations.get(key, time.Now()); ok {
+		slog.Info("Translation cache hit", "mode", "text")
+		onToken(cached.text)
+		return nil
+	}
+	var complete strings.Builder
+	err := d.translate(ctx, sourceText, direction, func(token string) {
+		complete.WriteString(token)
+		onToken(token)
+	})
+	if err == nil && ctx.Err() == nil {
+		recentTranslations.put(key, complete.String(), direction, time.Now())
+	}
+	return err
+}
 
+func (d *OpenAICompatible) translate(ctx context.Context, sourceText string, direction Direction, onToken func(string)) error {
 	request := buildTranslationRequest(d.options.Model, sourceText, direction, d.options.SystemPrompt, d.options.Glossary)
 	if d.options.Source == "selection" {
 		request = selectedTextRequest(request, d.options, direction, numberedOCRLines(sourceText))
 	}
-	translated, err := streamTranslationRequest(ctx, client, request, onToken)
+	request = d.prepareTranslationRequest(request, direction, numberedOCRLines(sourceText))
+	translated, err := d.stream(ctx, request, onToken)
 	if shouldRetryStreamStartError(translated, err) {
-		translated, err = streamTranslationRequest(ctx, client, request, onToken)
+		translated, err = d.stream(ctx, request, onToken)
 	}
 	if err != nil {
 		return err
@@ -175,7 +228,8 @@ func (d *OpenAICompatible) Translate(ctx context.Context, sourceText string, dir
 	if d.options.Source == "selection" {
 		retryRequest = selectedTextRequest(retryRequest, d.options, direction, numberedOCRLineText(missing))
 	}
-	retry, err := streamTranslationRequest(ctx, client, retryRequest, onToken)
+	retryRequest = d.prepareTranslationRequest(retryRequest, direction, numberedOCRLineText(missing))
+	retry, err := d.stream(ctx, retryRequest, onToken)
 	if err != nil {
 		return err
 	}
@@ -187,6 +241,29 @@ func (d *OpenAICompatible) Translate(ctx context.Context, sourceText string, dir
 		return fmt.Errorf("translation incomplete: %d text regions are still missing after retry", len(remaining))
 	}
 	return nil
+}
+
+func (d *OpenAICompatible) stream(ctx context.Context, request openai.ChatCompletionRequest, onToken func(string)) (string, error) {
+	if d.options.Provider == "codex" {
+		input := request.Messages[1].Content
+		var images []string
+		for _, part := range request.Messages[1].MultiContent {
+			if part.Type == openai.ChatMessagePartTypeText {
+				input += part.Text
+			}
+			if part.Type == openai.ChatMessagePartTypeImageURL && part.ImageURL != nil {
+				images = append(images, part.ImageURL.URL)
+			}
+		}
+		return codex.StreamFast(ctx, d.options.CodexPath, request.Model, request.Messages[0].Content, input, d.options.CodexReasoningEffort, onToken, images...)
+	}
+	if d.options.Provider != "" && d.options.Provider != "openai-compatible" {
+		return "", fmt.Errorf("unsupported model provider: %s", d.options.Provider)
+	}
+	cfg := openai.DefaultConfig(d.options.APIKey)
+	cfg.BaseURL = d.options.BaseURL
+	cfg.HTTPClient = translationHTTPClient()
+	return streamTranslationRequest(ctx, openai.NewClientWithConfig(cfg), request, onToken)
 }
 
 // Some OpenAI-compatible gateways intermittently close the HTTP response
@@ -211,20 +288,33 @@ func streamTranslationRequest(ctx context.Context, client *openai.Client, reques
 	defer stream.Close()
 
 	var translated strings.Builder
+	completed := false
 	for {
 		response, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
-			return translated.String(), nil
+			if completed {
+				return translated.String(), nil
+			}
+			return translated.String(), fmt.Errorf("translation incomplete: stream ended without a successful finish reason: %w", io.ErrUnexpectedEOF)
 		}
 		if err != nil {
 			return translated.String(), err
 		}
 
 		for _, choice := range response.Choices {
+			if choice.Index != 0 {
+				continue
+			}
 			token := choice.Delta.Content
 			if token != "" {
 				translated.WriteString(token)
 				onToken(token)
+			}
+			if choice.FinishReason == openai.FinishReasonStop {
+				// Consume the SSE terminator too, preserving HTTP keep-alive.
+				completed = true
+			} else if choice.FinishReason != "" {
+				return translated.String(), fmt.Errorf("translation incomplete: model stopped with %s", choice.FinishReason)
 			}
 		}
 	}

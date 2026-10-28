@@ -12,6 +12,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot 'build-identity.ps1')
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $normalizedVersion = $Version.TrimStart("v")
 $packageName = "snapTrans-v$normalizedVersion-windows-x64"
@@ -43,10 +44,12 @@ if (-not (Test-Path -LiteralPath $rapidOCRModels -PathType Container)) {
     throw "RapidOCR models were not found at $rapidOCRModels"
 }
 
+$sourceDigest = Get-SnapTransSourceDigest -RepoRoot $repoRoot
+$buildIdentity = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ') + '-' + $sourceDigest
 if (-not $SkipBuild) {
     Push-Location $repoRoot
     try {
-        & wails build
+        & wails build -ldflags "-X snaptrans/internal/desktop.buildID=$buildIdentity"
         if ($LASTEXITCODE -ne 0) {
             throw "wails build failed with exit code $LASTEXITCODE"
         }
@@ -60,6 +63,9 @@ $executablePath = Join-Path $repoRoot "build/bin/snapTrans.exe"
 if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
     throw "snapTrans.exe was not found at $executablePath"
 }
+$metadata = & go version -m $executablePath
+if ($LASTEXITCODE -ne 0) { throw 'Could not inspect executable build identity' }
+$buildIdentity = Assert-SnapTransBuildIdentity -Metadata ($metadata -join "`n") -ExpectedDigest (Get-SnapTransSourceDigest -RepoRoot $repoRoot)
 
 if (-not [IO.Path]::IsPathRooted($OutputDirectory)) {
     $OutputDirectory = Join-Path $repoRoot $OutputDirectory
@@ -92,6 +98,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $repoRoot "README.md") -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $repoRoot "THIRD-PARTY-NOTICES.md") -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $repoRoot "docs/RELEASE-NOTES.md") -Destination (Join-Path $packageRoot "RELEASE-NOTES.md")
+Set-Content -LiteralPath (Join-Path $packageRoot 'BUILD.txt') -Value "Version: $normalizedVersion`nBuild: $buildIdentity" -Encoding ascii
 
 Compress-Archive -LiteralPath $packageRoot -DestinationPath $archivePath -CompressionLevel Optimal
 $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -99,3 +106,4 @@ $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.T
 
 Write-Output "Package: $archivePath"
 Write-Output "Checksum: $checksumPath"
+Write-Output "Build: $buildIdentity"

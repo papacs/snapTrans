@@ -10,6 +10,7 @@ import type {
   ScrollCaptureRegion,
   ScrollCaptureStepResult,
   SelectionRegion,
+  TranslationRegion,
   TranslationDirection,
   TranslationDirectionEvent,
   TranslationTokenEvent,
@@ -37,13 +38,14 @@ declare global {
           TranslateSelection: (id: string, direction: TranslationDirection, generation: number) => Promise<void>;
           TriggerCapture: () => Promise<void>;
           TriggerScreenshot: () => Promise<void>;
+          TriggerReply: () => Promise<void>;
           ShowCaptureWindow: () => Promise<void>;
           BeginScrollingScreenshot: (region: ScrollCaptureRegion) => Promise<ManualScrollStatus>;
           StepScrollingScreenshot: () => Promise<ScrollCaptureStepResult>;
           FinishScrollingScreenshot: () => Promise<CapturePayload>;
           CancelScrollingScreenshot: () => Promise<void>;
           ProcessImage: (base64Crop: string, direction: TranslationDirection, generation?: number) => Promise<void>;
-          TranslateRegion: (region: SelectionRegion, direction: TranslationDirection, generation?: number) => Promise<void>;
+          TranslateRegion: (region: TranslationRegion, direction: TranslationDirection, generation?: number) => Promise<void>;
           ExtractText: (base64Image: string) => Promise<OCRResultPayload>;
           HideWindow: () => Promise<void>;
           QuitApp: () => Promise<void>;
@@ -52,6 +54,9 @@ declare global {
           GetHistory: () => Promise<HistoryEntry[]>;
           ClearHistory: () => Promise<void>;
           TestConnection: (config: AppConfig) => Promise<void>;
+          GetCodexStatus: (path: string) => Promise<import("../services/backend").CodexStatus>;
+          LoginCodex: (path: string) => Promise<void>;
+          CancelCodexLogin: () => Promise<void>;
           GetEnvironmentStatus: () => Promise<EnvironmentStatus>;
           SetAutoStart: (enabled: boolean) => Promise<void>;
           IsAutoStartEnabled: () => Promise<boolean>;

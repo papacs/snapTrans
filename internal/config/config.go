@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"snaptrans/internal/jsonfile"
 )
 
 type Config struct {
@@ -21,6 +23,13 @@ type Config struct {
 	APIKey                    string   `json:"apiKey"`
 	BaseURL                   string   `json:"baseURL"`
 	Model                     string   `json:"model"`
+	Provider                  string   `json:"provider"`
+	CodexPath                 string   `json:"codexPath"`
+	CodexModel                string   `json:"codexModel"`
+	CodexReasoningEffort      string   `json:"codexReasoningEffort"`
+	DirectImageInput          bool     `json:"directImageInput"`
+	FastTranslation           bool     `json:"fastTranslation"`
+	ReplyShortcutKey          string   `json:"replyShortcutKey"`
 	RapidOCRPath              string   `json:"rapidOCRPath"`
 	RapidOCRTimeoutSeconds    int      `json:"rapidOCRTimeoutSeconds"`
 	TranslationTimeoutSeconds int      `json:"translationTimeoutSeconds"`
@@ -29,6 +38,7 @@ type Config struct {
 	Glossary                  string   `json:"glossary"`
 	PersistentOCR             bool     `json:"persistentOCR"`
 	AutoCopy                  bool     `json:"autoCopy"`
+	RecordHistory             bool     `json:"recordHistory"`
 }
 
 // persistedConfig accepts both the current generic LLM fields and the
@@ -42,6 +52,13 @@ type persistedConfig struct {
 	APIKey                    string             `json:"apiKey"`
 	BaseURL                   string             `json:"baseURL"`
 	Model                     string             `json:"model"`
+	Provider                  string             `json:"provider"`
+	CodexPath                 string             `json:"codexPath"`
+	CodexModel                string             `json:"codexModel"`
+	CodexReasoningEffort      string             `json:"codexReasoningEffort"`
+	DirectImageInput          bool               `json:"directImageInput"`
+	FastTranslation           *bool              `json:"fastTranslation"`
+	ReplyShortcutKey          string             `json:"replyShortcutKey"`
 	DeepSeekAPIKey            string             `json:"deepSeekAPIKey"`
 	DeepSeekBaseURL           string             `json:"deepSeekBaseURL"`
 	DeepSeekModel             string             `json:"deepSeekModel"`
@@ -53,6 +70,7 @@ type persistedConfig struct {
 	Glossary                  string             `json:"glossary"`
 	PersistentOCR             *bool              `json:"persistentOCR"`
 	AutoCopy                  *bool              `json:"autoCopy"`
+	RecordHistory             *bool              `json:"recordHistory"`
 }
 
 func (p persistedConfig) Config() Config {
@@ -65,6 +83,13 @@ func (p persistedConfig) Config() Config {
 		APIKey:                    firstNonEmpty(p.APIKey, p.DeepSeekAPIKey),
 		BaseURL:                   firstNonEmpty(p.BaseURL, p.DeepSeekBaseURL),
 		Model:                     firstNonEmpty(p.Model, p.DeepSeekModel),
+		Provider:                  p.Provider,
+		CodexPath:                 p.CodexPath,
+		CodexModel:                p.CodexModel,
+		CodexReasoningEffort:      p.CodexReasoningEffort,
+		DirectImageInput:          p.DirectImageInput,
+		FastTranslation:           p.FastTranslation == nil || *p.FastTranslation,
+		ReplyShortcutKey:          p.ReplyShortcutKey,
 		RapidOCRPath:              p.RapidOCRPath,
 		RapidOCRTimeoutSeconds:    p.RapidOCRTimeoutSeconds,
 		TranslationTimeoutSeconds: p.TranslationTimeoutSeconds,
@@ -73,6 +98,7 @@ func (p persistedConfig) Config() Config {
 		Glossary:                  p.Glossary,
 		PersistentOCR:             p.PersistentOCR == nil || *p.PersistentOCR,
 		AutoCopy:                  p.AutoCopy != nil && *p.AutoCopy,
+		RecordHistory:             p.RecordHistory == nil || *p.RecordHistory,
 	}
 }
 
@@ -90,11 +116,16 @@ func Default() Config {
 		ScreenshotShortcutKey:     "Alt+W",
 		BaseURL:                   "https://api.deepseek.com",
 		Model:                     "deepseek-v4-flash",
+		Provider:                  "openai-compatible",
+		CodexReasoningEffort:      "low",
+		FastTranslation:           true,
+		ReplyShortcutKey:          "Alt+R",
 		RapidOCRPath:              "./RapidOCR-json_v0.2.0",
 		RapidOCRTimeoutSeconds:    15,
 		TranslationTimeoutSeconds: 60,
 		AutoDirection:             true,
 		PersistentOCR:             true,
+		RecordHistory:             true,
 	}
 }
 
@@ -127,7 +158,10 @@ func (s *Store) Load() (Config, error) {
 		return cfg, envErr
 	}
 
-	raw, err := os.ReadFile(s.Path)
+	raw, err := jsonfile.ReadValidated(s.Path, func(raw []byte) error {
+		var decoded persistedConfig
+		return json.Unmarshal(raw, &decoded)
+	})
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return cfg, nil
@@ -174,11 +208,43 @@ func (s *Store) Save(cfg Config) error {
 		return err
 	}
 
-	return os.WriteFile(s.Path, raw, 0o600)
+	// Legacy versions stored plaintext keys. Never copy those bytes into a
+	// recovery file while migrating to DPAPI, including an older backup.
+	for _, path := range []string{s.Path, s.Path + ".bak"} {
+		previousRaw, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		var previous persistedConfig
+		if json.Unmarshal(previousRaw, &previous) == nil {
+			for _, key := range []string{previous.APIKey, previous.DeepSeekAPIKey} {
+				if key != "" && !strings.HasPrefix(key, secretPrefix) {
+					return jsonfile.Reset(s.Path, raw)
+				}
+			}
+		}
+	}
+	return jsonfile.Write(s.Path, raw)
 }
 
 func (c Config) WithDefaults() Config {
 	defaults := Default()
+	if c.Provider == "" {
+		c.Provider = defaults.Provider
+	}
+	c.CodexPath = strings.TrimSpace(c.CodexPath)
+	c.CodexModel = strings.TrimSpace(c.CodexModel)
+	switch c.CodexReasoningEffort {
+	case "default", "none", "low", "medium", "high", "xhigh":
+	default:
+		c.CodexReasoningEffort = defaults.CodexReasoningEffort
+	}
+	if strings.TrimSpace(c.ReplyShortcutKey) == "" {
+		c.ReplyShortcutKey = defaults.ReplyShortcutKey
+	}
 	if c.UILanguage != "zh-CN" && c.UILanguage != "en" {
 		c.UILanguage = defaults.UILanguage
 	}

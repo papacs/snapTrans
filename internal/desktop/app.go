@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"snaptrans/internal/capture"
+	"snaptrans/internal/codex"
 	"snaptrans/internal/config"
 	"snaptrans/internal/history"
 	"snaptrans/internal/hotkeys"
@@ -71,11 +73,13 @@ type App struct {
 	trayMu         sync.Mutex
 	captureItem    *systray.MenuItem
 	screenshotItem *systray.MenuItem
+	replyItem      *systray.MenuItem
 
 	mu                  sync.Mutex
 	cfg                 config.Config
 	shortcut            *hotkeys.Registration
 	screenshotShortcut  *hotkeys.Registration
+	replyShortcut       *hotkeys.Registration
 	extensionProcessing context.CancelFunc
 	extensionRequestID  string
 	processing          context.CancelFunc
@@ -83,6 +87,9 @@ type App struct {
 	ocrWorkerConfig     ocrWorkerSettings
 	ocrCache            ocrResultCache
 	settingsMu          sync.Mutex
+	configMu            sync.Mutex
+	codexLoginMu        sync.Mutex
+	codexLoginCancel    context.CancelFunc
 	translationWarmMu   sync.Mutex
 	translationWarm     translationWarmState
 	trayOnce            sync.Once
@@ -122,7 +129,8 @@ func (a *App) startup(ctx context.Context) {
 	a.configStore = store
 	a.historyStore = history.NewStore(filepath.Join(filepath.Dir(store.Path), "history.json"), 50)
 	a.log = logfile.NewLogger(filepath.Join(filepath.Dir(store.Path), "logs", "snaptrans.log"), 0)
-	a.log.Infof("snapTrans started")
+	slog.SetDefault(slog.New(slog.NewTextHandler(a.log, nil)))
+	a.log.Infof("snapTrans started version=%s", buildVersion())
 
 	cfg, err := store.Load()
 	if err != nil {
@@ -140,12 +148,18 @@ func (a *App) startup(ctx context.Context) {
 	if err := a.registerScreenshotShortcut(cfg.ScreenshotShortcutKey); err != nil {
 		a.emitError("config", err, 0)
 	}
+	if err := a.registerReplyShortcut(cfg.ReplyShortcutKey); err != nil {
+		a.emitError("config", err, 0)
+	}
 
 	a.syncOCRWorker(cfg)
+	a.prewarmTranslationConnection()
 	a.startTray()
 }
 
 func (a *App) shutdown(_ context.Context) {
+	codex.CloseIdle()
+	a.CancelCodexLogin()
 	a.cancelTextAction()
 	closeAllPins()
 	a.mu.Lock()
@@ -158,6 +172,10 @@ func (a *App) shutdown(_ context.Context) {
 	if a.screenshotShortcut != nil {
 		_ = a.screenshotShortcut.Unregister()
 		a.screenshotShortcut = nil
+	}
+	if a.replyShortcut != nil {
+		_ = a.replyShortcut.Unregister()
+		a.replyShortcut = nil
 	}
 	if a.processing != nil {
 		a.processing()
@@ -235,89 +253,33 @@ func (a *App) emitSettingsOpen() {
 }
 
 func (a *App) SaveConfig(next config.Config) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
 	next = next.WithDefaults()
+	if next.Provider != "openai-compatible" && next.Provider != "codex" {
+		return fmt.Errorf("unsupported model provider: %s", next.Provider)
+	}
 	if a.configStore == nil {
 		return errors.New("config store is not ready")
+	}
+	if err := validateShortcuts(next); err != nil {
+		return err
 	}
 
 	a.mu.Lock()
 	current := a.cfg
 	a.mu.Unlock()
 
-	if _, _, err := hotkeys.ParseShortcut(next.ShortcutKey); err != nil {
-		if a.log != nil {
-			a.log.Errorf("invalid shortcut %q: %v", next.ShortcutKey, err)
-		}
-		return fmt.Errorf("invalid shortcut %q: %w", next.ShortcutKey, err)
-	}
-	if _, _, err := hotkeys.ParseShortcut(next.ScreenshotShortcutKey); err != nil {
-		if a.log != nil {
-			a.log.Errorf("invalid screenshot shortcut %q: %v", next.ScreenshotShortcutKey, err)
-		}
-		return fmt.Errorf("invalid screenshot shortcut %q: %w", next.ScreenshotShortcutKey, err)
-	}
-	if strings.EqualFold(next.ShortcutKey, next.ScreenshotShortcutKey) {
-		return errors.New("translation and screenshot shortcuts must be different")
-	}
-
-	var registration *hotkeys.Registration
-	var screenshotRegistration *hotkeys.Registration
-	if next.ShortcutKey != current.ShortcutKey {
-		var err error
-		registration, err = hotkeys.Register(next.ShortcutKey, func() {
-			_ = a.TriggerTranslation()
-		})
-		if err != nil {
-			if a.log != nil {
-				a.log.Errorf("shortcut registration failed for %q: %v", next.ShortcutKey, err)
-			}
-			return fmt.Errorf("shortcut %q is unavailable: %w", next.ShortcutKey, err)
-		}
-	}
-	if next.ScreenshotShortcutKey != current.ScreenshotShortcutKey {
-		var err error
-		screenshotRegistration, err = hotkeys.Register(next.ScreenshotShortcutKey, func() {
-			_ = a.TriggerScreenshot()
-		})
-		if err != nil {
-			if registration != nil {
-				_ = registration.Unregister()
-			}
-			if a.log != nil {
-				a.log.Errorf("screenshot shortcut registration failed for %q: %v", next.ScreenshotShortcutKey, err)
-			}
-			return fmt.Errorf("screenshot shortcut %q is unavailable: %w", next.ScreenshotShortcutKey, err)
-		}
-	}
-
-	if err := a.configStore.Save(next); err != nil {
-		if registration != nil {
-			_ = registration.Unregister()
-		}
-		if screenshotRegistration != nil {
-			_ = screenshotRegistration.Unregister()
-		}
+	if err := a.saveConfigAndShortcuts(current, next); err != nil {
 		return err
 	}
 
-	a.mu.Lock()
-	a.cfg = next
-	if registration != nil {
-		if a.shortcut != nil {
-			_ = a.shortcut.Unregister()
-		}
-		a.shortcut = registration
-	}
-	if screenshotRegistration != nil {
-		if a.screenshotShortcut != nil {
-			_ = a.screenshotShortcut.Unregister()
-		}
-		a.screenshotShortcut = screenshotRegistration
-	}
-	a.mu.Unlock()
-
 	a.updateTrayShortcuts(next.ShortcutKey, next.ScreenshotShortcutKey)
 	a.syncOCRWorker(next)
+	if next.Provider != current.Provider || next.CodexPath != current.CodexPath || next.CodexModel != current.CodexModel {
+		codex.CloseIdle()
+	}
+	a.prewarmTranslationConnection()
 	return nil
 }
 
@@ -325,12 +287,19 @@ func (a *App) updateTrayShortcuts(shortcut string, screenshotShortcut string) {
 	a.trayMu.Lock()
 	item := a.captureItem
 	screenshotItem := a.screenshotItem
+	replyItem := a.replyItem
 	a.trayMu.Unlock()
 	if item != nil {
 		item.SetTitle("Capture / 框选翻译")
 	}
 	if screenshotItem != nil {
 		screenshotItem.SetTitle("Screenshot  " + screenshotShortcut)
+	}
+	if replyItem != nil {
+		a.mu.Lock()
+		shortcut := a.cfg.ReplyShortcutKey
+		a.mu.Unlock()
+		replyItem.SetTitle("Reply / 截图回复  " + shortcut)
 	}
 }
 
@@ -520,7 +489,7 @@ func (a *App) triggerCaptureMode(mode string) error {
 	if !started {
 		return nil
 	}
-	if mode == "translate" {
+	if mode == "translate" || mode == "reply" {
 		a.prewarmTranslationConnection()
 	}
 
@@ -619,10 +588,11 @@ func (a *App) ProcessImage(base64Crop string, direction string, generation int) 
 
 // TranslateRegionRequest is a selection in captured-frame pixel coordinates.
 type TranslateRegionRequest struct {
-	X      int `json:"x"`
-	Y      int `json:"y"`
-	Width  int `json:"width"`
-	Height int `json:"height"`
+	X         int    `json:"x"`
+	Y         int    `json:"y"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	InputMode string `json:"inputMode,omitempty"`
 }
 
 // TranslateRegion runs the OCR and translation workflow directly on the last
@@ -630,10 +600,12 @@ type TranslateRegionRequest struct {
 // the Wails JSON bridge. The frontend still performs the same DPI-aware
 // coordinate mapping, so the cropped input matches the previous pipeline.
 func (a *App) TranslateRegion(region TranslateRegionRequest, direction string, generation int) error {
+	if region.InputMode != "" && region.InputMode != "image" && region.InputMode != "ocr" {
+		return errors.New("invalid translation input mode")
+	}
 	// The frontend treats selections smaller than 8 px as unusable; keep the
 	// same minimum here so tiny-but-valid selections keep working.
-	if region.Width < 8 || region.Height < 8 || region.Width > 16384 || region.Height > 16384 ||
-		region.X < -1_000_000 || region.X > 1_000_000 || region.Y < -1_000_000 || region.Y > 1_000_000 {
+	if !validRegion(region) {
 		return errors.New("invalid translation region")
 	}
 
@@ -643,6 +615,13 @@ func (a *App) TranslateRegion(region TranslateRegionRequest, direction string, g
 	a.mu.Unlock()
 	if frame == nil {
 		return errors.New("no captured frame is available; start a new capture")
+	}
+	if region.InputMode != "" {
+		cfg.DirectImageInput = region.InputMode == "image"
+	}
+	if cfg.DirectImageInput {
+		a.startVisionRegion(cfg, frame, region, translator.NormalizeDirection(direction), generation)
+		return nil
 	}
 
 	startedAt := time.Now()
@@ -737,7 +716,6 @@ func (a *App) HideWindow() error {
 	a.windowVisible = false
 	a.frame = nil
 	a.mu.Unlock()
-	a.ocrCache.Clear()
 	if a.captureAssets != nil {
 		a.captureAssets.Clear()
 	}
@@ -847,7 +825,6 @@ func (a *App) publishCapture(result capture.Result, mode string, epoch uint64, n
 	defer a.mu.Unlock()
 	result.Image = a.captureAssets.Store(result.ImageBytes)
 	a.frame = result.Frame
-	a.ocrCache.Clear()
 	result.Frame = nil
 	result.ImageBytes = nil
 	result.Mode = mode
@@ -893,6 +870,7 @@ func (a *App) onTrayReady() {
 
 	captureItem := systray.AddMenuItem("Capture  Alt+Q", "Start screenshot translation")
 	screenshotItem := systray.AddMenuItem("Screenshot  Alt+W", "Capture and annotate an image")
+	replyItem := systray.AddMenuItem("Reply / 截图回复  Alt+R", "Capture context and draft a reply")
 	settingsItem := systray.AddMenuItem("Settings", "Open settings")
 	restorePinsItem := systray.AddMenuItem("Unlock pins / 恢复贴钉交互", "Disable click-through on all pinned images")
 	closePinsItem := systray.AddMenuItem("Close pins / 关闭所有贴钉", "Close pinned images")
@@ -904,9 +882,11 @@ func (a *App) onTrayReady() {
 	a.mu.Unlock()
 	captureItem.SetTitle("Capture / 框选翻译")
 	screenshotItem.SetTitle("Screenshot  " + cfg.ScreenshotShortcutKey)
+	replyItem.SetTitle("Reply / 截图回复  " + cfg.ReplyShortcutKey)
 	a.trayMu.Lock()
 	a.captureItem = captureItem
 	a.screenshotItem = screenshotItem
+	a.replyItem = replyItem
 	a.trayMu.Unlock()
 
 	go func() {
@@ -916,6 +896,8 @@ func (a *App) onTrayReady() {
 				_ = a.TriggerCapture()
 			case <-screenshotItem.ClickedCh:
 				_ = a.TriggerScreenshot()
+			case <-replyItem.ClickedCh:
+				_ = a.TriggerReply()
 			case <-restorePinsItem.ClickedCh:
 				restoreAllPins()
 			case <-closePinsItem.ClickedCh:
@@ -932,6 +914,10 @@ func (a *App) onTrayReady() {
 
 func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop string, direction translator.Direction, generation int) {
 	startedAt := time.Now()
+	if cfg.DirectImageInput {
+		a.processVisionImage(ctx, cfg, base64Crop, direction, generation, startedAt)
+		return
+	}
 	runtime.EventsEmit(a.ctx, "ocr-start", sentinelPayload{Generation: generation})
 
 	result, err := a.runOCR(ctx, cfg, base64Crop)
@@ -997,14 +983,9 @@ func (a *App) processText(ctx context.Context, cfg config.Config, text string, b
 	}
 
 	var translated strings.Builder
-	client := translator.NewOpenAICompatible(translator.Options{
-		APIKey:       cfg.APIKey,
-		BaseURL:      cfg.BaseURL,
-		Model:        cfg.Model,
-		SystemPrompt: cfg.SystemPrompt,
-		Glossary:     cfg.Glossary,
-		Source:       source,
-	})
+	options := translationTaskOptions(cfg)
+	options.Source = source
+	client := translator.NewOpenAICompatible(options)
 	translationCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TranslationTimeoutSeconds)*time.Second)
 	defer cancel()
 	err := client.Translate(translationCtx, text, direction, func(token string) {
@@ -1033,6 +1014,12 @@ func (a *App) processText(ctx context.Context, cfg config.Config, text string, b
 }
 
 func (a *App) saveHistory(source string, translated string, direction string) {
+	a.mu.Lock()
+	record := a.cfg.RecordHistory
+	a.mu.Unlock()
+	if !record {
+		return
+	}
 	if a.historyStore == nil {
 		return
 	}
@@ -1060,14 +1047,17 @@ func (a *App) ClearHistory() error {
 func (a *App) TestConnection(draft config.Config) error {
 	cfg := draft.WithDefaults()
 
-	client := translator.NewOpenAICompatible(translator.Options{
-		APIKey:  cfg.APIKey,
-		BaseURL: cfg.BaseURL,
-		Model:   cfg.Model,
-	})
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if cfg.Provider != "openai-compatible" && cfg.Provider != "codex" {
+		return fmt.Errorf("unsupported model provider: %s", cfg.Provider)
+	}
+	client := translator.NewOpenAICompatible(translationOptions(cfg))
+	timeout := 15 * time.Second
+	if cfg.Provider == "codex" {
+		timeout = 45 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return client.Ping(ctx)
+	return client.Ping(ctx, cfg.DirectImageInput)
 }
 
 type EnvironmentStatus struct {
@@ -1084,7 +1074,7 @@ const autostartValueName = "snapTrans"
 const appVersion = "0.2.1"
 
 func (a *App) GetVersion() string {
-	return appVersion
+	return buildVersion()
 }
 
 // OpenLogFolder reveals the local log directory in Explorer.

@@ -8,6 +8,13 @@ export interface AppConfig {
   apiKey: string;
   baseURL: string;
   model: string;
+  provider: "openai-compatible" | "codex";
+  codexPath: string;
+  codexModel: string;
+  codexReasoningEffort: "low" | "medium" | "high" | "xhigh" | "none" | "default";
+  directImageInput: boolean;
+  fastTranslation: boolean;
+  replyShortcutKey: string;
   rapidOCRPath: string;
   rapidOCRTimeoutSeconds: number;
   translationTimeoutSeconds: number;
@@ -16,6 +23,7 @@ export interface AppConfig {
   glossary: string;
   persistentOCR: boolean;
   autoCopy: boolean;
+  recordHistory: boolean;
 }
 
 export interface CapturePayload {
@@ -26,7 +34,7 @@ export interface CapturePayload {
   originY?: number;
   displays?: DisplayInfo[];
   source?: "wails" | "browser";
-  mode?: "translate" | "screenshot";
+  mode?: "translate" | "screenshot" | "reply";
   scrollFrames?: number;
   selectedText?: NativeTextSelection;
   notice?: string;
@@ -45,6 +53,8 @@ export interface SelectionRegion {
   width: number;
   height: number;
 }
+
+export interface TranslationRegion extends SelectionRegion { inputMode?: "ocr" | "image" }
 
 export interface ManualScrollStatus {
   frames: number;
@@ -96,7 +106,7 @@ export interface OCRResultEvent extends GenerationEvent {
 // Selection bounds are normalized to the full captured frame (0..1).
 // Child text blocks are normalized to that selection, not the screen.
 export interface NativeTextSelection extends SelectionRegion { id: string; blocks: TextBlockPayload[] }
-export interface TextRegionsEvent extends OCRResultEvent { source: "ocr" | "selection" }
+export interface TextRegionsEvent extends OCRResultEvent { source: "ocr" | "selection" | "image" }
 export type OCRBlockPayload = TextBlockPayload;
 export interface TextBlockPayload {
   background?: string;
@@ -162,6 +172,13 @@ export const defaultConfig: AppConfig = {
   apiKey: "",
   baseURL: "https://api.deepseek.com",
   model: "deepseek-v4-flash",
+  provider: "openai-compatible",
+  codexPath: "",
+  codexModel: "",
+  codexReasoningEffort: "low",
+  directImageInput: false,
+  fastTranslation: true,
+  replyShortcutKey: "Alt+R",
   rapidOCRPath: "./RapidOCR-json_v0.2.0",
   rapidOCRTimeoutSeconds: 15,
   translationTimeoutSeconds: 60,
@@ -169,6 +186,7 @@ export const defaultConfig: AppConfig = {
   systemPrompt: "",
   glossary: "",
   persistentOCR: true,
+  recordHistory: true,
   autoCopy: false
 };
 
@@ -215,6 +233,10 @@ function normalizeLoadedConfig(loaded: Partial<AppConfig> | null | undefined): A
     ...loaded,
     uiLanguage: loaded?.uiLanguage === "en" ? "en" : "zh-CN",
     theme: loaded?.theme === "dark" ? "dark" : "light",
+    provider: loaded?.provider === "codex" ? "codex" : "openai-compatible",
+    directImageInput: loaded?.directImageInput === true,
+    fastTranslation: loaded?.fastTranslation !== false,
+    recordHistory: loaded?.recordHistory !== false,
     features: normalizeFeatures(loaded?.features)
   };
 }
@@ -255,6 +277,11 @@ export async function triggerScreenshot(): Promise<void> {
   }
 
   emitFallback("capture-start", createFallbackCapture("screenshot"));
+}
+
+export async function triggerReply(): Promise<void> {
+  if (hasWailsBackend()) { await window.go!.desktop!.App!.TriggerReply(); return; }
+  emitFallback("capture-start", createFallbackCapture("reply"));
 }
 
 export async function showCaptureWindow(): Promise<void> {
@@ -333,14 +360,15 @@ export async function processImage(
 export async function translateRegion(
   region: SelectionRegion,
   direction: TranslationDirection = "to-zh",
-  generation = 0
+  generation = 0,
+  inputMode?: "ocr" | "image"
 ): Promise<void> {
   if (hasWailsBackend()) {
-    await window.go!.desktop!.App!.TranslateRegion(region, direction, generation);
+    await window.go!.desktop!.App!.TranslateRegion(inputMode ? {...region, inputMode} : region, direction, generation);
     return;
   }
 
-  void streamFallbackTranslation(direction, generation);
+  void streamFallbackTranslation(direction, generation, inputMode);
 }
 
 export async function translateSelection(id: string, direction: TranslationDirection, generation: number): Promise<void> {
@@ -426,7 +454,28 @@ export async function testConnection(config: AppConfig): Promise<void> {
     return;
   }
 
-  await delay(250);
+  throw new Error("连接测试需要桌面版。 / Connection tests require the desktop app.");
+}
+
+export interface CodexStatus {
+  authenticated: boolean;
+  email: string;
+  plan: string;
+  models: Array<{ id: string; name: string; isDefault: boolean }>;
+}
+
+export async function getCodexStatus(path: string): Promise<CodexStatus> {
+  if (hasWailsBackend()) return window.go!.desktop!.App!.GetCodexStatus(path);
+  throw new Error("本地 Codex 接入需要桌面版。 / Local Codex requires the desktop app.");
+}
+
+export async function loginCodex(path: string): Promise<void> {
+  if (hasWailsBackend()) return window.go!.desktop!.App!.LoginCodex(path);
+  throw new Error("订阅授权需要桌面版。 / Subscription sign-in requires the desktop app.");
+}
+
+export async function cancelCodexLogin(): Promise<void> {
+  if (hasWailsBackend()) await window.go!.desktop!.App!.CancelCodexLogin();
 }
 
 export async function getEnvironmentStatus(): Promise<EnvironmentStatus> {
@@ -512,7 +561,7 @@ function emitFallback<T>(eventName: EventName, payload: T): void {
   }
 }
 
-function createFallbackCapture(mode: "translate" | "screenshot"): CapturePayload {
+function createFallbackCapture(mode: "translate" | "screenshot" | "reply"): CapturePayload {
   const canvas = document.createElement("canvas");
   const scale = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
   canvas.width = Math.max(720, Math.round(window.innerWidth * scale));
@@ -632,12 +681,15 @@ function createFallbackScrollingCapture(region: ScrollCaptureRegion, frames = 3)
   };
 }
 
-async function streamFallbackTranslation(direction: TranslationDirection, generation: number): Promise<void> {
-  emitFallback("ocr-start", { generation });
+async function streamFallbackTranslation(direction: TranslationDirection, generation: number, inputMode?: "ocr" | "image"): Promise<void> {
+  const directImage = inputMode ? inputMode === "image" : (await loadConfig()).directImageInput;
+  if (!directImage) emitFallback("ocr-start", { generation });
   await delay(80);
   const resolvedDirection: "to-zh" | "to-en" = direction === "to-en" ? "to-en" : "to-zh";
   emitFallback("translation-direction", { generation, direction: resolvedDirection });
-  emitFallback("ocr-result", {
+  if (directImage) {
+    emitFallback("text-regions", { generation, source: "image", text: "", blocks: [] } satisfies TextRegionsEvent);
+  } else emitFallback("ocr-result", {
     generation,
     text: "Neutral\nNegative\nPositive",
     blocks: [
@@ -666,9 +718,9 @@ function delay(ms: number): Promise<void> {
 }
 
 
-export type TextAction = "explain" | "summarize" | "meme" | "learning";
-export interface TextActionRequest { id: string; text: string; action: TextAction }
-export interface TextActionEvent { id: string; token?: string; error?: string; done: boolean }
+export type TextAction = "explain" | "summarize" | "meme" | "learning" | "reply";
+export interface TextActionRequest { id: string; text: string; action: TextAction; scene?: "general" | "work" | "social"; intent?: string; region?: SelectionRegion; inputMode?: "ocr" | "image" }
+export interface TextActionEvent { id: string; token?: string; error?: string; done: boolean; source?: string; stage?: "ocr" | "writing"; image?: string }
 const fallbackActionTimers = new Map<string, number>();
 export async function startTextAction(request: TextActionRequest): Promise<void> {
   if (hasWailsBackend()) { await window.go!.desktop!.App!.StartTextAction(request); return; }

@@ -24,7 +24,7 @@ func TestSelectedTextUsesTextOnlyPromptAndRecoversMissingRegion(t *testing.T) {
 		if len(requests) == 2 {
 			content = "[2] 世界"
 		}
-		chunk, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]string{"content": content}}}})
+		chunk, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]string{"content": content}, "finish_reason": "stop"}}})
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte("data: " + string(chunk) + "\n\ndata: [DONE]\n\n"))
 	}))

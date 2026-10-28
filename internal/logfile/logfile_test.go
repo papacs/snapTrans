@@ -1,6 +1,8 @@
 package logfile
 
 import (
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +10,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestStructuredTimingDiagnosticsReachLocalLog(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "diagnostics.log")
+	writer, ok := any(NewLogger(path, 0)).(io.Writer)
+	require.True(t, ok, "structured diagnostics must be routed into the app log")
+	slog.New(slog.NewTextHandler(writer, nil)).Info("Codex RPC", "method", "thread/start", "elapsed_ms", 240)
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), "method=thread/start elapsed_ms=240")
+}
 
 func TestLoggerWritesTimedLine(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "logs", "snaptrans.log")

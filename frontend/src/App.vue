@@ -11,6 +11,7 @@ import {
   Image as ImageIcon,
   Keyboard,
   Languages,
+  MessageSquare,
   Minus,
   Moon,
   RefreshCw,
@@ -20,9 +21,10 @@ import {
   Star,
   X
 } from "lucide-vue-next";
-import MarkdownIt from "markdown-it";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import SettingsNavigation from "./components/SettingsNavigation.vue";
+import ModelSettings from "./components/ModelSettings.vue";
+import ReplyPanel from "./components/ReplyPanel.vue";
 import { settingsSections, type SettingsSection } from "./utils/settings-navigation";
 import ExtensionSettings from "./components/ExtensionSettings.vue";
 import ExtensionWorkbench from "./components/ExtensionWorkbench.vue";
@@ -35,6 +37,7 @@ import {
   setHistoryFavorite,
   exportMarkdown,
   triggerScreenshot,
+  triggerReply,
   copyImageDataUrl,
   copyText,
   defaultConfig,
@@ -94,6 +97,7 @@ import {
 import { buildSourceRegions, layoutTranslations, OVERLAY_FONT_FAMILY } from "./utils/overlay-layout";
 import { canvasTextMeasurer, leadingMarkerInset, paintTranslationOverlay } from "./utils/overlay-painter";
 import { nativeSelectionBackdrop } from "./utils/selection-backdrop";
+import { layoutPlainTranslation } from "./utils/plain-translation";
 import { shortcutKeyFromKeyboardEvent } from "./utils/shortcut";
 import { toolbarPosition } from "./utils/annotations";
 import {
@@ -126,6 +130,7 @@ const resolvedTranslationDirection = computed<"to-zh" | "to-en">(() =>
 );
 const currentCropDataUrl = ref("");
 const lastImageRegion = ref<SelectionRegion | null>(null);
+const translationInputOverride = ref<"ocr" | undefined>();
 const hasResultSource = computed(() => Boolean(capture.value?.selectedText || lastImageRegion.value || currentCropDataUrl.value));
 const workflowGeneration = ref(0);
 let captureLoadSequence = 0;
@@ -156,6 +161,11 @@ const settingsError = ref("");
 const settingsSaving = ref(false);
 const sourceText = ref("");
 const extensionOpen = ref(false);
+const replyOpen = ref(false);
+const replySource = ref("");
+const replyRegion = ref<SelectionRegion | undefined>();
+const replyAnchor = ref<Rect>({x:16,y:16,width:0,height:0});
+const replySequence = ref(0);
 const extensionImage = ref("");
 const extensionTranslatedImage = ref("");
 const extensionOrigin = ref({x:0,y:0});
@@ -166,7 +176,7 @@ const historyEntries = ref<HistoryEntry[]>([]);
 const historyLoaded = ref(false);
 const testStatus = ref<"idle" | "testing" | "ok" | "error">("idle");
 const testMessage = ref("");
-const shortcutRecording = ref<"translate" | "screenshot" | null>(null);
+const shortcutRecording = ref<"translate" | "screenshot" | "reply" | null>(null);
 const screenshotNotice = ref("");
 const envStatus = ref<EnvironmentStatus | null>(null);
 const autoStartEnabled = ref(false);
@@ -180,9 +190,13 @@ const copiedImage = ref(false);
 const copyingGeneration = ref<number | null>(null);
 const expandedTranslation = ref(false);
 const isDesktop = hasWailsBackend();
-const markdown = new MarkdownIt({ breaks: true, linkify: false, html: false });
 const config = reactive<AppConfig>({ ...defaultConfig });
 const savedConfig = reactive<AppConfig>({ ...defaultConfig });
+watch(() => [config.provider, config.apiKey, config.baseURL, config.model, config.codexPath, config.codexModel, config.codexReasoningEffort, config.directImageInput], () => {
+  connectionTestSequence += 1;
+  testStatus.value = "idle";
+  testMessage.value = "";
+});
 const featureFlags = computed(() => normalizeFeatures(savedConfig.features));
 const hasResultTools = computed(() => Object.entries(featureFlags.value).some(([key,value]) => value && !["historyTools","redaction","textExtraction","tableExtraction"].includes(key)));
 const visibleHistory = computed(() => filterLibrary(historyEntries.value.filter(e=>e.kind!=="learning"),featureFlags.value.historyTools?historyQuery.value:"",featureFlags.value.historyTools&&favoritesOnly.value?"favorites":"all"));
@@ -269,24 +283,23 @@ const parsedTranslation = computed(() => parseTranslationOutput(translationText.
 
 const cleanTranslationText = computed(() => parsedTranslation.value.lines.join("\n").trim());
 
-const renderedTranslation = computed(() => {
-  if (cleanTranslationText.value.length === 0) {
-    return "";
-  }
-  return markdown.render(cleanTranslationText.value);
+const plainTranslationCard = computed(() => {
+  const rect = resultRect.value;
+  if (!rect || textBlocks.value.length || !cleanTranslationText.value) return null;
+  const width = Math.min(Math.max(rect.width, 180), Math.max(48, viewport.width - 16));
+  return layoutPlainTranslation(cleanTranslationText.value, width, textMeasurer());
 });
 
-const resultStyle = computed(() => {
+const plainResultBox = computed(() => {
   const rect = resultRect.value;
-  if (!rect) {
-    return {};
-  }
-
-  if (textBlocks.value.length > 0 && phase.value !== "error") {
-    return { left: rect.x+"px", top:rect.y+"px", width:rect.width+"px", height:rect.height+"px" };
-  }
+  if (!rect) return null;
   const box = normalizeResultBox(rect, viewport);
   let height = box.height;
+  let width = box.width;
+  if (plainTranslationCard.value && phase.value !== "error") {
+    width = plainTranslationCard.value.width;
+    height = Math.max(height, plainTranslationCard.value.height);
+  }
 
   if (phase.value === "error") {
     const errorLines = wrapTranslationText(errorMessage.value, 14, Math.max(80, box.width - 24));
@@ -295,17 +308,30 @@ const resultStyle = computed(() => {
 
   height = Math.min(height, Math.max(48, viewport.height - 16));
   const top = Math.max(8, Math.min(box.y, viewport.height - height - 8));
+  const left = Math.max(8, Math.min(box.x, viewport.width - width - 8));
+  return {x:left,y:top,width,height};
+});
 
+const resultStyle = computed(() => {
+  const rect = resultRect.value;
+  if (!rect) return {};
+  if (textBlocks.value.length > 0 && phase.value !== "error") {
+    return { left: rect.x+"px", top:rect.y+"px", width:rect.width+"px", height:rect.height+"px" };
+  }
+  const box = plainResultBox.value!;
   return {
     left: `${box.x}px`,
-    top: `${top}px`,
+    top: `${box.y}px`,
     width: `${box.width}px`,
-    height: `${height}px`,
-    minHeight: `${height}px`
+    height: `${box.height}px`,
+    minHeight: `${box.height}px`
   };
 });
 
 const resultTextStyle = computed(() => {
+  if (plainTranslationCard.value) {
+    return {fontSize: plainTranslationCard.value.fontSize + "px", lineHeight: plainTranslationCard.value.lineHeight + "px"};
+  }
   const rect = resultRect.value;
   if (!rect) {
     return {};
@@ -334,8 +360,7 @@ const resultActionsStyle = computed(() => {
     return {};
   }
 
-  const box = normalizeResultBox(rect, viewport);
-  const panel = textBlocks.value.length > 0 && phase.value !== "error" ? rect : box;
+  const panel = textBlocks.value.length > 0 && phase.value !== "error" ? rect : plainResultBox.value!;
   const point = toolbarPosition(
     panel,
     viewport,
@@ -371,7 +396,9 @@ const isResultBusy = computed(() => phase.value === "processing" || phase.value 
 const showsResultProgress = computed(
   () => phase.value === "processing" || (phase.value === "streaming" && !translationText.value)
 );
-const resultProgressLabel = computed(() => phase.value === "processing" ? "OCR..." : "Translating...");
+const usesImageInput = computed(() => !translationInputOverride.value && savedConfig.directImageInput && !capture.value?.selectedText);
+const canRetryWithOCR = computed(() => usesImageInput.value && lastImageRegion.value && (phase.value === "error" || phase.value === "partial"));
+const resultProgressLabel = computed(() => phase.value === "processing" ? usesImageInput.value ? "Preparing image..." : "OCR..." : "Translating...");
 
 const reverseDirectionTitle = computed(() =>
   translationDirection.value === "to-zh" ? "Reverse: translate Chinese to English" : "Reverse: translate English to Chinese"
@@ -567,6 +594,7 @@ onMounted(async () => {
       phase.value = "error";
     }),
     onBackendEvent("settings-open", async () => {
+      replyOpen.value = false;
       extensionOpen.value = false;
       sourceText.value = "";
       invalidatePendingCaptureLoad();
@@ -627,6 +655,10 @@ function isCurrentGeneration(payload: { generation?: number }): boolean {
 }
 
 function onKeyDown(event: KeyboardEvent): void {
+  if (replyOpen.value) {
+    if (event.key === "Escape") {event.preventDefault();closeReply();}
+    return;
+  }
   if (document.querySelector("[data-extension-workbench]")) {
     if(event.key === "Escape") {event.preventDefault(); extensionOpen.value=false;}
     return;
@@ -643,6 +675,8 @@ function onKeyDown(event: KeyboardEvent): void {
 }
 
 async function startCapture(payload: CapturePayload): Promise<void> {
+  translationInputOverride.value = undefined;
+  replyOpen.value = false;
   extensionOpen.value=false;sourceText.value="";
   const sequence = ++captureLoadSequence;
   sampledPaletteCache.clear();
@@ -825,6 +859,18 @@ async function submitSelection(rect: Rect): Promise<void> {
     payload.displays
   );
 
+  if (payload.mode === "reply") {
+    if (imageRect.width <= 0 || imageRect.height <= 0) { phase.value = "ready"; return; }
+    selection.value = null;
+    phase.value = "done";
+    replySource.value = "";
+    replyRegion.value = imageRect;
+    replyAnchor.value = rect;
+    replySequence.value++;
+    replyOpen.value = true;
+    return;
+  }
+
   resultRect.value = rect;
   selection.value = null;
   textBlocks.value = [];
@@ -861,6 +907,7 @@ function onContextMenu(event: MouseEvent): void {
 }
 
 function onMainMouseDown(event: MouseEvent): void {
+  if (replyOpen.value) return;
   if (event.button !== 0 || !resultRect.value || settingsOpen.value || isCaptureActive()) {
     return;
   }
@@ -874,6 +921,7 @@ function onMainMouseDown(event: MouseEvent): void {
 }
 
 function onMainContextMenu(event: MouseEvent): void {
+  if (replyOpen.value) return;
   if (!resultRect.value || settingsOpen.value || isCaptureActive()) {
     return;
   }
@@ -887,6 +935,7 @@ function isCaptureActive(): boolean {
 }
 
 async function cancelCapture(): Promise<void> {
+  replyOpen.value = false;
   extensionOpen.value=false;sourceText.value="";
   invalidatePendingCaptureLoad();
   detachCaptureDragListeners();
@@ -1026,6 +1075,12 @@ async function retryProcessing(): Promise<void> {
   }
 }
 
+async function retryWithOCR(): Promise<void> {
+  if (!canRetryWithOCR.value || isResultBusy.value) return;
+  translationInputOverride.value = "ocr";
+  await retryProcessing();
+}
+
 async function runProcessing(direction: TranslationDirection, generation: number): Promise<void> {
   if (capture.value?.selectedText) {
     phase.value = "streaming";
@@ -1034,7 +1089,8 @@ async function runProcessing(direction: TranslationDirection, generation: number
     return;
   }
   if (lastImageRegion.value) {
-    await translateRegion(lastImageRegion.value, direction, generation);
+    if (translationInputOverride.value) await translateRegion(lastImageRegion.value, direction, generation, translationInputOverride.value);
+    else await translateRegion(lastImageRegion.value, direction, generation);
     return;
   }
   if (currentCropDataUrl.value) {
@@ -1070,6 +1126,24 @@ function renderTranslatedSelectionImage(): string | null {
   }
 
   const target = document.createElement("canvas");
+  if (plainTranslationCard.value) {
+    const card = plainTranslationCard.value;
+    const scaleX = imageRect.width / rect.width, scaleY = imageRect.height / rect.height;
+    target.width = Math.ceil(card.width * scaleX);
+    target.height = Math.ceil(card.height * scaleY);
+    if (target.width * target.height > 16_000_000) throw new Error("Translation image is too large; copy the text instead.");
+    const context = target.getContext("2d");
+    if (!context) return null;
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, target.width, target.height);
+    context.scale(scaleX, scaleY);
+    context.font = "400 " + card.fontSize + "px " + OVERLAY_FONT_FAMILY;
+    context.fillStyle = "#0f172a";
+    context.textAlign = "left";
+    context.textBaseline = "middle";
+    card.lines.forEach((line, index) => context.fillText(line, card.padding, card.padding + card.lineHeight * (index + 0.5)));
+    return target.toDataURL("image/png");
+  }
   target.width = imageRect.width;
   target.height = imageRect.height;
   const context = target.getContext("2d");
@@ -1116,6 +1190,7 @@ function cssColorForSampledColor(color: SampledColor | null): string | null {
 }
 
 async function restore(): Promise<void> {
+  replyOpen.value = false;
   extensionOpen.value=false;sourceText.value="";
   phase.value = "idle";
   capture.value = null;
@@ -1227,7 +1302,9 @@ async function runConnectionTest(): Promise<void> {
     await testConnection({ ...config });
     if (sequence !== connectionTestSequence) return;
     testStatus.value = "ok";
-    testMessage.value = settingsText.value.connectionSuccessful;
+    testMessage.value = config.directImageInput
+      ? (settingsLocale.value === "en" ? "Connected · image recognition verified" : "连接成功 · 已验证图片识别")
+      : settingsText.value.connectionSuccessful;
   } catch (error) {
     if (sequence !== connectionTestSequence) return;
     testStatus.value = "error";
@@ -1235,7 +1312,7 @@ async function runConnectionTest(): Promise<void> {
   }
 }
 
-function startShortcutRecording(kind: "translate" | "screenshot" = "translate"): void {
+function startShortcutRecording(kind: "translate" | "screenshot" | "reply" = "translate"): void {
   shortcutRecording.value = kind;
 }
 
@@ -1260,6 +1337,8 @@ function onShortcutRecorderKeydown(event: KeyboardEvent): void {
   if (shortcut) {
     if (shortcutRecording.value === "screenshot") {
       config.screenshotShortcutKey = shortcut;
+    } else if (shortcutRecording.value === "reply") {
+      config.replyShortcutKey = shortcut;
     } else {
       config.shortcutKey = shortcut;
     }
@@ -1283,6 +1362,20 @@ async function saveSettings(): Promise<void> {
     settingsSaving.value = false;
     settingsError.value = error instanceof Error ? error.message : "Failed to save settings";
   }
+}
+
+function closeReply(): void {
+  replyOpen.value = false;
+  if (capture.value?.mode === "reply") void cancelCapture();
+}
+
+function replyFromResult(): void {
+  if (!resultRect.value || (!sourceText.value.trim() && !lastImageRegion.value)) return;
+  replySource.value = sourceText.value;
+  replyRegion.value = lastImageRegion.value ?? undefined;
+  replyAnchor.value = resultRect.value;
+  replySequence.value++;
+  replyOpen.value = true;
 }
 </script>
 
@@ -1314,6 +1407,7 @@ async function saveSettings(): Promise<void> {
           </button>
         </div>
         <button type="button" class="settings-secondary-button mb-4" @click="triggerScreenshot">{{settingsLocale==='en'?'Screenshot & annotate':'截图与涂鸦'}}</button>
+        <button type="button" class="settings-secondary-button mb-4 ml-2" data-testid="trigger-reply" @click="triggerReply"><MessageSquare class="h-4 w-4" />{{ settingsLocale === 'en' ? 'Capture & reply' : '截图回复' }}</button>
         <div class="grid grid-cols-3 gap-2">
           <div class="h-12 rounded-md bg-emerald-500/15" />
           <div class="h-12 rounded-md bg-blue-500/15" />
@@ -1387,6 +1481,8 @@ async function saveSettings(): Promise<void> {
     />
 
     <ExtensionWorkbench v-if="extensionOpen" :features="featureFlags" :locale="settingsLocale" :image="extensionImage" :translated-image="extensionTranslatedImage" :source="sourceText" :translation="cleanTranslationText" :origin="extensionOrigin" @close="extensionOpen=false" @pinned="restore" />
+    <ReplyPanel v-if="replyOpen" :key="replySequence" :source="replySource" :region="replyRegion" :anchor="replyAnchor" :viewport="viewport" :locale="settingsLocale" :direct-image-input="savedConfig.directImageInput" @close="closeReply" @copied="restore" />
+    <div v-if="replyOpen && capture?.mode === 'reply'" class="pointer-events-none absolute z-20 rounded-sm ring-2 ring-emerald-400/80" :style="{left:replyAnchor.x+'px',top:replyAnchor.y+'px',width:replyAnchor.width+'px',height:replyAnchor.height+'px'}" />
 
     <div
       v-if="phase === 'editing' && screenshotNotice"
@@ -1404,7 +1500,7 @@ async function saveSettings(): Promise<void> {
       :class="
         preservesSourcePreview
           ? (capture?.selectedText ? 'rounded-sm' : 'rounded-sm ring-1 ring-emerald-400/70')
-          : 'rounded-md border border-white/70 bg-white/92 p-2 shadow-[0_10px_36px_rgba(15,23,42,0.26)] ring-1 ring-slate-900/5 backdrop-blur-[2px] dark:border-slate-700/70 dark:bg-zinc-950/92'
+          : 'rounded-md bg-white p-3 shadow-[0_10px_36px_rgba(15,23,42,0.26)] ring-1 ring-slate-900/5 dark:bg-zinc-950'
       "
       :style="resultStyle"
     >
@@ -1423,9 +1519,10 @@ async function saveSettings(): Promise<void> {
       </div>
 
       <div v-if="phase === 'partial'" data-testid="partial-translation" role="alert"
-        class="absolute bottom-full left-0 z-40 mb-2 flex max-w-full items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-sm">
+        class="absolute bottom-full left-0 z-40 mb-2 flex max-w-full flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-sm">
         <span :title="errorMessage">{{ settingsText.partialTranslation }}</span>
         <button type="button" class="shrink-0 font-semibold underline" aria-label="Retry translation" @click="retryProcessing">{{ settingsText.retry }}</button>
+        <button v-if="canRetryWithOCR" type="button" data-testid="retry-with-ocr" class="shrink-0 font-semibold underline" @click="retryWithOCR">{{ settingsLocale === 'en' ? 'Retry with OCR' : '改用 OCR 重试' }}</button>
       </div>
       <div v-if="screenshotNotice" role="status" class="absolute bottom-0 left-0 z-40 rounded bg-slate-900 px-3 py-2 text-xs text-white">{{ screenshotNotice }}</div>
       <template v-if="hasTextBlockLayout && phase !== 'error'">
@@ -1444,7 +1541,8 @@ async function saveSettings(): Promise<void> {
           class="flex h-full flex-col gap-2 overflow-y-auto overflow-x-hidden break-words whitespace-pre-wrap text-sm leading-6 text-rose-700 dark:text-rose-300"
         >
           <div class="min-h-0 flex-1 [overflow-wrap:anywhere]">{{ errorMessage }}</div>
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
+            <button v-if="canRetryWithOCR" type="button" data-testid="retry-with-ocr" class="inline-flex h-8 shrink-0 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white hover:bg-emerald-700" @click="retryWithOCR">{{ settingsLocale === 'en' ? 'Retry with OCR' : '改用 OCR 重试' }}</button>
             <button
               class="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-200 dark:hover:bg-zinc-800"
               type="button"
@@ -1473,10 +1571,9 @@ async function saveSettings(): Promise<void> {
         <div
           v-else
           data-testid="translation-result"
-          class="markdown-body h-full overflow-hidden break-words pr-1 text-slate-950 dark:text-slate-100"
+          class="h-full overflow-y-auto whitespace-pre-wrap break-words pr-1 text-slate-950 dark:text-slate-100"
           :style="resultTextStyle"
-          v-html="renderedTranslation"
-        />
+        >{{ cleanTranslationText }}</div>
       </template>
 
       <div v-if="capture?.selectedText && preservesSourcePreview" class="pointer-events-none absolute inset-0 z-20 rounded-sm ring-1 ring-emerald-400/70" />
@@ -1494,7 +1591,8 @@ async function saveSettings(): Promise<void> {
         data-testid="result-actions"
       >
         <button v-if="hasResultTools" type="button" class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-emerald-700 hover:bg-emerald-50" :title="settingsLocale==='en'?'Extension tools':'扩展工具'" :aria-label="settingsLocale==='en'?'Extension tools':'扩展工具'" data-testid="result-extensions" :disabled="isResultBusy" @click="openResultTools"><Sparkles class="h-4 w-4"/></button>
-        <button v-if="overlayLayout.truncated" type="button" class="whitespace-nowrap px-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+        <button type="button" class="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950" data-testid="reply-from-result" :disabled="isResultBusy || (!sourceText.trim() && !lastImageRegion)" @click="replyFromResult"><MessageSquare class="h-3.5 w-3.5" />{{ settingsLocale === 'en' ? 'Reply' : '帮我回复' }}</button>
+        <button v-if="overlayLayout.truncated || (savedConfig.directImageInput && !capture?.selectedText && cleanTranslationText)" type="button" class="whitespace-nowrap px-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"
           aria-label="Show full translation" @click="expandedTranslation = !expandedTranslation">{{ settingsLocale === "en" ? "Full text" : "完整译文" }}</button>
         <button
           class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
@@ -1512,7 +1610,7 @@ async function saveSettings(): Promise<void> {
           type="button"
           :title="settingsLocale === 'en' ? 'Copy image and close' : '复制译后图片并收起'"
           aria-label="Copy translated screenshot"
-          :disabled="!cleanTranslationText || copyingGeneration === workflowGeneration"
+          :disabled="isResultBusy || !cleanTranslationText || copyingGeneration === workflowGeneration"
           @click="copyTranslatedImage"
         >
           <Check v-if="copiedImage" class="h-4 w-4" aria-hidden="true" />
@@ -1564,7 +1662,7 @@ async function saveSettings(): Promise<void> {
             <div class="min-w-0">
               <div class="flex items-baseline gap-2">
                 <h1 class="text-base font-semibold tracking-tight">{{ settingsText.title }}</h1>
-                <span v-if="appVersion" class="text-[11px] font-medium text-slate-400">v{{ appVersion }}</span>
+                <span v-if="appVersion" class="max-w-full truncate text-[11px] font-medium text-slate-400" :title="appVersion">v{{ appVersion }}</span>
               </div>
               <p class="truncate text-xs text-slate-500 dark:text-slate-400">{{ settingsText.subtitle }}</p>
             </div>
@@ -1662,6 +1760,7 @@ async function saveSettings(): Promise<void> {
             </span>
           </div>
           <div
+            v-if="config.provider !== 'codex'"
             class="settings-status"
             :class="envStatus.apiKeyConfigured
               ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
@@ -1675,47 +1774,13 @@ async function saveSettings(): Promise<void> {
           </div>
         </div>
 
-        <label class="settings-field">
-          <span class="settings-label">{{ settingsText.apiKey }}</span>
-          <input
-            v-model="config.apiKey"
-            data-testid="api-key-input"
-            class="settings-input"
-            type="password"
-            autocomplete="off"
-            :placeholder="settingsText.apiKeyPlaceholder"
-          />
-        </label>
-
-        <div class="mt-4 grid gap-4 sm:grid-cols-2">
-        <label class="settings-field">
-          <span class="settings-label">{{ settingsText.baseURL }}</span>
-          <input
-            v-model="config.baseURL"
-            class="settings-input"
-            type="url"
-            placeholder="https://your-litellm-host/v1"
-          />
-          <span class="settings-help">{{ settingsText.baseURLHelp }}</span>
-        </label>
-
-        <label class="settings-field">
-          <span class="settings-label">{{ settingsText.model }}</span>
-          <input
-            v-model="config.model"
-            class="settings-input"
-            type="text"
-            placeholder="gemini/gemini-3.5-flash-lite"
-          />
-          <span class="settings-help">{{ settingsText.modelHelp }}</span>
-        </label>
-        </div>
+        <ModelSettings :config="config" :locale="settingsLocale" :active="settingsOpen" />
 
         <div class="mt-4 flex min-h-9 flex-wrap items-center gap-3 border-t border-slate-100 pt-4 dark:border-zinc-800">
           <button
             class="settings-secondary-button"
             type="button"
-            title="Test the API key, base URL, and model"
+            :title="settingsLocale === 'en' ? 'Test the selected model connection' : '测试当前选择的模型接入'"
             :disabled="testStatus === 'testing'"
             @click="runConnectionTest"
           >
@@ -1809,6 +1874,14 @@ async function saveSettings(): Promise<void> {
           />
           <span class="settings-help">{{ settingsText.rapidOCRPathHelp }}</span>
         </label>
+        <label class="settings-field">
+          <span class="settings-label">{{ settingsLocale === 'en' ? 'Capture & reply shortcut' : '截图回复快捷键' }}</span>
+          <div class="flex gap-2">
+            <input v-model="config.replyShortcutKey" data-testid="reply-shortcut" class="settings-input" type="text" :readonly="shortcutRecording === 'reply'" :placeholder="shortcutRecording === 'reply' ? settingsText.pressShortcut : 'Alt+R'" />
+            <button type="button" class="settings-secondary-button h-10 shrink-0" @click="startShortcutRecording('reply')">{{ shortcutRecording === 'reply' ? settingsText.recording : settingsText.record }}</button>
+          </div>
+          <span class="settings-help">{{ settingsLocale === 'en' ? 'Freeze the screen, select a message, and draft a reply on release.' : '冻结屏幕，框选消息，松手即生成回复；独立于翻译快捷键。' }}</span>
+        </label>
         </div>
 
         <div class="mt-4 grid gap-2 sm:grid-cols-2">
@@ -1873,6 +1946,14 @@ async function saveSettings(): Promise<void> {
             class="peer sr-only"
             type="checkbox"
           />
+          <span class="settings-switch" aria-hidden="true" />
+        </label>
+        <label class="settings-toggle">
+          <span class="min-w-0 pr-3">
+            <span class="settings-toggle-title">{{ settingsLocale === 'en' ? 'Record translation history' : '记录翻译历史' }}</span>
+            <span class="settings-toggle-description">{{ settingsLocale === 'en' ? 'Save successful translations on this device. Turning this off keeps existing history and prevents new records.' : '在本机保存成功译文。关闭后停止新增记录，已有历史仍保留，可在历史页清除。' }}</span>
+          </span>
+          <input v-model="config.recordHistory" data-testid="record-history" class="peer sr-only" type="checkbox" />
           <span class="settings-switch" aria-hidden="true" />
         </label>
         </div>

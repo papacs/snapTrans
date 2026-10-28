@@ -19,7 +19,7 @@ func TestActionUsesSeparatePromptAndStreamsUnnumberedText(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"A possible cause\"}}]}\n\ndata: [DONE]\n\n")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"A possible cause\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
 	}))
 	defer server.Close()
 	client := NewOpenAICompatible(Options{APIKey: "test", BaseURL: server.URL, Model: "test", SystemPrompt: "TRANSLATE ONLY", Glossary: "private glossary"})

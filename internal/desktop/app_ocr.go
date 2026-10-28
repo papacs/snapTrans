@@ -57,7 +57,8 @@ func (a *App) warmOCRWorker(worker *ocr.Worker) {
 	}
 }
 
-// Keep only the most recent successful result; never retain screenshot bytes.
+// Keep only the most recent successful result across captures. The image hash
+// and OCR settings must match exactly; never retain screenshot bytes.
 type ocrCacheKey struct {
 	image    [32]byte
 	settings ocrWorkerSettings

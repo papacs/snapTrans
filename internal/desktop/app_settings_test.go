@@ -89,6 +89,22 @@ func TestOCRCacheDoesNotRetainErrorsOrLateResults(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	require.False(t, cache.valid)
 }
+
+func TestClosingCaptureKeepsOnlyMatchingOCRReusable(t *testing.T) {
+	app := NewApp(nil)
+	cfg := config.Default()
+	calls := 0
+	extract := func() (ocr.Result, error) { calls++; return ocr.Result{Text: "Hello"}, nil }
+	_, err := app.ocrCache.Run(context.Background(), cfg, "same-crop", extract)
+	require.NoError(t, err)
+	require.NoError(t, app.HideWindow())
+	_, err = app.ocrCache.Run(context.Background(), cfg, "same-crop", extract)
+	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+	_, err = app.ocrCache.Run(context.Background(), cfg, "changed-crop", extract)
+	require.NoError(t, err)
+	require.Equal(t, 2, calls)
+}
 func TestOCRWorkerTracksActualPathAndTimeout(t *testing.T) {
 	app := NewApp(nil)
 	cfg := config.Default()

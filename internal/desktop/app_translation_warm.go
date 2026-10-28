@@ -2,9 +2,11 @@ package desktop
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
+	"snaptrans/internal/codex"
 	"snaptrans/internal/config"
 	"snaptrans/internal/translator"
 )
@@ -50,6 +52,16 @@ func (a *App) prewarmTranslationConnection() {
 	a.mu.Lock()
 	cfg := a.cfg.WithDefaults()
 	a.mu.Unlock()
+	if cfg.Provider == "codex" {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			if err := codex.Warm(ctx, cfg.CodexPath, cfg.CodexModel); err != nil && !errors.Is(err, context.Canceled) && a.log != nil {
+				a.log.Errorf("Codex warm-up failed: %v", err)
+			}
+		}()
+		return
+	}
 	if strings.TrimSpace(cfg.APIKey) == "" {
 		return
 	}

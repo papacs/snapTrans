@@ -60,6 +60,86 @@ func TestListSurvivesMissingFile(t *testing.T) {
 	require.Empty(t, entries)
 }
 
+func TestCorruptHistoryRecoversAndAcceptsNewEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.json")
+	store := NewStore(path, 5)
+	require.NoError(t, store.Add("first", "one", "to-zh"))
+	require.NoError(t, store.Add("second", "two", "to-zh"))
+	require.NoError(t, os.WriteFile(path, []byte(`[{"source":`), 0600))
+	entries, err := store.List()
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "first", entries[0].Source)
+	require.NoError(t, store.Add("third", "three", "to-zh"))
+	require.NoError(t, store.Clear())
+	entries, err = store.List()
+	require.NoError(t, err)
+	require.Empty(t, entries, "clearing must not resurrect backup history")
+}
+
+func TestCorruptHistoryWithoutBackupIsPreservedAndReset(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.json")
+	broken := []byte(`[{"source":`)
+	require.NoError(t, os.WriteFile(path, broken, 0600))
+	store := NewStore(path, 5)
+	require.NoError(t, store.Add("new", "value", "to-zh"))
+	preserved, err := filepath.Glob(path + ".corrupt-*")
+	require.NoError(t, err)
+	require.Len(t, preserved, 1)
+	data, err := os.ReadFile(preserved[0])
+	require.NoError(t, err)
+	require.Equal(t, broken, data)
+}
+
+func TestCorruptHistoryWithUnreadableBackupDoesNotEraseOriginal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.json")
+	broken := []byte(`[{"source":`)
+	require.NoError(t, os.WriteFile(path, broken, 0600))
+	require.NoError(t, os.Mkdir(path+".bak", 0700))
+	store := NewStore(path, 5)
+	require.Error(t, store.Add("new", "value", "to-zh"))
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, broken, raw)
+}
+
+func TestMissingHistoryWithCorruptBackupCanRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.json")
+	require.NoError(t, os.WriteFile(path+".bak", []byte(`[{"source":`), 0600))
+	store := NewStore(path, 5)
+	require.NoError(t, store.Add("new", "value", "to-zh"))
+	require.NoError(t, os.Remove(path))
+	entries, err := store.List()
+	require.NoError(t, err)
+	require.Empty(t, entries)
+	preserved, err := filepath.Glob(path + ".bak.corrupt-*")
+	require.NoError(t, err)
+	require.Len(t, preserved, 1)
+}
+
+func TestHistoryWithWrongJSONTypeRecoversBackup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.json")
+	store := NewStore(path, 5)
+	require.NoError(t, store.Add("first", "one", "to-zh"))
+	require.NoError(t, store.Add("second", "two", "to-zh"))
+	require.NoError(t, os.WriteFile(path, []byte(`{"entries":"wrong format"}`), 0600))
+	entries, err := store.List()
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "first", entries[0].Source)
+}
+
+func TestClearAlsoRemovesQuarantinedHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.json")
+	store := NewStore(path, 5)
+	require.NoError(t, os.WriteFile(path, []byte(`[{"source":`), 0600))
+	require.NoError(t, store.Add("new", "value", "to-zh"))
+	require.NoError(t, store.Clear())
+	preserved, err := filepath.Glob(path + "*")
+	require.NoError(t, err)
+	require.Empty(t, preserved)
+}
+
 func TestNilStoreIsNoOp(t *testing.T) {
 	require.NoError(t, (*Store)(nil).Add("a", "b", "to-zh"))
 	entries, err := (*Store)(nil).List()

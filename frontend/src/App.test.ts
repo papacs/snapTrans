@@ -17,6 +17,13 @@ const backendMocks = vi.hoisted(() => {
     apiKey: "",
     baseURL: "https://api.deepseek.com",
     model: "deepseek-chat",
+    provider: "openai-compatible" as "openai-compatible" | "codex",
+    codexPath: "",
+    codexModel: "",
+    codexReasoningEffort: "low" as const,
+    directImageInput: false,
+    fastTranslation: true,
+    replyShortcutKey: "Alt+R",
     rapidOCRPath: "./RapidOCR-json_v0.2.0",
     rapidOCRTimeoutSeconds: 15,
     translationTimeoutSeconds: 60,
@@ -69,6 +76,8 @@ const backendMocks = vi.hoisted(() => {
     frontendReady: vi.fn(async () => {}),
     getHistory: vi.fn(async (): Promise<import("./services/backend").HistoryEntry[]> => []),
     testConnection: vi.fn(async (_config: unknown) => {}),
+    startTextAction: vi.fn(async (_request: import("./services/backend").TextActionRequest) => {}),
+    cancelTextAction: vi.fn(async (_id: string) => {}),
     saveConfig: vi.fn(async (_config: unknown, _autoStart?: boolean) => {}),
     setAutoStart: vi.fn(async () => {}),
     isAutoStartEnabled: vi.fn(async () => false),
@@ -130,9 +139,15 @@ vi.mock("./services/backend", () => ({
   saveScreenshot: backendMocks.saveScreenshot,
   saveConfig: backendMocks.saveConfig,
   testConnection: backendMocks.testConnection,
+  startTextAction: backendMocks.startTextAction,
+  cancelTextAction: backendMocks.cancelTextAction,
+  triggerReply: vi.fn(async () => backendMocks.emit("capture-start", {image:"data:image/png;base64,ZmFrZQ==",width:800,height:600,source:"browser",mode:"reply"})),
   setAutoStart: backendMocks.setAutoStart,
   isAutoStartEnabled: backendMocks.isAutoStartEnabled,
   getEnvironmentStatus: vi.fn(async () => null),
+  getCodexStatus: vi.fn(async () => ({authenticated:true,email:"",plan:"plus",models:[]})),
+  loginCodex: vi.fn(async () => {}),
+  cancelCodexLogin: vi.fn(async () => {}),
   getVersion: vi.fn(async () => "test"),
   showCaptureWindow: backendMocks.showCaptureWindow,
   showSettingsWindow: backendMocks.showSettingsWindow,
@@ -209,6 +224,8 @@ describe("App capture cancellation", () => {
     backendMocks.processImage.mockClear();
     backendMocks.translateRegion.mockClear();
     backendMocks.translateSelection.mockClear();
+    backendMocks.startTextAction.mockClear();
+    backendMocks.cancelTextAction.mockClear();
     backendMocks.saveScreenshot.mockClear();
     backendMocks.showCaptureWindow.mockClear();
     backendMocks.showSettingsWindow.mockClear();
@@ -279,6 +296,59 @@ describe("App capture cancellation", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("starts reply drafting on mouse release without starting translation", async () => {
+    const wrapper = mount(App); await flushPromises();
+    await wrapper.get('[data-testid="trigger-reply"]').trigger("click"); await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", {button:0,clientX:80,clientY:80});
+    await layer.trigger("mousemove", {clientX:460,clientY:300});
+    await layer.trigger("mouseup", {button:0,clientX:460,clientY:300}); await flushPromises();
+    expect(wrapper.find('[data-testid="reply-panel"]').exists()).toBe(true);
+    expect(backendMocks.startTextAction).toHaveBeenCalledWith(expect.objectContaining({action:"reply",region:{x:80,y:80,width:380,height:220}}));
+    expect(backendMocks.translateRegion).not.toHaveBeenCalled();
+    expect(backendMocks.processImage).not.toHaveBeenCalled();
+    const request=backendMocks.startTextAction.mock.calls[0]![0];
+    await wrapper.get('[aria-label="关闭回复助手"]').trigger("click");await flushPromises();
+    expect(backendMocks.cancelTextAction).toHaveBeenCalledWith(request.id);
+    expect(backendMocks.hideWindow).toHaveBeenCalled();
+  });
+
+  it("can reply from a vision translation without OCR text", async () => {
+    backendMocks.loadConfig.mockResolvedValueOnce({...backendMocks.defaultConfig,directImageInput:true});
+    const wrapper = mount(App); await flushPromises();
+    await wrapper.get("button[aria-label='Capture']").trigger("click"); await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", {button:0,clientX:80,clientY:80});
+    await layer.trigger("mouseup", {button:0,clientX:460,clientY:300}); await flushPromises();
+    backendMocks.emit("text-regions", {generation:1,source:"image",text:"",blocks:[]});
+    backendMocks.emit("translation-start", {generation:1});
+    backendMocks.emit("translation-token", {generation:1,token:"图片中的译文"});
+    backendMocks.emit("translation-done", {generation:1}); await flushPromises();
+    expect(wrapper.get('[data-testid="translation-result"]').text()).toContain("图片中的译文");
+    expect(wrapper.find('[aria-label="Show full translation"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="reply-from-result"]').trigger("click"); await flushPromises();
+    expect(backendMocks.startTextAction).toHaveBeenCalledWith(expect.objectContaining({action:"reply",inputMode:"image",text:"",region:{x:80,y:80,width:380,height:220}}));
+  });
+
+  it.each([false, true])("offers an explicit OCR retry after vision failure (partial=%s)", async partial => {
+    backendMocks.loadConfig.mockResolvedValueOnce({...backendMocks.defaultConfig,directImageInput:true});
+    const wrapper = mount(App); await flushPromises();
+    await wrapper.get("button[aria-label='Capture']").trigger("click"); await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", {button:0,clientX:80,clientY:80});
+    await layer.trigger("mouseup", {button:0,clientX:460,clientY:300}); await flushPromises();
+    backendMocks.emit("text-regions", {generation:1,source:"image",text:"",blocks:[]});
+    if (partial) backendMocks.emit("translation-token", {generation:1,token:"Half translation"});
+    backendMocks.emit("workflow-error", {generation:1,stage:"translation",message:"image rejected"}); await flushPromises();
+    await wrapper.get('[data-testid="retry-with-ocr"]').trigger("click"); await flushPromises();
+    expect(backendMocks.translateRegion).toHaveBeenLastCalledWith({x:80,y:80,width:380,height:220},"to-zh",2,"ocr");
+    expect(backendMocks.saveConfig).not.toHaveBeenCalled();
+    expect(wrapper.get('[data-testid="translation-progress"]').text()).toContain("OCR");
+    backendMocks.emit("workflow-error", {generation:2,stage:"translation",message:"offline"}); await flushPromises();
+    expect(wrapper.find('[data-testid="retry-with-ocr"]').exists()).toBe(false);
+    wrapper.unmount();
   });
 
   it.each(["processing", "streaming", "done", "error"])("Escape closes a %s result and cancels the workflow", async (state) => {
@@ -964,7 +1034,7 @@ describe("App capture cancellation", () => {
     expect(card.classes()).toEqual(expect.arrayContaining(["min-h-24", "min-w-32"]));
   });
 
-  it("shrinks a dense plain translation to the selected region without a scrollbar", async () => {
+  it("expands dense plain translations while preserving a readable font size", async () => {
     const wrapper = mount(App);
     await flushPromises();
 
@@ -982,9 +1052,9 @@ describe("App capture cancellation", () => {
 
     const result = wrapper.find("[data-testid='translation-result']");
     const fontSize = stylePx(result.attributes("style"), "font-size");
-    expect(fontSize).toBeLessThan(19);
-    expect(result.classes()).toContain("overflow-hidden");
-    expect(result.classes()).not.toContain("overflow-y-auto");
+    expect(fontSize).toBe(16);
+    expect(stylePx(wrapper.get('[data-testid="result-panel"]').attributes("style"), "height")).toBeGreaterThan(54);
+    expect(result.classes()).toContain("overflow-y-auto");
   });
 
   it("batches streamed translation fragments into one animation-frame update", async () => {
@@ -1676,6 +1746,29 @@ describe("App capture cancellation", () => {
     return wrapper;
   }
 
+  it("paints vision translation text when copying an image without OCR boxes", async () => {
+    backendMocks.loadConfig.mockResolvedValueOnce({...backendMocks.defaultConfig,directImageInput:true});
+    const wrapper = await completedCopyResult();
+    const context = document.createElement("canvas").getContext("2d")!;
+    vi.mocked(context.fillText).mockClear();
+    drawImageMock.mockClear();
+    await wrapper.get("button[aria-label='Copy translated screenshot']").trigger("click");
+    await flushPromises();
+    expect(context.fillText).toHaveBeenCalledWith("测试译文", expect.any(Number), expect.any(Number));
+    expect(drawImageMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps vision paragraphs readable and scrollable when the selection is too short", async () => {
+    backendMocks.loadConfig.mockResolvedValueOnce({...backendMocks.defaultConfig,directImageInput:true});
+    const wrapper = await completedCopyResult();
+    backendMocks.emit("translation-token", {generation:1,token:"\n" + "这是需要完整显示的长段落。\n".repeat(30)});
+    backendMocks.emit("translation-done", {generation:1}); await flushPromises();
+    expect(stylePx(wrapper.get('[data-testid="result-panel"]').attributes("style"), "height")).toBeGreaterThan(100);
+    expect(stylePx(wrapper.get('[data-testid="translation-result"]').attributes("style"), "font-size")).toBeGreaterThanOrEqual(14);
+    expect(wrapper.get('[data-testid="translation-result"]').classes()).toContain("overflow-y-auto");
+    expect(wrapper.get('[data-testid="result-panel"]').classes()).toContain("bg-white");
+  });
+
   it.each(["text", "screenshot"] as const)("closes only after manual %s copying succeeds", async kind => {
     const wrapper = await completedCopyResult();
     const copy = kind === "text" ? backendMocks.copyText : backendMocks.copyImageDataUrl;
@@ -1999,6 +2092,20 @@ describe("settings drafts and history", () => {
   await flushPromises();
   expect(backendMocks.testConnection).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "draft-test-key" }));
   expect(backendMocks.saveConfig).not.toHaveBeenCalled();
+ });
+ it("tests and saves the Codex draft while retaining API settings", async () => {
+  const wrapper = await settings();
+  await wrapper.get('[data-testid="api-key-input"]').setValue('retained-api-key');
+  await wrapper.get('[data-testid="model-provider"]').setValue('codex');
+  await flushPromises();
+  await wrapper.get('[data-testid="codex-model"]').setValue('subscription-model');
+  const testButton = wrapper.findAll('button').find(button => button.text() === '测试连接')!;
+  await testButton.trigger('click');
+  await flushPromises();
+  expect(backendMocks.testConnection).toHaveBeenCalledWith(expect.objectContaining({provider:'codex',codexModel:'subscription-model',apiKey:'retained-api-key'}));
+  await wrapper.get('form').trigger('submit');
+  await flushPromises();
+  expect(backendMocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({provider:'codex',codexModel:'subscription-model',apiKey:'retained-api-key'}),false);
  });
  it("discards settings on cancel, including theme and autostart", async () => {
   const wrapper = await settings();

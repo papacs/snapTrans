@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -41,6 +42,12 @@ func (l *Logger) Infof(format string, args ...any) {
 // Errorf writes a timestamped error line.
 func (l *Logger) Errorf(format string, args ...any) {
 	l.write("ERROR", format, args...)
+}
+
+// Write routes structured, best-effort diagnostics through the same bounded log.
+func (l *Logger) Write(raw []byte) (int, error) {
+	l.Infof("%s", strings.TrimSpace(string(raw)))
+	return len(raw), nil
 }
 
 func (l *Logger) write(level string, format string, args ...any) {

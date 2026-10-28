@@ -2,9 +2,34 @@ package history
 
 import (
 	"github.com/stretchr/testify/require"
+	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestClearedRecentEntriesCannotReturnFromBackup(t *testing.T) {
+	s := NewStore(filepath.Join(t.TempDir(), "history.json"), 5)
+	require.NoError(t, s.Add("sensitive recent", "translation", "to-zh"))
+	require.NoError(t, s.AddLearning("saved", "meaning", ""))
+	require.NoError(t, s.ClearRecent())
+	require.NoError(t, os.WriteFile(s.path, []byte("["), 0600))
+	entries, err := s.List()
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "saved", entries[0].Source)
+}
+
+func TestDeletedSavedEntryCannotReturnFromBackup(t *testing.T) {
+	s := NewStore(filepath.Join(t.TempDir(), "history.json"), 5)
+	require.NoError(t, s.AddLearning("sensitive saved", "meaning", ""))
+	entries, err := s.List()
+	require.NoError(t, err)
+	require.NoError(t, s.DeleteSaved(entries[0].ID))
+	require.NoError(t, os.WriteFile(s.path, []byte("["), 0600))
+	entries, err = s.List()
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
 
 func TestSavedItemsSurviveRecentEvictionAndClear(t *testing.T) {
 	s := NewStore(filepath.Join(t.TempDir(), "history.json"), 2)

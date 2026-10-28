@@ -42,6 +42,60 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	require.Equal(t, expected, actual)
 }
 
+func TestHistoryRecordingDefaultsAndExplicitDisableRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	store := NewStoreAt(path, "")
+	require.NoError(t, os.WriteFile(path, []byte(`{"recordHistory":false}`), 0600))
+	cfg, err := store.Load()
+	require.NoError(t, err)
+	require.NoError(t, store.Save(cfg))
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"recordHistory": false`)
+	require.NoError(t, os.WriteFile(path, []byte(`{}`), 0600))
+	cfg, err = store.Load()
+	require.NoError(t, err)
+	require.NoError(t, store.Save(cfg))
+	raw, err = os.ReadFile(path)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"recordHistory": true`)
+}
+
+func TestLoadRecoversLastGoodConfigAfterInterruptedWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	store := NewStoreAt(path, "")
+	cfg := Default()
+	cfg.APIKey = "recoverable-key"
+	cfg.Model = "previous-model"
+	require.NoError(t, store.Save(cfg))
+	cfg.Model = "latest-model"
+	require.NoError(t, store.Save(cfg))
+	require.NoError(t, os.WriteFile(path, []byte(`{"model":`), 0600))
+	loaded, err := store.Load()
+	require.NoError(t, err)
+	require.Equal(t, "previous-model", loaded.Model)
+	require.Equal(t, "recoverable-key", loaded.APIKey)
+	recovered, err := store.Load()
+	require.NoError(t, err)
+	require.Equal(t, loaded, recovered)
+}
+
+func TestCodexSettingsRoundTripAndKeepAPIConfiguration(t *testing.T) {
+	temp := t.TempDir()
+	store := NewStoreAt(filepath.Join(temp, "config.json"), filepath.Join(temp, ".env"))
+	cfg := Default()
+	cfg.Provider, cfg.CodexPath, cfg.CodexModel = "codex", `C:\Program Files\Codex\codex.exe`, "subscription-model"
+	cfg.CodexReasoningEffort = "medium"
+	cfg.ReplyShortcutKey = "Ctrl+Alt+R"
+	cfg.APIKey = "saved-api-key"
+	require.NoError(t, store.Save(cfg))
+	loaded, err := store.Load()
+	require.NoError(t, err)
+	require.Equal(t, cfg, loaded)
+	loaded.CodexModel = ""
+	require.Empty(t, loaded.WithDefaults().CodexModel, "Codex selects its own default, not the API model")
+}
+
 func TestScreenshotShortcutDefaultsAndRoundTrips(t *testing.T) {
 	temp := t.TempDir()
 	store := NewStoreAt(filepath.Join(temp, "config.json"), filepath.Join(temp, ".env"))
@@ -72,6 +126,9 @@ func TestLoadMigratesLegacyDeepSeekConfig(t *testing.T) {
 	require.Equal(t, "legacy-key", cfg.APIKey)
 	require.Equal(t, "https://legacy.example/v1", cfg.BaseURL)
 	require.Equal(t, "legacy-model", cfg.Model)
+	require.Equal(t, "openai-compatible", cfg.Provider)
+	require.Equal(t, "low", cfg.CodexReasoningEffort)
+	require.Equal(t, "Alt+R", cfg.ReplyShortcutKey)
 }
 
 func TestLoadDefaultsAutoDirectionWhenMissing(t *testing.T) {
@@ -227,4 +284,21 @@ func TestMigrateOnlyOfficialLegacyDefaultModel(t *testing.T) {
 	require.Equal(t, "deepseek-chat", cfg.WithDefaults().Model)
 	cfg.BaseURL, cfg.Model = "https://api.deepseek.com/v1", "custom-model"
 	require.Equal(t, "custom-model", cfg.WithDefaults().Model)
+}
+
+func TestDirectImageInputIsOptInAndPersists(t *testing.T) {
+	temp := t.TempDir()
+	store := NewStoreAt(filepath.Join(temp, "config.json"), filepath.Join(temp, ".env"))
+	require.NoError(t, os.WriteFile(store.Path, []byte(`{"shortcutKey":"Alt+Q"}`), 0o600))
+	cfg, err := store.Load()
+	require.NoError(t, err)
+	require.False(t, cfg.DirectImageInput)
+	require.True(t, cfg.FastTranslation)
+	cfg.DirectImageInput = true
+	cfg.FastTranslation = false
+	require.NoError(t, store.Save(cfg))
+	loaded, err := store.Load()
+	require.NoError(t, err)
+	require.True(t, loaded.DirectImageInput)
+	require.False(t, loaded.FastTranslation)
 }
