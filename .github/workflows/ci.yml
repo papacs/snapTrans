@@ -39,6 +39,7 @@ jobs:
         run: |
           ./scripts/ensure-rapidocr.test.ps1
           ./scripts/build-identity.test.ps1
+          ./scripts/build.test.ps1
 
   wails-build:
     name: Wails build smoke (Windows)
@@ -59,7 +60,8 @@ jobs:
         working-directory: frontend
         run: npm ci && npm run build
       - name: Build desktop app
-        run: wails build
+        shell: powershell
+        run: ./scripts/build.ps1
       - name: Verify OCR build dependency
         shell: powershell
         run: |

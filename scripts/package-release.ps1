@@ -13,6 +13,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot 'build-identity.ps1')
+. (Join-Path $PSScriptRoot 'build-common.ps1')
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $normalizedVersion = $Version.TrimStart("v")
 $packageName = "snapTrans-v$normalizedVersion-windows-x64"
@@ -47,16 +48,7 @@ if (-not (Test-Path -LiteralPath $rapidOCRModels -PathType Container)) {
 $sourceDigest = Get-SnapTransSourceDigest -RepoRoot $repoRoot
 $buildIdentity = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ') + '-' + $sourceDigest
 if (-not $SkipBuild) {
-    Push-Location $repoRoot
-    try {
-        & wails build -ldflags "-X snaptrans/internal/desktop.buildID=$buildIdentity"
-        if ($LASTEXITCODE -ne 0) {
-            throw "wails build failed with exit code $LASTEXITCODE"
-        }
-    }
-    finally {
-        Pop-Location
-    }
+    Invoke-SnapTransWailsBuild -RepoRoot $repoRoot -BuildArguments @('-ldflags', "-X snaptrans/internal/desktop.buildID=$buildIdentity")
 }
 
 $executablePath = Join-Path $repoRoot "build/bin/snapTrans.exe"

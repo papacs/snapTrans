@@ -312,12 +312,14 @@ npm run dev
 ### 构建
 
 ```powershell
-cd frontend
-npm run build
-cd ..
-
-wails build
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1
 ```
+
+此入口执行完整 `wails build` 并写入构建标识。Windows 偶发占用 Go 临时 `a.out.exe` 或
+`wailsbindings.exe` 时，等待 1 秒、2 秒后最多重试两次；普通编译错误、权限错误以及
+正在运行的最终程序被占用时直接失败，不关闭进程、不清理缓存，也不改变安全软件设置。
+原生 `wails build` 仍可使用。指定输出名可添加 `-OutputName snapTrans-test.exe`；
+只有已准备好前端产物时才使用 `-SkipFrontend`。
 
 Windows x64 下，`wails build`（以及 `wails dev` 的初次编译）会通过构建钩子自动准备
 RapidOCR-json v0.2.0 和模型，输出到 `build/bin/RapidOCR-json_v0.2.0/`。
@@ -330,7 +332,7 @@ RapidOCR-json v0.2.0 和模型，输出到 `build/bin/RapidOCR-json_v0.2.0/`。
 
 ```powershell
 .\scripts\ensure-rapidocr.ps1 -SourceDirectory 'D:\Tools\RapidOCR-json_v0.2.0'
-wails build
+.\scripts\build.ps1
 ```
 
 分发时请保留 `snapTrans.exe` 同级的整个 OCR 文件夹，或运行

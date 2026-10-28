@@ -14,9 +14,13 @@ function Get-SnapTransSourceDigest {
     if (Test-Path -LiteralPath $frontend) {
         $files += Get-ChildItem -LiteralPath $frontend -File | Where-Object { $_.Extension -in @('.json', '.ts', '.js', '.cjs') }
     }
-    $lines = @($files | Sort-Object FullName -Unique | ForEach-Object {
-        $relative = $_.FullName.Substring($root.Length + 1).Replace('\', '/')
-        $relative + ':' + (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    # Framework/NLS and modern .NET/ICU sort punctuation differently. Build
+    # identity must depend on source bytes, not the invoking PowerShell version.
+    $paths = [System.Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($file in $files) { $null = $paths.Add($file.FullName) }
+    $lines = @($paths | ForEach-Object {
+        $relative = $_.Substring($root.Length + 1).Replace('\', '/')
+        $relative + ':' + (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()
     })
     $sha = [Security.Cryptography.SHA256]::Create()
     try {
