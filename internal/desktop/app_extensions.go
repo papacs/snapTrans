@@ -146,6 +146,9 @@ func (a *App) StartTextAction(request TextActionRequest) error {
 		event := TextActionEvent{ID: request.ID, Done: true}
 		if err != nil {
 			event.Error = err.Error()
+			if a.log != nil {
+				a.log.Errorf("action=%s input_mode=%s error=%v", request.Action, inputMode, err)
+			}
 		}
 		// Timeouts still need a terminal event; explicit cancellation does not.
 		if a.ctx != nil {

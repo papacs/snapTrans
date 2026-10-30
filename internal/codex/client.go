@@ -31,10 +31,9 @@ type Status struct {
 	Models        []Model `json:"models"`
 }
 
-// Use Codex-managed subscription auth with HTTPS streaming. The built-in
-// provider retries WebSockets before falling back, which can add tens of
-// seconds on networks that do not carry those connections reliably.
-const subscriptionProvider = "snaptrans_https"
+// Let Codex choose its native transport and fallback for subscription access.
+// Forcing a custom HTTP-only provider can stall behind local proxies.
+const subscriptionProvider = "openai"
 
 type message struct {
 	ID     json.RawMessage `json:"id,omitempty"`
@@ -69,8 +68,7 @@ func start(ctx context.Context, path string) (*connection, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, path, "app-server", "-c", `model_provider="`+subscriptionProvider+`"`, "-c",
-		`model_providers.`+subscriptionProvider+`={name="OpenAI",wire_api="responses",requires_openai_auth=true,supports_websockets=false}`)
+	cmd := exec.CommandContext(ctx, path, "app-server", "-c", `model_provider="`+subscriptionProvider+`"`)
 	cmd.Dir = dir
 	cmd.WaitDelay = 2 * time.Second
 	configureCommand(cmd)
@@ -91,6 +89,7 @@ func start(ctx context.Context, path string) (*connection, error) {
 		os.Remove(dir)
 		return nil, fmt.Errorf("start Codex: %w", err)
 	}
+	slog.Info("Codex runtime started", "path", path)
 	c := &connection{ctx: ctx, cmd: cmd, in: in, out: bufio.NewScanner(out), dir: dir}
 	c.out.Buffer(make([]byte, 4096), 4<<20)
 	err = c.call("initialize", map[string]any{"clientInfo": map[string]string{
@@ -118,7 +117,16 @@ func (c *connection) close() {
 	})
 }
 
-func (c *connection) send(value any) error { return json.NewEncoder(c.in).Encode(value) }
+func (c *connection) send(value any) error {
+	if err := c.ctx.Err(); err != nil {
+		return err
+	}
+	err := json.NewEncoder(c.in).Encode(value)
+	if err != nil && c.ctx.Err() != nil {
+		return c.ctx.Err()
+	}
+	return err
+}
 
 func (c *connection) read() (message, error) {
 	var msg message
@@ -154,7 +162,7 @@ func (c *connection) call(method string, params any, result any) error {
 	for {
 		msg, err := c.read()
 		if err != nil {
-			return err
+			return fmt.Errorf("Codex %s: %w", method, err)
 		}
 		if string(msg.ID) != fmt.Sprint(id) || msg.Method != "" {
 			if len(msg.ID) == 0 {
@@ -186,6 +194,12 @@ func (c *connection) account() (Status, error) {
 		Account *struct{ Type, Email, PlanType string }
 	}
 	err := c.call("account/read", map[string]any{"refreshToken": false}, &response)
+	// Routing discovery has its own short server deadline. A transient failure
+	// can recover on the same process; keep the retry inside the caller's deadline.
+	if err != nil && c.ctx.Err() == nil && (strings.Contains(err.Error(), "workspace routing discovery timed out") || strings.Contains(err.Error(), "workspace routing discovery failed")) {
+		slog.Warn("Retrying Codex workspace routing discovery")
+		err = c.call("account/read", map[string]any{"refreshToken": false}, &response)
+	}
 	status := Status{Models: []Model{}}
 	if response.Account != nil {
 		status.Authenticated = response.Account.Type == "chatgpt"
@@ -361,6 +375,10 @@ func (c *connection) startThread(model, instructions string) (string, error) {
 }
 
 func (c *connection) stream(model, instructions, input, effort string, onToken func(string), images ...string) (string, error) {
+	return c.streamWithProgress(model, instructions, input, effort, onToken, nil, images...)
+}
+
+func (c *connection) streamWithProgress(model, instructions, input, effort string, onToken, onProgress func(string), images ...string) (string, error) {
 	threadID, err := c.startThread(model, instructions)
 	if err != nil {
 		return "", err
@@ -376,10 +394,17 @@ func (c *connection) stream(model, instructions, input, effort string, onToken f
 	if err := c.call("turn/start", turn, nil); err != nil {
 		return "", err
 	}
+	if onProgress != nil {
+		onProgress("turn/start")
+	}
 	var output strings.Builder
+	var lastUpstreamError string
 	for {
 		msg, err := c.next()
 		if err != nil {
+			if lastUpstreamError != "" {
+				return output.String(), fmt.Errorf("Codex stream (last upstream error: %s): %w", lastUpstreamError, err)
+			}
 			return output.String(), err
 		}
 		if msg.Method == "error" || msg.Method == "item/started" || msg.Method == "turn/started" {
@@ -387,6 +412,8 @@ func (c *connection) stream(model, instructions, input, effort string, onToken f
 		}
 		var event struct {
 			ThreadID, Delta string
+			WillRetry       bool
+			Error           *struct{ Message string }
 			Turn            struct {
 				Status string
 				Error  *struct{ Message string }
@@ -399,6 +426,18 @@ func (c *connection) stream(model, instructions, input, effort string, onToken f
 			continue
 		}
 		switch msg.Method {
+		case "turn/started", "item/started", "item/reasoning/textDelta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded":
+			if onProgress != nil {
+				onProgress(msg.Method)
+			}
+		case "error":
+			if event.Error != nil && event.Error.Message != "" {
+				lastUpstreamError = event.Error.Message
+				slog.Warn("Codex upstream error", "message", lastUpstreamError, "will_retry", event.WillRetry)
+				if !event.WillRetry {
+					return output.String(), fmt.Errorf("Codex stream: %s", lastUpstreamError)
+				}
+			}
 		case "item/agentMessage/delta":
 			output.WriteString(event.Delta)
 			onToken(event.Delta)

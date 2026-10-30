@@ -1,13 +1,18 @@
 package translator
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"snaptrans/internal/capture"
 	"snaptrans/internal/codex"
+	"snaptrans/internal/config"
 	"testing"
 	"time"
 
@@ -56,8 +61,9 @@ func TestLocalCodexReply(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	defer codex.CloseIdle()
-	require.NoError(t, codex.Warm(ctx, ""))
-	client := NewOpenAICompatible(Options{Provider: "codex", Model: "gpt-6-luna", CodexReasoningEffort: "low"})
+	path := os.Getenv("SNAPTRANS_CODEX_PATH")
+	require.NoError(t, codex.Warm(ctx, path))
+	client := NewOpenAICompatible(Options{Provider: "codex", CodexPath: path, Model: "gpt-6-luna", CodexReasoningEffort: "low"})
 	var reply string
 	started := time.Now()
 	first := time.Duration(0)
@@ -70,4 +76,47 @@ func TestLocalCodexReply(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, reply)
 	t.Logf("first_token_ms=%d total_ms=%d reply=%s", first.Milliseconds(), time.Since(started).Milliseconds(), reply)
+}
+
+func TestLocalCodexRepeatedImageReplies(t *testing.T) {
+	if os.Getenv("SNAPTRANS_CODEX_IMAGE_REPLY_CHECK") != "1" {
+		t.Skip("optional repeated live image replies using synthetic content")
+	}
+	store, err := config.NewStore("snapTrans")
+	require.NoError(t, err)
+	cfg, err := store.Load()
+	require.NoError(t, err)
+	probe, err := connectionVisionProbe()
+	require.NoError(t, err)
+	imageURL := probe.MultiContent[1].ImageURL.URL
+	source, scene, intent, locale := "Someone sent me this color swatch.", "general", "Acknowledge the color in one short sentence.", "en"
+	if path := os.Getenv("SNAPTRANS_CODEX_REPLY_IMAGE"); path != "" {
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		frame, _, err := image.Decode(bytes.NewReader(raw))
+		require.NoError(t, err)
+		imageURL, err = capture.EncodeVisionCrop(frame, frame.Bounds())
+		require.NoError(t, err)
+		source, scene, intent, locale = "", "social", "", cfg.UILanguage
+	}
+	defer codex.CloseIdle()
+	for attempt := 1; attempt <= 3; attempt++ {
+		t.Run(fmt.Sprint(attempt), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.TranslationTimeoutSeconds)*time.Second)
+			defer cancel()
+			started := time.Now()
+			var first time.Duration
+			var output string
+			client := NewOpenAICompatible(Options{Provider: "codex", CodexPath: cfg.CodexPath, Model: cfg.CodexModel, CodexReasoningEffort: cfg.CodexReasoningEffort})
+			err := client.Reply(ctx, source, scene, intent, locale, func(token string) {
+				if first == 0 {
+					first = time.Since(started)
+				}
+				output += token
+			}, imageURL)
+			require.NoError(t, err)
+			require.NotEmpty(t, output)
+			t.Logf("image_reply=%d first_token_ms=%d total_ms=%d", attempt, first.Milliseconds(), time.Since(started).Milliseconds())
+		})
+	}
 }

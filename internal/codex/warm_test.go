@@ -3,6 +3,8 @@ package codex
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -30,7 +32,8 @@ func TestSlowWarmupCannotConsumeRealRequestTimeout(t *testing.T) {
 }
 
 func TestRealRequestCancelsHungPrewarmAndCompletes(t *testing.T) {
-	path := fakeExecutable(t, "warm-hang")
+	path := fakeExecutable(t, "prewarm-hang")
+	t.Setenv("SNAPTRANS_CODEX_FAKE_ATTEMPT", filepath.Join(t.TempDir(), "attempt"))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	finished := make(chan error, 1)
@@ -38,7 +41,8 @@ func TestRealRequestCancelsHungPrewarmAndCompletes(t *testing.T) {
 	require.Eventually(t, func() bool {
 		warmProcess.Lock()
 		defer warmProcess.Unlock()
-		return warmProcess.warming
+		_, err := os.Stat(os.Getenv("SNAPTRANS_CODEX_FAKE_ATTEMPT"))
+		return warmProcess.warming && err == nil
 	}, time.Second, time.Millisecond)
 	output, err := StreamFast(ctx, path, "test-model", "translate only", "source", "low", func(string) {})
 	require.NoError(t, err)
@@ -48,5 +52,49 @@ func TestRealRequestCancelsHungPrewarmAndCompletes(t *testing.T) {
 		require.True(t, errors.Is(err, context.Canceled), "slow prewarming must be canceled: %v", err)
 	case <-ctx.Done():
 		t.Fatal("prewarming process did not exit")
+	}
+}
+
+func TestSilentRequestReconnectsBeforeOverallDeadline(t *testing.T) {
+	path := fakeExecutable(t, "first-output-hang")
+	t.Setenv("SNAPTRANS_CODEX_FAKE_ATTEMPT", filepath.Join(t.TempDir(), "attempt"))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var tokens string
+	output, err := streamFast(ctx, path, "test-model", "translate only", "source", "low", 150*time.Millisecond, func(token string) { tokens += token })
+	require.NoError(t, err)
+	require.Equal(t, "[1] 你好", output)
+	require.Equal(t, output, tokens)
+}
+
+func TestSilentRequestRetryIsBounded(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := streamFast(ctx, fakeExecutable(t, "no-output"), "test-model", "translate only", "source", "low", 150*time.Millisecond, func(string) {})
+	require.ErrorIs(t, err, errFirstOutputTimeout)
+	require.NoError(t, ctx.Err())
+}
+
+func TestFirstOutputDeadlineStopsAfterTextArrives(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var tokens string
+	output, err := streamFast(ctx, fakeExecutable(t, "stream-hang"), "test-model", "translate only", "source", "low", 150*time.Millisecond, func(token string) { tokens += token })
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Equal(t, "[1] 你", output)
+	require.Equal(t, output, tokens)
+}
+
+func TestResponseIdleDeadlineExcludesSetupAndActiveReasoning(t *testing.T) {
+	for _, mode := range []string{"slow-thread", "reasoning-progress"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			var tokens string
+			output, err := streamFast(ctx, fakeExecutable(t, mode), "test-model", "translate only", "source", "low", 150*time.Millisecond, func(token string) { tokens += token })
+			require.NoError(t, err)
+			require.Equal(t, "[1] 你好", output)
+			require.Equal(t, output, tokens)
+		})
 	}
 }

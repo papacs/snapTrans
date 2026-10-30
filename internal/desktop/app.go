@@ -997,7 +997,7 @@ func (a *App) processText(ctx context.Context, cfg config.Config, text string, b
 			return
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
-			err = fmt.Errorf("translation timed out after %d seconds", cfg.TranslationTimeoutSeconds)
+			err = fmt.Errorf("translation timed out after %d seconds: %w", cfg.TranslationTimeoutSeconds, err)
 		}
 		a.emitError("translation", err, generation)
 		return

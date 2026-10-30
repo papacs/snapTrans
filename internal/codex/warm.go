@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -59,7 +60,7 @@ func takeWarm(ctx context.Context, path string) (*connection, uint64, error) {
 		if c != nil {
 			c.close()
 		}
-		if ctx.Err() != nil {
+		if ctx.Err() != nil && !errors.Is(err, ctx.Err()) {
 			err = ctx.Err()
 		}
 		return nil, epoch, err
@@ -114,11 +115,9 @@ func CloseIdle() {
 	}
 }
 
-const warmInstructions = "Prepare for a screenshot translation request. Do not use tools."
-
-// Warm completes session setup as well as authentication, without starting a
-// model turn. The throwaway session is released before any real input arrives.
-func Warm(ctx context.Context, path string, model ...string) error {
+// Warm prepares only the local process. Network setup must not be discarded
+// when a foreground request takes over shortly after selection starts.
+func Warm(ctx context.Context, path string, _ ...string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	warmProcess.Lock()
@@ -143,18 +142,6 @@ func Warm(ctx context.Context, path string, model ...string) error {
 		return err
 	}
 	stop := context.AfterFunc(ctx, c.close)
-	err = c.requireSubscription()
-	if err == nil {
-		selected := ""
-		if len(model) > 0 {
-			selected = model[0]
-		}
-		var threadID string
-		threadID, err = c.startThread(selected, warmInstructions)
-		if err == nil {
-			err = c.call("thread/unsubscribe", map[string]any{"threadId": threadID}, nil)
-		}
-	}
 	if !stop() || ctx.Err() != nil || err != nil {
 		c.close()
 		if ctx.Err() != nil {
@@ -167,6 +154,34 @@ func Warm(ctx context.Context, path string, model ...string) error {
 }
 
 func StreamFast(ctx context.Context, path, model, instructions, input, effort string, onToken func(string), images ...string) (string, error) {
+	return streamFast(ctx, path, model, instructions, input, effort, 20*time.Second, onToken, images...)
+}
+
+var errFirstOutputTimeout = errors.New("Codex model connection was inactive before returning text")
+
+func streamFast(ctx context.Context, path, model, instructions, input, effort string, firstOutputTimeout time.Duration, onToken func(string), images ...string) (string, error) {
+	for attempt := 0; ; attempt++ {
+		attemptCtx, cancel := context.WithCancelCause(ctx)
+		output, err := streamFastAttempt(attemptCtx, cancel, path, model, instructions, input, effort, firstOutputTimeout, onToken, images...)
+		cause := context.Cause(attemptCtx)
+		cancel(nil)
+		if errors.Is(cause, errFirstOutputTimeout) {
+			err = errFirstOutputTimeout
+			// Reconnect only before any text was emitted. Retrying partial output
+			// would duplicate text; user cancellation and the overall deadline win.
+			if attempt == 0 && output == "" && ctx.Err() == nil {
+				slog.Warn("Reconnecting inactive Codex model connection", "idle_timeout_ms", firstOutputTimeout.Milliseconds())
+				continue
+			}
+		}
+		if ctx.Err() != nil && !errors.Is(err, ctx.Err()) {
+			err = ctx.Err()
+		}
+		return output, err
+	}
+}
+
+func streamFastAttempt(ctx context.Context, cancel context.CancelCauseFunc, path, model, instructions, input, effort string, firstOutputTimeout time.Duration, onToken func(string), images ...string) (string, error) {
 	warmProcess.Lock()
 	ready := warmProcess.ready
 	cancelWarm := warmProcess.cancelWarm
@@ -201,11 +216,35 @@ func StreamFast(ctx context.Context, path, model, instructions, input, effort st
 		c.close()
 		return "", err
 	}
-	output, err := c.stream(model, instructions, input, effort, onToken, images...)
+	// Begin the idle deadline only after the model turn is accepted. Session
+	// setup and active reasoning must never consume a first-output deadline.
+	var firstOutputTimer *time.Timer
+	receivedText := false
+	output, err := c.streamWithProgress(model, instructions, input, effort, func(token string) {
+		if firstOutputTimer != nil && token != "" {
+			firstOutputTimer.Stop()
+		}
+		if token != "" {
+			receivedText = true
+		}
+		onToken(token)
+	}, func(string) {
+		if receivedText || (effort != "low" && effort != "none") {
+			return
+		}
+		if firstOutputTimer == nil {
+			firstOutputTimer = time.AfterFunc(firstOutputTimeout, func() { cancel(errFirstOutputTimeout) })
+		} else {
+			firstOutputTimer.Reset(firstOutputTimeout)
+		}
+	}, images...)
+	if firstOutputTimer != nil {
+		firstOutputTimer.Stop()
+	}
 	stopped := stop()
 	if err != nil || !stopped || ctx.Err() != nil {
 		c.close()
-		if ctx.Err() != nil {
+		if ctx.Err() != nil && !errors.Is(err, ctx.Err()) {
 			err = ctx.Err()
 		}
 		return output, err

@@ -25,6 +25,7 @@ func TestMain(m *testing.M) {
 }
 
 func fakeServer(mode string) {
+	accountReads := 0
 	input := bufio.NewScanner(os.Stdin)
 	write := func(value any) { _ = json.NewEncoder(os.Stdout).Encode(value) }
 	notify := func(method string, params any) { write(map[string]any{"method": method, "params": params}) }
@@ -43,8 +44,17 @@ func fakeServer(mode string) {
 		respond := func(value any) { write(map[string]any{"id": request.ID, "result": value}) }
 		switch request.Method {
 		case "initialize":
+			if mode == "prewarm-hang" && firstFakeAttempt() {
+				time.Sleep(time.Minute)
+				return
+			}
 			respond(map[string]any{})
 		case "account/read":
+			accountReads++
+			if mode == "routing-retry" && accountReads == 1 || mode == "routing-failed" {
+				write(map[string]any{"id": request.ID, "error": map[string]any{"message": "workspace routing discovery timed out"}})
+				continue
+			}
 			if mode == "hang" {
 				time.Sleep(time.Minute)
 				return
@@ -63,21 +73,35 @@ func fakeServer(mode string) {
 		case "config/read":
 			respond(map[string]any{"config": map[string]any{"mcp_servers": map[string]any{"external": map[string]any{"command": "never-start-this"}}}})
 		case "thread/start":
-			if mode == "warm-hang" && request.Params["baseInstructions"] == warmInstructions {
-				time.Sleep(time.Minute)
-				return
+			if mode == "slow-thread" {
+				time.Sleep(250 * time.Millisecond)
 			}
 			cfg, _ := request.Params["config"].(map[string]any)
 			features, _ := cfg["features"].(map[string]any)
 			servers, _ := cfg["mcp_servers"].(map[string]any)
 			external, _ := servers["external"].(map[string]any)
 			instructions := request.Params["baseInstructions"]
-			if request.Params["model"] != "test-model" || request.Params["modelProvider"] != subscriptionProvider || request.Params["ephemeral"] != true || request.Params["sandbox"] != "read-only" || features["shell_tool"] != false || external["enabled"] != false || (instructions != "translate only" && instructions != warmInstructions) {
+			if request.Params["model"] != "test-model" || request.Params["modelProvider"] != subscriptionProvider || request.Params["ephemeral"] != true || request.Params["sandbox"] != "read-only" || features["shell_tool"] != false || external["enabled"] != false || instructions != "translate only" {
 				write(map[string]any{"id": request.ID, "error": map[string]any{"message": "incorrect model, instructions or isolation settings"}})
 				continue
 			}
 			respond(map[string]any{"thread": map[string]any{"id": "thread-test"}})
 		case "turn/start":
+			if mode == "reasoning-progress" {
+				respond(map[string]any{"turn": map[string]any{"id": "turn-test"}})
+				for i := 0; i < 5; i++ {
+					notify("item/reasoning/summaryTextDelta", map[string]any{"threadId": "thread-test", "delta": "thinking"})
+					time.Sleep(60 * time.Millisecond)
+				}
+				notify("item/agentMessage/delta", map[string]any{"threadId": "thread-test", "delta": "[1] 你好"})
+				notify("turn/completed", map[string]any{"threadId": "thread-test", "turn": map[string]any{"status": "completed"}})
+				continue
+			}
+			if (mode == "first-output-hang" && firstFakeAttempt()) || mode == "no-output" {
+				respond(map[string]any{"turn": map[string]any{"id": "turn-test"}})
+				time.Sleep(time.Minute)
+				return
+			}
 			if mode == "warm-only" {
 				os.Exit(8)
 			}
@@ -99,6 +123,13 @@ func fakeServer(mode string) {
 			// Tokens can precede the turn/start response.
 			notify("item/agentMessage/delta", map[string]any{"threadId": "thread-test", "delta": "[1] 你"})
 			respond(map[string]any{"turn": map[string]any{"id": "turn-test"}})
+			if mode == "stream-error" || mode == "stream-retry" || mode == "stream-retry-hang" {
+				notify("error", map[string]any{"threadId": "thread-test", "willRetry": mode != "stream-error", "error": map[string]any{"message": "upstream connection timed out"}})
+				if mode != "stream-retry" {
+					time.Sleep(time.Minute)
+					return
+				}
+			}
 			if mode == "eof" {
 				return
 			}
@@ -127,6 +158,15 @@ func fakeServer(mode string) {
 			os.Exit(3)
 		}
 	}
+}
+
+func firstFakeAttempt() bool {
+	file, err := os.OpenFile(os.Getenv("SNAPTRANS_CODEX_FAKE_ATTEMPT"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return false
+	}
+	file.Close()
+	return true
 }
 
 func fakeExecutable(t *testing.T, mode string) string {
@@ -185,10 +225,61 @@ func TestStreamDoesNotAcceptPartialOutputAsSuccess(t *testing.T) {
 }
 
 func TestCancellationStopsHungServer(t *testing.T) {
+	c, err := start(context.Background(), fakeExecutable(t, "hang"))
+	require.NoError(t, err)
+	defer c.close()
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
-	_, err := Inspect(ctx, fakeExecutable(t, "hang"))
+	c.ctx = ctx
+	stop := context.AfterFunc(ctx, c.close)
+	defer stop()
+	_, err = c.account()
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.ErrorContains(t, err, "account/read")
+}
+
+func TestAccountRetriesTransientWorkspaceRoutingFailure(t *testing.T) {
+	path := fakeExecutable(t, "routing-retry")
+	status, err := Inspect(context.Background(), path)
+	require.NoError(t, err)
+	require.True(t, status.Authenticated)
+}
+
+func TestAccountRoutingRetryIsBounded(t *testing.T) {
+	path := fakeExecutable(t, "routing-failed")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := Inspect(ctx, path)
+	require.ErrorContains(t, err, "workspace routing discovery timed out")
+	require.NoError(t, ctx.Err())
+}
+
+func TestStreamReportsTerminalErrorWithoutWaitingForDeadline(t *testing.T) {
+	path := fakeExecutable(t, "stream-error")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	output, err := StreamFast(ctx, path, "test-model", "translate only", "source", "low", func(string) {})
+	require.ErrorContains(t, err, "upstream connection timed out")
+	require.NoError(t, ctx.Err(), "terminal server errors must be reported immediately")
+	require.Equal(t, "[1] 你", output)
+}
+
+func TestStreamAllowsServerRetryAndPreservesFailureOnTimeout(t *testing.T) {
+	for _, mode := range []string{"stream-retry", "stream-retry-hang"} {
+		t.Run(mode, func(t *testing.T) {
+			path := fakeExecutable(t, mode)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			output, err := StreamFast(ctx, path, "test-model", "translate only", "source", "low", func(string) {})
+			if mode == "stream-retry" {
+				require.NoError(t, err)
+				require.Equal(t, "[1] 你好", output)
+			} else {
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+				require.ErrorContains(t, err, "upstream connection timed out")
+			}
+		})
+	}
 }
 
 func TestLoginBuffersCallbackAndValidatesURL(t *testing.T) {
@@ -213,7 +304,7 @@ func TestLocalCodexStatus(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	status, err := Inspect(ctx, "")
+	status, err := Inspect(ctx, os.Getenv("SNAPTRANS_CODEX_PATH"))
 	require.NoError(t, err)
 	// Do not log email addresses or any credentials.
 	t.Logf("local CLI available, subscription=%t, models=%d", status.Authenticated, len(status.Models))
@@ -265,7 +356,7 @@ func TestLocalCodexLatency(t *testing.T) {
 				return StreamFast(ctx, path, model, instructions, input, effort, token)
 			}
 		}
-		_, err := stream(ctx, "", "gpt-6-luna", "Translate the numbered text into Chinese. Preserve [1]. Output the translation only.", "[1] Please send the updated schedule this afternoon.", func(string) {
+		_, err := stream(ctx, os.Getenv("SNAPTRANS_CODEX_PATH"), "gpt-6-luna", "Translate the numbered text into Chinese. Preserve [1]. Output the translation only.", "[1] Please send the updated schedule this afternoon.", func(string) {
 			if first == 0 {
 				first = time.Since(started)
 			}
@@ -296,16 +387,16 @@ func TestWarmProcessIsReusedAndConversationsAreReleased(t *testing.T) {
 	require.NotNil(t, first.cmd.ProcessState)
 }
 
-func TestWarmCompletesSessionSetupWithoutInvokingModel(t *testing.T) {
+func TestWarmOnlyInitializesProcessWithoutNetworkSetup(t *testing.T) {
 	path := fakeExecutable(t, "warm-only")
 	require.NoError(t, Warm(context.Background(), path, "test-model"))
 	warmProcess.Lock()
 	c := warmProcess.idle
 	warmProcess.Unlock()
 	require.NotNil(t, c)
-	// initialize, account/read, config/read, thread/start, thread/unsubscribe.
-	// No model/list is needed for an explicitly chosen model, nor turn/start.
-	require.Equal(t, 5, c.seq)
+	// Authentication and model setup belong to the foreground request. A
+	// prewarm canceled during those network calls would discard their progress.
+	require.Equal(t, 1, c.seq)
 }
 
 func TestCanceledFastStreamIsNeverReused(t *testing.T) {
