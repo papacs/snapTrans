@@ -76,6 +76,7 @@ type App struct {
 	replyItem      *systray.MenuItem
 
 	mu                  sync.Mutex
+	scrollMu            sync.Mutex
 	cfg                 config.Config
 	shortcut            *hotkeys.Registration
 	screenshotShortcut  *hotkeys.Registration
@@ -162,6 +163,8 @@ func (a *App) shutdown(_ context.Context) {
 	a.CancelCodexLogin()
 	a.cancelTextAction()
 	closeAllPins()
+	a.scrollMu.Lock()
+	defer a.scrollMu.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -334,6 +337,8 @@ func (a *App) BeginScrollingScreenshot(request ScrollCaptureRequest) (capture.Ma
 	if a.ctx == nil {
 		return capture.ManualScrollStatus{}, errors.New("scrolling capture requires the desktop app")
 	}
+	a.scrollMu.Lock()
+	defer a.scrollMu.Unlock()
 	overlay, err := manualScrollOverlayWindow()
 	if err != nil {
 		return capture.ManualScrollStatus{}, err
@@ -424,17 +429,22 @@ func (a *App) StepScrollingScreenshot() (ScrollCaptureStepResult, error) {
 }
 
 func (a *App) FinishScrollingScreenshot() (capture.Result, error) {
+	a.scrollMu.Lock()
 	session, overlay := a.takeScrollCapture()
 	if session == nil {
+		a.scrollMu.Unlock()
 		return capture.Result{}, errors.New("no scrolling capture is active")
 	}
-	if _, err := session.CaptureNext(); err != nil {
-		a.finishScrollingCaptureWindow(overlay)
+	_, err := session.CaptureNext()
+	a.finishScrollingCaptureWindow(overlay)
+	a.scrollMu.Unlock()
+	if err != nil {
 		return capture.Result{}, err
 	}
 
+	// Encoding can continue after the native window is restored. Settings and
+	// the next capture only need to wait for that restoration, not a large PNG.
 	result, err := session.Finish()
-	a.finishScrollingCaptureWindow(overlay)
 	if err != nil {
 		return capture.Result{}, err
 	}
@@ -453,13 +463,20 @@ func (a *App) FinishScrollingScreenshot() (capture.Result, error) {
 }
 
 func (a *App) CancelScrollingScreenshot() error {
+	a.scrollMu.Lock()
+	defer a.scrollMu.Unlock()
+	a.cancelScrollingScreenshot()
+	return nil
+}
+
+// The caller holds scrollMu through native restoration and visibility changes.
+func (a *App) cancelScrollingScreenshot() {
 	session, overlay := a.takeScrollCapture()
 	if session == nil {
-		return nil
+		return
 	}
 	session.Cancel()
 	a.finishScrollingCaptureWindow(overlay)
-	return nil
 }
 
 func (a *App) takeScrollCapture() (*capture.ManualScrollCapture, uintptr) {
@@ -501,6 +518,10 @@ func (a *App) triggerCaptureMode(mode string) error {
 }
 
 func (a *App) beginCapture() (wasVisible bool, epoch uint64, started bool) {
+	// A previous scroll cleanup may already have taken its session but still
+	// be restoring or hiding the shared window. Finish it before reusing it.
+	a.scrollMu.Lock()
+	defer a.scrollMu.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.captureInFlight {
@@ -580,9 +601,10 @@ func (a *App) invalidateCaptureWindowPreparation() {
 func (a *App) ProcessImage(base64Crop string, direction string, generation int) error {
 	a.mu.Lock()
 	cfg := a.cfg.WithDefaults()
+	epoch := a.captureEpoch
 	a.mu.Unlock()
 
-	a.startProcessing(cfg, base64Crop, translator.NormalizeDirection(direction), generation)
+	a.startProcessing(cfg, base64Crop, translator.NormalizeDirection(direction), generation, epoch)
 	return nil
 }
 
@@ -612,6 +634,7 @@ func (a *App) TranslateRegion(region TranslateRegionRequest, direction string, g
 	a.mu.Lock()
 	frame := a.frame
 	cfg := a.cfg.WithDefaults()
+	epoch := a.captureEpoch
 	a.mu.Unlock()
 	if frame == nil {
 		return errors.New("no captured frame is available; start a new capture")
@@ -620,7 +643,7 @@ func (a *App) TranslateRegion(region TranslateRegionRequest, direction string, g
 		cfg.DirectImageInput = region.InputMode == "image"
 	}
 	if cfg.DirectImageInput {
-		a.startVisionRegion(cfg, frame, region, translator.NormalizeDirection(direction), generation)
+		a.startVisionRegion(cfg, frame, region, translator.NormalizeDirection(direction), generation, epoch)
 		return nil
 	}
 
@@ -648,20 +671,33 @@ func (a *App) TranslateRegion(region TranslateRegionRequest, direction string, g
 		)
 	}
 
-	a.startProcessing(cfg, dataURL, translator.NormalizeDirection(direction), generation)
+	a.startProcessing(cfg, dataURL, translator.NormalizeDirection(direction), generation, epoch)
 	return nil
 }
 
-// startProcessing cancels any in-flight workflow and starts a new one with a
-// bounded translation timeout so a stalled API call cannot hang the overlay.
-func (a *App) startProcessing(cfg config.Config, base64Crop string, direction translator.Direction, generation int) {
+// A crop may finish after Escape or a newer capture. Check its source epoch
+// under the same lock that replaces the active workflow's cancellation handle.
+func (a *App) newProcessingContext(epoch uint64) (context.Context, context.CancelFunc) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.captureEpoch != epoch {
+		return nil, nil
+	}
 	if a.processing != nil {
 		a.processing()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.processing = cancel
-	a.mu.Unlock()
+	return ctx, cancel
+}
+
+// startProcessing cancels any in-flight workflow and starts a new one with a
+// bounded translation timeout so a stalled API call cannot hang the overlay.
+func (a *App) startProcessing(cfg config.Config, base64Crop string, direction translator.Direction, generation int, epoch uint64) {
+	ctx, cancel := a.newProcessingContext(epoch)
+	if ctx == nil {
+		return
+	}
 
 	go func() {
 		defer cancel()
@@ -703,14 +739,11 @@ func (a *App) ExtractText(base64Image string) (TextExtractionResult, error) {
 }
 
 func (a *App) HideWindow() error {
+	a.scrollMu.Lock()
+	defer a.scrollMu.Unlock()
 	a.cancelTextAction()
 	a.invalidateCaptureRequest()
-	session, overlay := a.takeScrollCapture()
-	if session != nil {
-		session.Cancel()
-		a.finishCapture()
-	}
-	restoreManualScrollOverlay(overlay)
+	a.cancelScrollingScreenshot()
 	a.cancelProcessing()
 	a.mu.Lock()
 	a.windowVisible = false
@@ -738,11 +771,14 @@ func (a *App) QuitApp() error {
 func (a *App) ShowSettings() error {
 	a.cancelTextAction()
 	a.invalidateCaptureRequest()
+	a.cancelProcessing()
+	// Dispose the scrolling input hole before Vue unmounts the editor. Its
+	// later cancellation must not hide the newly opened settings window.
+	_ = a.CancelScrollingScreenshot()
 	if a.ctx == nil {
 		return nil
 	}
 
-	a.cancelProcessing()
 	runtime.WindowUnminimise(a.ctx)
 	runtime.WindowUnfullscreen(a.ctx)
 	a.invalidateCaptureWindowPreparation()

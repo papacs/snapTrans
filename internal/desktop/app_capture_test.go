@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"snaptrans/internal/capture"
 )
 
 func TestBeginCaptureCoalescesConcurrentRequests(t *testing.T) {
@@ -61,6 +62,36 @@ func TestSettingsRequestWaitsForFrontendReady(t *testing.T) {
 	require.False(t, app.settingsPending)
 	require.True(t, app.requestSettingsOpen())
 	require.False(t, app.markFrontendReady())
+}
+
+func TestSettingsClosesScrollingCaptureBeforeLateEditorCancellation(t *testing.T) {
+	app := NewApp(nil)
+	app.captureInFlight = true
+	app.scrollCapture = &capture.ManualScrollCapture{}
+	app.windowVisible = true
+	processing, cancelProcessing := context.WithCancel(context.Background())
+	defer cancelProcessing()
+	app.processing = cancelProcessing
+	reply, cancelReply := context.WithCancel(context.Background())
+	defer cancelReply()
+	app.extensionProcessing = cancelReply
+	app.extensionRequestID = "reply"
+
+	require.NoError(t, app.ShowSettings())
+	require.Nil(t, app.scrollCapture)
+	require.Zero(t, app.scrollOverlay)
+	require.False(t, app.captureInFlight)
+	require.ErrorIs(t, processing.Err(), context.Canceled)
+	require.ErrorIs(t, reply.Err(), context.Canceled)
+
+	// Simulate the settings shell being shown before the old editor's
+	// asynchronous unmount cleanup reaches the backend.
+	app.windowVisible = true
+	require.NoError(t, app.CancelScrollingScreenshot())
+	require.True(t, app.windowVisible)
+	wasVisible, _, started := app.beginCapture()
+	require.True(t, started)
+	require.True(t, wasVisible)
 }
 
 func TestTranslateRegionRejectsInvalidRegion(t *testing.T) {

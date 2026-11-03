@@ -34,16 +34,19 @@ func TestSlowWarmupCannotConsumeRealRequestTimeout(t *testing.T) {
 func TestRealRequestCancelsHungPrewarmAndCompletes(t *testing.T) {
 	path := fakeExecutable(t, "prewarm-hang")
 	t.Setenv("SNAPTRANS_CODEX_FAKE_ATTEMPT", filepath.Join(t.TempDir(), "attempt"))
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	warmCtx, cancelWarm := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelWarm()
 	finished := make(chan error, 1)
-	go func() { finished <- Warm(ctx, path, "test-model") }()
+	go func() { finished <- Warm(warmCtx, path, "test-model") }()
 	require.Eventually(t, func() bool {
 		warmProcess.Lock()
 		defer warmProcess.Unlock()
 		_, err := os.Stat(os.Getenv("SNAPTRANS_CODEX_FAKE_ATTEMPT"))
 		return warmProcess.warming && err == nil
-	}, time.Second, time.Millisecond)
+	}, 5*time.Second, 10*time.Millisecond)
+	// Process startup is test setup; it must not consume the foreground budget.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	output, err := StreamFast(ctx, path, "test-model", "translate only", "source", "low", func(string) {})
 	require.NoError(t, err)
 	require.Equal(t, "[1] 你好", output)

@@ -17,6 +17,25 @@ beforeEach(() => {
 });
 
 describe("model settings", () => {
+  it("reveals the key on request and masks it again when settings close or the provider changes", async () => {
+    const config = reactive({ ...defaultConfig, apiKey: "example-key" });
+    const wrapper = mount(ModelSettings, { props: { config, locale: "en", active: true } });
+    const input = wrapper.get('[data-testid="api-key-input"]');
+    const toggle = wrapper.get('[data-testid="toggle-api-key"]');
+    expect(input.attributes("type")).toBe("password");
+    await toggle.trigger("click");
+    expect(input.attributes("type")).toBe("text");
+    expect(toggle.attributes("aria-label")).toBe("Hide API key");
+    expect(toggle.attributes("type")).toBe("button");
+    await wrapper.setProps({ active: false });
+    expect(input.attributes("type")).toBe("password");
+    await wrapper.setProps({ active: true });
+    await toggle.trigger("click");
+    await wrapper.get('[data-testid="model-provider"]').setValue("codex");
+    await wrapper.get('[data-testid="model-provider"]').setValue("openai-compatible");
+    expect(wrapper.get('[data-testid="api-key-input"]').attributes("type")).toBe("password");
+    expect(config.apiKey).toBe("example-key");
+  });
   it("provides a translation-only speed setting without changing reply thinking", async () => {
     const config = reactive({...defaultConfig,provider:"codex" as const,codexReasoningEffort:"high" as const});
     const wrapper = mount(ModelSettings,{props:{config,locale:"zh-CN",active:true}});

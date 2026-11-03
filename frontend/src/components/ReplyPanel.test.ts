@@ -19,6 +19,35 @@ afterEach(()=>vi.unstubAllGlobals());
 const props={locale:"zh-CN",anchor:{x:20,y:30,width:300,height:200},viewport:{width:1280,height:800},region:{x:50,y:70,width:600,height:400}};
 
 describe("reply assistant",()=>{
+  it.each(["Escape", "Enter"])("lets the input method handle %s without closing or copying", async key => {
+    const wrapper = mount(ReplyPanel, {props: {...props, source: "message"}});
+    await flushPromises();
+    const request = mocks.start.mock.calls[0]![0];
+    mocks.listener!({id: request.id, token: "可编辑的回复", done: true});
+    await flushPromises();
+    await wrapper.get('[data-testid="reply-answer"]').trigger("keydown", {key, ctrlKey: key === "Enter", isComposing: true});
+    await flushPromises();
+    expect(wrapper.emitted("close")).toBeUndefined();
+    expect(wrapper.emitted("copied")).toBeUndefined();
+    expect(mocks.copy).not.toHaveBeenCalled();
+  });
+  it("does not show an old stop failure after a new reply completes", async () => {
+    let failStop!: (reason: Error) => void;
+    mocks.cancel.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { failStop = reject; }));
+    const wrapper = mount(ReplyPanel, {props: {...props, source: "message"}});
+    await flushPromises();
+    await wrapper.get('[data-testid="reply-stop"]').trigger("click");
+    await wrapper.get('[data-testid="reply-generate"]').trigger("click");
+    await flushPromises();
+    const request = mocks.start.mock.calls[1]![0];
+    mocks.listener!({id: request.id, token: "新生成的回复", done: true});
+    await flushPromises();
+    failStop(new Error("STALE_STOP_ERROR"));
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("STALE_STOP_ERROR");
+    expect((wrapper.get('[data-testid="reply-answer"]').element as HTMLTextAreaElement).value).toBe("新生成的回复");
+    expect(wrapper.get('[data-testid="reply-copy-close"]').attributes("disabled")).toBeUndefined();
+  });
   it("uses images when opted in and allows switching back to text",async()=>{
     const wrapper=mount(ReplyPanel,{props:{...props,directImageInput:true}});await flushPromises();
     const request=mocks.start.mock.calls[0]![0];
@@ -80,5 +109,47 @@ describe("reply assistant",()=>{
     expect(wrapper.text()).toContain("Clipboard is busy");expect(wrapper.emitted("copied")).toBeUndefined();
     await wrapper.get('[data-testid="reply-generate"]').trigger("click");await flushPromises();
     const pending=mocks.start.mock.calls[1]![0];wrapper.unmount();expect(mocks.cancel).toHaveBeenCalledWith(pending.id);
+  });
+  it("deduplicates pending clipboard requests and keeps regenerated replies open",async()=>{
+    let finishCopy!:()=>void;
+    mocks.copy.mockImplementationOnce(()=>new Promise<void>(resolve=>{finishCopy=resolve;}));
+    const wrapper=mount(ReplyPanel,{props:{...props,source:"message"}});await flushPromises();
+    const first=mocks.start.mock.calls[0]![0];
+    mocks.listener!({id:first.id,token:"旧回复",done:true});await flushPromises();
+    await wrapper.get('[data-testid="reply-copy-close"]').trigger("click");
+    window.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",ctrlKey:true,bubbles:true}));await flushPromises();
+    expect(mocks.copy).toHaveBeenCalledTimes(1);
+    expect(wrapper.get('[data-testid="reply-copy-close"]').attributes("disabled")).toBeDefined();
+    await wrapper.get('[data-testid="reply-generate"]').trigger("click");await flushPromises();
+    const second=mocks.start.mock.calls[1]![0];
+    mocks.listener!({id:second.id,token:"旧回复",done:true});await flushPromises();
+    finishCopy();await flushPromises();
+    expect(wrapper.emitted("copied")).toBeUndefined();
+    expect((wrapper.get('[data-testid="reply-answer"]').element as HTMLTextAreaElement).value).toBe("旧回复");
+    expect(wrapper.get('[data-testid="reply-copy-close"]').attributes("disabled")).toBeUndefined();
+  });
+  it("does not close after the copied reply is edited while the clipboard is pending",async()=>{
+    let finishCopy!:()=>void;
+    mocks.copy.mockImplementationOnce(()=>new Promise<void>(resolve=>{finishCopy=resolve;}));
+    const wrapper=mount(ReplyPanel,{props:{...props,source:"message"}});await flushPromises();
+    const request=mocks.start.mock.calls[0]![0];
+    mocks.listener!({id:request.id,token:"初稿",done:true});await flushPromises();
+    await wrapper.get('[data-testid="reply-copy-close"]').trigger("click");
+    await wrapper.get('[data-testid="reply-answer"]').setValue("已修改的回复");
+    finishCopy();await flushPromises();
+    expect(wrapper.emitted("copied")).toBeUndefined();
+    expect((wrapper.get('[data-testid="reply-answer"]').element as HTMLTextAreaElement).value).toBe("已修改的回复");
+  });
+  it("ignores clipboard errors from a previous generation",async()=>{
+    let failCopy!:(reason:Error)=>void;
+    mocks.copy.mockImplementationOnce(()=>new Promise<void>((_resolve,reject)=>{failCopy=reject;}));
+    const wrapper=mount(ReplyPanel,{props:{...props,source:"message"}});await flushPromises();
+    const first=mocks.start.mock.calls[0]![0];
+    mocks.listener!({id:first.id,token:"旧回复",done:true});await flushPromises();
+    await wrapper.get('[data-testid="reply-copy-close"]').trigger("click");
+    await wrapper.get('[data-testid="reply-generate"]').trigger("click");await flushPromises();
+    failCopy(new Error("Stale clipboard failure"));await flushPromises();
+    expect(wrapper.text()).not.toContain("Stale clipboard failure");
+    expect(wrapper.find('[data-testid="reply-stop"]').exists()).toBe(true);
   });
 });

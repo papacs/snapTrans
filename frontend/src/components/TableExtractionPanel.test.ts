@@ -32,4 +32,18 @@ describe("TableExtractionPanel", () => {
     expect(wrapper.get('[role="alert"]').text()).toContain("重新框选");
     expect(wrapper.get('[data-testid="copy-table-tsv"]').attributes("disabled")).toBeDefined();
   });
+
+  it.each([{ isComposing: true }, { keyCode: 229 }])("keeps the table open while the IME handles Escape (%s)", async options => {
+    const wrapper = mount(TableExtractionPanel, {
+      props: { cells: [["中文单元格"]], loading: false, error: "", copied: "", locale: "zh-CN", panelStyle: {} },
+    });
+    const cell = wrapper.get('[data-testid="table-cell-0-0"]');
+    const event = new KeyboardEvent("keydown", { key: "Escape", ...options, bubbles: true, cancelable: true });
+    cell.element.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(wrapper.emitted("close")).toBeUndefined();
+    await cell.trigger("keydown", { key: "Escape" });
+    expect(wrapper.emitted("close")).toHaveLength(1);
+    wrapper.unmount();
+  });
 });

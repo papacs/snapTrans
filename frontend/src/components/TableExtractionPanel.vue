@@ -24,6 +24,12 @@ function updateCell(rowIndex: number, columnIndex: number, value: string) {
   cells[rowIndex]![columnIndex] = value;
   emit("update:cells", cells);
 }
+function onCellKeyDown(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === 229 || event.key !== "Escape") return;
+  event.preventDefault();
+  event.stopPropagation();
+  emit("close");
+}
 </script>
 
 <template>
@@ -83,11 +89,12 @@ function updateCell(rowIndex: number, columnIndex: number, value: string) {
               >
                 <input
                   :value="row[columnIndex - 1] ?? ''"
+                  :disabled="loading"
                   class="h-9 w-32 bg-white px-2 outline-none focus:bg-emerald-50 focus:ring-2 focus:ring-inset focus:ring-emerald-500/30"
                   :aria-label="en ? `Row ${rowIndex + 1}, column ${columnIndex}` : `第 ${rowIndex + 1} 行，第 ${columnIndex} 列`"
                   :data-testid="`table-cell-${rowIndex}-${columnIndex - 1}`"
                   @input="updateCell(rowIndex, columnIndex - 1, ($event.target as HTMLInputElement).value)"
-                  @keydown.escape.stop.prevent="emit('close')"
+                  @keydown="onCellKeyDown"
                 />
               </td>
             </tr>

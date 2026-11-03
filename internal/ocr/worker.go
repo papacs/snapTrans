@@ -60,10 +60,19 @@ func newWorkerGate() chan struct{} {
 }
 
 func acquireWorkerGate(ctx context.Context, gate chan struct{}) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-gate:
+		// Cancellation can become ready at the same time as the gate. Never
+		// let that request start OCR or consume the next request's slot.
+		if err := ctx.Err(); err != nil {
+			releaseWorkerGate(gate)
+			return err
+		}
 		return nil
 	}
 }

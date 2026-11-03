@@ -92,3 +92,17 @@ func TestWorkerStartGateDoesNotLeakWhenWaitingContextIsCancelled(t *testing.T) {
 	require.NoError(t, worker.acquireStart(context.Background()))
 	worker.releaseStart()
 }
+
+func TestCancelledWorkerRequestDoesNotAcquireAvailableGate(t *testing.T) {
+	gate := newWorkerGate()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for i := 0; i < 64; i++ {
+		err := acquireWorkerGate(ctx, gate)
+		if err == nil {
+			releaseWorkerGate(gate)
+		}
+		require.ErrorIs(t, err, context.Canceled)
+		require.Len(t, gate, 1)
+	}
+}

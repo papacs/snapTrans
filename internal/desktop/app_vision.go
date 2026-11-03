@@ -14,14 +14,11 @@ import (
 	"snaptrans/internal/translator"
 )
 
-func (a *App) startVisionRegion(cfg config.Config, frame image.Image, region TranslateRegionRequest, direction translator.Direction, generation int) {
-	a.mu.Lock()
-	if a.processing != nil {
-		a.processing()
+func (a *App) startVisionRegion(cfg config.Config, frame image.Image, region TranslateRegionRequest, direction translator.Direction, generation int, epoch uint64) {
+	ctx, cancel := a.newProcessingContext(epoch)
+	if ctx == nil {
+		return
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	a.processing = cancel
-	a.mu.Unlock()
 	go func() {
 		defer cancel()
 		started := time.Now()

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { Eye, EyeOff } from "lucide-vue-next";
 import { cancelCodexLogin, getCodexStatus, loginCodex, type AppConfig, type CodexStatus } from "../services/backend";
 import { settingsMessages, type SettingsLocale } from "../i18n/settings";
 
@@ -26,6 +27,7 @@ const status = ref<CodexStatus | null>(null);
 const error = ref("");
 const loading = ref(false);
 const signingIn = ref(false);
+const showAPIKey = ref(false);
 let sequence = 0;
 
 async function detect(): Promise<void> {
@@ -72,6 +74,7 @@ watch(() => props.config.codexPath, () => {
   loading.value = false;
 });
 watch(() => [props.config.provider, props.active], () => {
+  showAPIKey.value = false;
   ++sequence;
   loading.value = false;
   if (signingIn.value) void cancelSignIn();
@@ -90,10 +93,21 @@ onBeforeUnmount(() => { ++sequence; if (signingIn.value) void cancelCodexLogin()
   </label>
 
   <template v-if="config.provider !== 'codex'">
-    <label class="settings-field">
-      <span class="settings-label">{{ text.apiKey }}</span>
-      <input v-model="config.apiKey" data-testid="api-key-input" class="settings-input" type="password" autocomplete="off" :placeholder="text.apiKeyPlaceholder" />
-    </label>
+    <div class="settings-field">
+      <label for="model-api-key" class="settings-label">{{ text.apiKey }}</label>
+      <span class="relative block">
+        <input id="model-api-key" v-model="config.apiKey" data-testid="api-key-input" class="settings-input pr-11" :type="showAPIKey ? 'text' : 'password'" autocomplete="off" spellcheck="false" :placeholder="text.apiKeyPlaceholder" />
+        <button
+          type="button"
+          data-testid="toggle-api-key"
+          class="absolute right-1 top-1 inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-zinc-800 dark:hover:text-slate-100"
+          :aria-label="locale === 'en' ? (showAPIKey ? 'Hide API key' : 'Show API key') : (showAPIKey ? '隐藏 API 密钥' : '显示 API 密钥')"
+          :title="locale === 'en' ? (showAPIKey ? 'Hide API key' : 'Show API key') : (showAPIKey ? '隐藏 API 密钥' : '显示 API 密钥')"
+          :aria-pressed="showAPIKey"
+          @click="showAPIKey = !showAPIKey"
+        ><EyeOff v-if="showAPIKey" class="h-4 w-4" aria-hidden="true" /><Eye v-else class="h-4 w-4" aria-hidden="true" /></button>
+      </span>
+    </div>
     <div class="mt-4 grid gap-4 sm:grid-cols-2">
       <label class="settings-field">
         <span class="settings-label">{{ text.baseURL }}</span>

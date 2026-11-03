@@ -60,26 +60,27 @@ function toggle(key: keyof FeatureFlags, event: Event) {
           (f) => Boolean(f.fun) === fun,
         )"
         :key="item.key"
-        class="flex cursor-pointer items-start justify-between gap-4 border-b border-slate-100 py-3 last:border-0 dark:border-zinc-800"
+        class="settings-toggle mt-3 gap-4"
       >
         <span
-          ><span class="block text-sm font-medium">{{
+          ><span class="settings-toggle-title">{{
             locale === "en" ? item.en : item.zh
           }}</span
           ><span
-            class="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400"
+            class="settings-toggle-description"
             >{{ locale === "en" ? item.helpEn : item.help }}</span
           ></span
         >
         <input
           type="checkbox"
           role="switch"
-          class="mt-1 h-4 w-4 shrink-0 accent-emerald-600"
+          class="peer sr-only"
           :checked="flags[item.key]"
           :aria-label="locale === 'en' ? item.en : item.zh"
           :data-testid="'feature-' + item.key"
           @change="toggle(item.key, $event)"
         />
+        <span class="settings-switch" aria-hidden="true" />
       </label>
     </div>
     <p class="mt-3 text-xs leading-5 text-slate-500">

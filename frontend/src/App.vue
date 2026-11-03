@@ -188,7 +188,9 @@ const appVersion = ref("");
 const copied = ref(false);
 const copiedImage = ref(false);
 const copyingGeneration = ref<number | null>(null);
+let savingScreenshotGeneration: number | null = null;
 const expandedTranslation = ref(false);
+const originalPreviewHeld = ref(false);
 const isDesktop = hasWailsBackend();
 const config = reactive<AppConfig>({ ...defaultConfig });
 const savedConfig = reactive<AppConfig>({ ...defaultConfig });
@@ -203,6 +205,16 @@ const visibleHistory = computed(() => filterLibrary(historyEntries.value.filter(
 watch(() => featureFlags.value.imageCompare, enabled => {if(!enabled)clearComparisonBaseline();});
 const settingsLocale = computed(() => normalizeSettingsLocale(config.uiLanguage));
 const settingsText = computed(() => settingsMessages[settingsLocale.value]);
+const captureHint = computed(() => {
+  if (settingsLocale.value === "en") {
+    if (capture.value?.mode === "screenshot") return "Drag to select an area. Release to edit.";
+    if (capture.value?.mode === "reply") return "Drag to select an area. Release to draft a reply.";
+    return "Drag to select an area. Release to translate.";
+  }
+  if (capture.value?.mode === "screenshot") return "拖动选择区域，松手即编辑";
+  if (capture.value?.mode === "reply") return "拖动选择区域，松手即生成回复";
+  return "拖动选择区域，松手即翻译";
+});
 
 watch(
   settingsLocale,
@@ -393,12 +405,21 @@ watch(resultActionsRef, (element, previous) => {
 });
 
 const isResultBusy = computed(() => phase.value === "processing" || phase.value === "streaming");
+const hasReadableResult = computed(() => Boolean(resultRect.value && cleanTranslationText.value &&
+  (phase.value === "streaming" || phase.value === "done" || phase.value === "partial") &&
+  !settingsOpen.value && !replyOpen.value && !extensionOpen.value));
+const canViewOriginal = computed(() => hasReadableResult.value && Boolean(capture.value));
+const showsOriginal = computed(() => canViewOriginal.value && originalPreviewHeld.value);
+watch([workflowGeneration, canViewOriginal, expandedTranslation], releaseOriginalPreview);
 const showsResultProgress = computed(
   () => phase.value === "processing" || (phase.value === "streaming" && !translationText.value)
 );
 const usesImageInput = computed(() => !translationInputOverride.value && savedConfig.directImageInput && !capture.value?.selectedText);
 const canRetryWithOCR = computed(() => usesImageInput.value && lastImageRegion.value && (phase.value === "error" || phase.value === "partial"));
-const resultProgressLabel = computed(() => phase.value === "processing" ? usesImageInput.value ? "Preparing image..." : "OCR..." : "Translating...");
+const resultProgressLabel = computed(() => {
+  if (settingsLocale.value === "en") return phase.value === "processing" ? usesImageInput.value ? "Preparing image..." : "OCR..." : "Translating...";
+  return phase.value === "processing" ? usesImageInput.value ? "准备图片中..." : "识别文字中..." : "翻译中...";
+});
 
 const reverseDirectionTitle = computed(() =>
   translationDirection.value === "to-zh" ? "Reverse: translate Chinese to English" : "Reverse: translate English to Chinese"
@@ -527,6 +548,8 @@ const unsubs: Array<() => void> = [];
 onMounted(async () => {
   window.addEventListener("resize", updateViewport);
   window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("keyup", onKeyUp);
+  window.addEventListener("blur", releaseOriginalPreview);
   if (typeof globalThis.ResizeObserver === "function") {
     resultActionsResizeObserver = new ResizeObserver(measureResultActions);
   }
@@ -633,6 +656,9 @@ onBeforeUnmount(() => {
   resetTranslationText();
   window.removeEventListener("resize", updateViewport);
   window.removeEventListener("keydown", onKeyDown);
+  window.removeEventListener("keyup", onKeyUp);
+  window.removeEventListener("blur", releaseOriginalPreview);
+  releaseOriginalPreview();
   resultActionsResizeObserver?.disconnect();
   resultActionsResizeObserver = null;
   detachCaptureDragListeners();
@@ -654,18 +680,48 @@ function isCurrentGeneration(payload: { generation?: number }): boolean {
   return typeof payload.generation !== "number" || payload.generation === workflowGeneration.value;
 }
 
+function releaseOriginalPreview(): void {
+  originalPreviewHeld.value = false;
+}
+
+function onKeyUp(event: KeyboardEvent): void {
+  if (event.code === "Space" || event.key === " ") releaseOriginalPreview();
+}
+
 function onKeyDown(event: KeyboardEvent): void {
+  if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+  if (settingsOpen.value && !shortcutRecording.value && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+    event.preventDefault();
+    if (!settingsSaving.value) settingsScrollRef.value?.closest("form")?.requestSubmit();
+    return;
+  }
   if (replyOpen.value) {
     if (event.key === "Escape") {event.preventDefault();closeReply();}
     return;
   }
-  if (document.querySelector("[data-extension-workbench]")) {
+  if (extensionOpen.value || document.querySelector("[data-extension-workbench]")) {
     if(event.key === "Escape") {event.preventDefault(); extensionOpen.value=false;}
     return;
   }
-  if (event.key === "Escape" && settingsOpen.value) {
+  if (settingsOpen.value) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      void closeSettings();
+    }
+    return;
+  }
+  const target = event.target instanceof Element ? event.target : null;
+  if (target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')) return;
+  if ((event.code === "Space" || event.key === " ") && canViewOriginal.value &&
+      !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !target?.closest("button, a[href]")) {
     event.preventDefault();
-    void closeSettings();
+    if (!event.repeat) originalPreviewHeld.value = true;
+    return;
+  }
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey &&
+      !event.repeat && hasReadableResult.value && !isResultBusy.value) {
+    event.preventDefault();
+    void copyResult();
     return;
   }
   if (event.key === "Escape" && (isCaptureActive() || resultRect.value)) {
@@ -700,24 +756,36 @@ async function startCapture(payload: CapturePayload): Promise<void> {
   workflowGeneration.value += 1;
   phase.value = "loading";
 
-  await nextTick();
-  if (sequence !== captureLoadSequence) {
-    return;
-  }
-
-  const drawn = await drawCapture(payload, sequence);
-  if (!drawn || sequence !== captureLoadSequence) {
-    return;
-  }
-
-  phase.value = payload.selectedText ? "loading" : "ready";
-  await nextTick();
-  if (sequence !== captureLoadSequence) return;
-  await showCaptureWindow();
-  if (sequence !== captureLoadSequence) return;
-  if (payload.selectedText) {
+  try {
     await nextTick();
-    await submitNativeSelection(sequence);
+    if (sequence !== captureLoadSequence) {
+      return;
+    }
+
+    const drawn = await drawCapture(payload, sequence);
+    if (!drawn || sequence !== captureLoadSequence) {
+      return;
+    }
+
+    phase.value = payload.selectedText ? "loading" : "ready";
+    await nextTick();
+    if (sequence !== captureLoadSequence) return;
+    await showCaptureWindow();
+    if (sequence !== captureLoadSequence) return;
+    if (payload.selectedText) {
+      await nextTick();
+      await submitNativeSelection(sequence);
+    }
+  } catch (error) {
+    if (sequence !== captureLoadSequence) return;
+    capture.value = null;
+    errorMessage.value = error instanceof Error ? error.message : "Failed to display captured image";
+    const width = Math.min(360, Math.max(48, viewport.width - 32));
+    resultRect.value = { x: (viewport.width - width) / 2, y: Math.max(16, (viewport.height - 160) / 2), width, height: 160 };
+    phase.value = "error";
+    await nextTick();
+    if (sequence !== captureLoadSequence) return;
+    await showCaptureWindow().catch(() => {});
   }
 }
 
@@ -847,6 +915,7 @@ function detachCaptureDragListeners(): void {
 async function submitSelection(rect: Rect): Promise<void> {
   const canvas = canvasRef.value;
   const payload = capture.value;
+  const generation = workflowGeneration.value;
   if (!canvas || !payload) {
     return;
   }
@@ -886,12 +955,14 @@ async function submitSelection(rect: Rect): Promise<void> {
     // the interaction task free. The backend crops the captured frame with
     // the same DPI mapping, so no PNG crosses the Wails bridge.
     await nextTick();
+    if (generation !== workflowGeneration.value) return;
     if (imageRect.width <= 0 || imageRect.height <= 0) {
       throw new Error("Selection is empty");
     }
     lastImageRegion.value = imageRect;
-    await translateRegion(imageRect, directionForRequest(), workflowGeneration.value);
+    await translateRegion(imageRect, directionForRequest(), generation);
   } catch (error) {
+    if (generation !== workflowGeneration.value) return;
     errorMessage.value = error instanceof Error ? error.message : "Failed to process selection";
     phase.value = "error";
   }
@@ -958,22 +1029,36 @@ async function cancelCapture(): Promise<void> {
 }
 
 async function completeScreenshot(dataUrl: string): Promise<void> {
+  const generation = workflowGeneration.value;
+  if (copyingGeneration.value === generation) return;
+  copyingGeneration.value = generation;
   screenshotNotice.value = "正在复制...";
   try {
     await copyImageDataUrl(dataUrl);
+    if (generation !== workflowGeneration.value) return;
     await cancelCapture();
   } catch (error) {
+    if (generation !== workflowGeneration.value) return;
     screenshotNotice.value = error instanceof Error ? error.message : "复制截图失败";
+  } finally {
+    if (copyingGeneration.value === generation) copyingGeneration.value = null;
   }
 }
 
 async function saveEditedScreenshot(dataUrl: string): Promise<void> {
+  const generation = workflowGeneration.value;
+  if (savingScreenshotGeneration === generation) return;
+  savingScreenshotGeneration = generation;
   screenshotNotice.value = "正在保存...";
   try {
     const path = await saveScreenshot(dataUrl);
+    if (generation !== workflowGeneration.value) return;
     screenshotNotice.value = path ? "截图已保存" : "";
   } catch (error) {
+    if (generation !== workflowGeneration.value) return;
     screenshotNotice.value = error instanceof Error ? error.message : "保存截图失败";
+  } finally {
+    if (savingScreenshotGeneration === generation) savingScreenshotGeneration = null;
   }
 }
 
@@ -1452,6 +1537,17 @@ function replyFromResult(): void {
       @contextmenu="onContextMenu"
     >
       <canvas ref="canvasRef" class="h-full w-full object-fill" />
+      <div
+        v-if="phase === 'ready'"
+        data-testid="capture-hint"
+        role="status"
+        class="capture-hint pointer-events-none absolute bottom-8 left-1/2 z-20 flex max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-3 rounded-xl border border-white/15 bg-slate-950/90 px-4 py-3 text-white shadow-lg"
+      >
+        <Camera class="h-4 w-4 shrink-0 text-emerald-300" aria-hidden="true" />
+        <span class="text-xs font-medium leading-5">{{ captureHint }}</span>
+        <span class="h-4 w-px shrink-0 bg-white/20" aria-hidden="true" />
+        <span class="flex shrink-0 items-center gap-1.5 text-[11px] text-slate-300"><kbd class="rounded border border-white/25 px-1.5 py-0.5 font-sans text-[10px]">Esc</kbd>{{ settingsLocale === 'en' ? 'Cancel' : '取消' }}</span>
+      </div>
       <div v-if="capture.notice && phase === 'ready'" role="status" class="absolute left-1/2 top-5 max-w-[90vw] -translate-x-1/2 rounded-lg bg-slate-900/90 px-4 py-2 text-sm text-white">{{ capture.notice }}</div>
       <div
         v-if="selection && phase !== 'editing'"
@@ -1496,25 +1592,29 @@ function replyFromResult(): void {
       v-if="resultRect"
       ref="resultPanelRef"
       data-testid="result-panel"
-      class="absolute z-20 overflow-visible transition-[height,top,box-shadow,background-color] duration-100 ease-out"
+      :aria-busy="isResultBusy"
+      class="absolute z-20 overflow-visible transition-[box-shadow,background-color] duration-100 ease-out"
       :class="
-        preservesSourcePreview
+        showsOriginal ? '' : preservesSourcePreview
           ? (capture?.selectedText ? 'rounded-sm' : 'rounded-sm ring-1 ring-emerald-400/70')
           : 'rounded-md bg-white p-3 shadow-[0_10px_36px_rgba(15,23,42,0.26)] ring-1 ring-slate-900/5 dark:bg-zinc-950'
       "
-      :style="resultStyle"
+      :style="[resultStyle, { transition: showsOriginal ? 'none' : undefined }]"
     >
+      <div class="contents" :class="{ invisible: showsOriginal }" :aria-hidden="showsOriginal" data-testid="result-content">
       <div
         v-if="showsResultProgress"
         data-testid="translation-progress"
+        role="status"
+        aria-live="polite"
         class="pointer-events-none absolute inset-0 z-30 flex items-center justify-center"
       >
         <div
           data-testid="translation-progress-card"
-          class="flex min-h-24 min-w-32 flex-col items-center justify-center rounded-xl bg-slate-950/85 px-5 py-4 text-white shadow-[0_12px_36px_rgba(15,23,42,0.34)] backdrop-blur-sm dark:bg-zinc-100/90 dark:text-zinc-950"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-xl border border-white/10 bg-slate-950/90 px-4 py-3 text-white shadow-[0_8px_24px_rgba(15,23,42,0.24)] dark:border-zinc-200/60 dark:bg-zinc-100/95 dark:text-zinc-950"
         >
-          <span class="h-8 w-8 animate-spin rounded-full border-[3px] border-emerald-400 border-t-transparent" />
-          <span class="mt-3 text-sm font-medium">{{ resultProgressLabel }}</span>
+          <span class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" aria-hidden="true" />
+          <span class="text-xs font-medium">{{ resultProgressLabel }}</span>
         </div>
       </div>
 
@@ -1584,21 +1684,30 @@ function replyFromResult(): void {
         </div>
         <div class="overflow-auto whitespace-pre-wrap break-words text-sm leading-6">{{ cleanTranslationText }}</div>
       </aside>
+      </div>
       <div
         ref="resultActionsRef"
-        class="absolute flex min-h-10 w-max flex-wrap items-center gap-2 rounded-md border border-white/70 bg-white/95 px-2 py-1 shadow-[0_10px_32px_rgba(15,23,42,0.22)] backdrop-blur dark:border-slate-700/70 dark:bg-zinc-950/95"
+        role="group"
+        :aria-label="settingsLocale === 'en' ? 'Translation actions' : '译文操作'"
+        class="result-toolbar absolute flex min-h-10 w-max flex-wrap items-center gap-1 rounded-xl border border-slate-200/90 bg-white p-1.5 shadow-[0_8px_28px_rgba(15,23,42,0.18)] dark:border-zinc-700 dark:bg-zinc-950"
         :style="resultActionsStyle"
         data-testid="result-actions"
       >
-        <button v-if="hasResultTools" type="button" class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-emerald-700 hover:bg-emerald-50" :title="settingsLocale==='en'?'Extension tools':'扩展工具'" :aria-label="settingsLocale==='en'?'Extension tools':'扩展工具'" data-testid="result-extensions" :disabled="isResultBusy" @click="openResultTools"><Sparkles class="h-4 w-4"/></button>
+        <span v-if="canViewOriginal" data-testid="original-preview-hint"
+          class="select-none whitespace-nowrap px-2 text-[11px]" :class="showsOriginal ? 'text-emerald-600 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400'"
+          :title="settingsLocale === 'en' ? 'Hold Space to view the original. Release to return.' : '按住空格查看原文，松开恢复译文'">
+          {{ settingsLocale === 'en' ? 'Hold Space for original' : '按住 Space 看原文' }}
+        </span>
+        <button v-if="hasResultTools" type="button" class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950" :title="settingsLocale==='en'?'Extension tools':'扩展工具'" :aria-label="settingsLocale==='en'?'Extension tools':'扩展工具'" data-testid="result-extensions" :disabled="isResultBusy" @click="openResultTools"><Sparkles class="h-4 w-4"/></button>
         <button type="button" class="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950" data-testid="reply-from-result" :disabled="isResultBusy || (!sourceText.trim() && !lastImageRegion)" @click="replyFromResult"><MessageSquare class="h-3.5 w-3.5" />{{ settingsLocale === 'en' ? 'Reply' : '帮我回复' }}</button>
         <button v-if="overlayLayout.truncated || (savedConfig.directImageInput && !capture?.selectedText && cleanTranslationText)" type="button" class="whitespace-nowrap px-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"
           aria-label="Show full translation" @click="expandedTranslation = !expandedTranslation">{{ settingsLocale === "en" ? "Full text" : "完整译文" }}</button>
         <button
           class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
           type="button"
-          :title="settingsLocale === 'en' ? 'Copy text and close' : '复制译文并收起'"
+          :title="settingsLocale === 'en' ? 'Copy text and close (Ctrl+Enter)' : '复制译文并收起（Ctrl+Enter）'"
           aria-label="Copy translated text"
+          aria-keyshortcuts="Control+Enter Meta+Enter"
           :disabled="!cleanTranslationText || copyingGeneration === workflowGeneration"
           @click="copyResult()"
         >
@@ -1652,7 +1761,7 @@ function replyFromResult(): void {
         <fieldset class="contents" :disabled="settingsSaving">
         <header
           data-testid="settings-drag-region"
-          class="flex shrink-0 cursor-move select-none items-center justify-between border-b border-slate-200/90 bg-white/95 px-6 py-4 shadow-[0_1px_0_rgba(15,23,42,0.02)] backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/95"
+          class="settings-header flex shrink-0 cursor-move select-none items-center justify-between gap-3 border-b border-slate-200/90 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-zinc-950"
           style="--wails-draggable: drag"
         >
           <div class="flex min-w-0 items-center gap-3">
@@ -1774,7 +1883,7 @@ function replyFromResult(): void {
           </div>
         </div>
 
-        <ModelSettings :config="config" :locale="settingsLocale" :active="settingsOpen" />
+        <ModelSettings :config="config" :locale="settingsLocale" :active="settingsOpen && settingsSection === 'ai'" />
 
         <div class="mt-4 flex min-h-9 flex-wrap items-center gap-3 border-t border-slate-100 pt-4 dark:border-zinc-800">
           <button
@@ -2075,7 +2184,7 @@ function replyFromResult(): void {
           data-testid="settings-footer"
           class="shrink-0 border-t border-slate-200 bg-white px-6 py-3.5 dark:border-zinc-800 dark:bg-zinc-950"
         >
-          <div v-if="settingsError" class="mx-auto mb-3 max-w-3xl rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300">
+          <div v-if="settingsError" role="alert" class="mx-auto mb-3 max-w-3xl rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300">
             {{ settingsError }}
           </div>
         <div class="mx-auto flex max-w-3xl items-center justify-between gap-3">
@@ -2102,6 +2211,8 @@ function replyFromResult(): void {
             <button
               class="inline-flex h-9 min-w-24 items-center justify-center rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
+              :title="settingsLocale === 'en' ? 'Save changes (Ctrl+S)' : '保存设置（Ctrl+S）'"
+              aria-keyshortcuts="Control+s Meta+s"
               :disabled="settingsSaving || autoStartLoading"
             >
               {{ settingsSaving ? settingsText.saving : settingsText.saveChanges }}

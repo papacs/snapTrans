@@ -75,6 +75,7 @@ const backendMocks = vi.hoisted(() => {
     })),
     frontendReady: vi.fn(async () => {}),
     getHistory: vi.fn(async (): Promise<import("./services/backend").HistoryEntry[]> => []),
+    getCodexStatus: vi.fn(async () => ({authenticated:true,email:"",plan:"plus",models:[]})),
     testConnection: vi.fn(async (_config: unknown) => {}),
     startTextAction: vi.fn(async (_request: import("./services/backend").TextActionRequest) => {}),
     cancelTextAction: vi.fn(async (_id: string) => {}),
@@ -145,7 +146,7 @@ vi.mock("./services/backend", () => ({
   setAutoStart: backendMocks.setAutoStart,
   isAutoStartEnabled: backendMocks.isAutoStartEnabled,
   getEnvironmentStatus: vi.fn(async () => null),
-  getCodexStatus: vi.fn(async () => ({authenticated:true,email:"",plan:"plus",models:[]})),
+  getCodexStatus: backendMocks.getCodexStatus,
   loginCodex: vi.fn(async () => {}),
   cancelCodexLogin: vi.fn(async () => {}),
   getVersion: vi.fn(async () => "test"),
@@ -220,6 +221,7 @@ describe("App capture cancellation", () => {
     backendMocks.extractText.mockClear();
     backendMocks.frontendReady.mockClear();
     backendMocks.getHistory.mockClear();
+    backendMocks.getCodexStatus.mockClear();
     backendMocks.isDesktop = false;
     backendMocks.processImage.mockClear();
     backendMocks.translateRegion.mockClear();
@@ -345,7 +347,7 @@ describe("App capture cancellation", () => {
     await wrapper.get('[data-testid="retry-with-ocr"]').trigger("click"); await flushPromises();
     expect(backendMocks.translateRegion).toHaveBeenLastCalledWith({x:80,y:80,width:380,height:220},"to-zh",2,"ocr");
     expect(backendMocks.saveConfig).not.toHaveBeenCalled();
-    expect(wrapper.get('[data-testid="translation-progress"]').text()).toContain("OCR");
+    expect(wrapper.get('[data-testid="translation-progress"]').text()).toContain("识别文字中...");
     backendMocks.emit("workflow-error", {generation:2,stage:"translation",message:"offline"}); await flushPromises();
     expect(wrapper.find('[data-testid="retry-with-ocr"]').exists()).toBe(false);
     wrapper.unmount();
@@ -489,6 +491,82 @@ describe("App capture cancellation", () => {
 
     expect(backendMocks.copyImageDataUrl).toHaveBeenCalledWith("data:image/png;base64,c2VsZWN0aW9u");
     expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
+
+  async function editingScreenshot() {
+    const wrapper = mount(App);
+    await flushPromises();
+    await backendMocks.triggerScreenshot();
+    await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", { clientX: 80, clientY: 70 });
+    await layer.trigger("mouseup", { clientX: 520, clientY: 360 });
+    await flushPromises();
+    return wrapper;
+  }
+
+  it("screenshot completion does not close a new capture when an older copy finishes", async () => {
+    const wrapper = await editingScreenshot();
+    let finish!: () => void;
+    backendMocks.copyImageDataUrl.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    await wrapper.get("[data-testid='screenshot-complete']").trigger("click");
+    await backendMocks.triggerScreenshot();
+    await flushPromises();
+    finish();
+    await flushPromises();
+
+    expect(backendMocks.hideWindow).not.toHaveBeenCalled();
+    expect(wrapper.find("section.cursor-crosshair").exists()).toBe(true);
+  });
+
+  it.each(["success", "failure"])("screenshot save ignores an older %s after a new screenshot starts", async outcome => {
+    const wrapper = await editingScreenshot();
+    let finish!: (path: string) => void;
+    let fail!: (error: Error) => void;
+    backendMocks.saveScreenshot.mockImplementationOnce(() => new Promise<string>((resolve, reject) => { finish = resolve; fail = reject; }));
+    await wrapper.get("[data-testid='screenshot-save']").trigger("click");
+    await backendMocks.triggerScreenshot();
+    await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", { clientX: 80, clientY: 70 });
+    await layer.trigger("mouseup", { clientX: 520, clientY: 360 });
+    await flushPromises();
+    if (outcome === "success") finish("older.png");
+    else fail(new Error("OLDER_SAVE_FAILURE"));
+    await flushPromises();
+
+    expect(wrapper.find("[data-testid='screenshot-editor']").exists()).toBe(true);
+    expect(wrapper.find("[data-testid='screenshot-notice']").exists()).toBe(false);
+  });
+
+  it.each(["complete", "save"])("screenshot %s deduplicates repeated actions until its bridge call completes", async action => {
+    const wrapper = await editingScreenshot();
+    let finish!: () => void;
+    const bridge = action === "complete" ? backendMocks.copyImageDataUrl : backendMocks.saveScreenshot;
+    if (action === "complete") backendMocks.copyImageDataUrl.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    else backendMocks.saveScreenshot.mockImplementationOnce(() => new Promise<string>(resolve => { finish = () => resolve("saved.png"); }));
+    const button = wrapper.get(`[data-testid='screenshot-${action}']`);
+    await button.trigger("click");
+    await button.trigger("click");
+    expect(bridge).toHaveBeenCalledTimes(1);
+    expect(wrapper.get("[data-testid='screenshot-notice']").text()).toBe(action === "complete" ? "正在复制..." : "正在保存...");
+    finish();
+    await flushPromises();
+    if (action === "complete") expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+    else expect(wrapper.get("[data-testid='screenshot-notice']").text()).toBe("截图已保存");
+  });
+
+  it.each(["complete", "save"])("screenshot %s keeps the concrete failure and permits retry", async action => {
+    const wrapper = await editingScreenshot();
+    if (action === "complete") backendMocks.copyImageDataUrl.mockRejectedValueOnce(new Error("Clipboard is busy"));
+    else backendMocks.saveScreenshot.mockRejectedValueOnce(new Error("Save folder is read-only"));
+    const button = wrapper.get(`[data-testid='screenshot-${action}']`);
+    await button.trigger("click");
+    await flushPromises();
+    expect(wrapper.get("[data-testid='screenshot-notice']").text()).toBe(action === "complete" ? "Clipboard is busy" : "Save folder is read-only");
+    await button.trigger("click");
+    await flushPromises();
+    expect(action === "complete" ? backendMocks.copyImageDataUrl : backendMocks.saveScreenshot).toHaveBeenCalledTimes(2);
   });
 
   it("extracts screenshot text into an editable side panel and copies the edited text", async () => {
@@ -768,6 +846,73 @@ describe("App capture cancellation", () => {
     expect(backendMocks.translateRegion).toHaveBeenCalledTimes(1);
   });
 
+  it("recovers from a captured image that fails to decode", async () => {
+    vi.stubGlobal("Image", ControlledImage);
+    const wrapper = mount(App);
+    await flushPromises();
+    await backendMocks.triggerCapture();
+    await flushPromises();
+
+    controlledImages[0]!.onerror?.();
+    await flushPromises();
+
+    expect(wrapper.get("[data-testid='result-error']").text()).toContain("Failed to load captured image");
+    expect(wrapper.find("section.cursor-crosshair").exists()).toBe(false);
+    expect(backendMocks.showCaptureWindow).toHaveBeenCalledTimes(1);
+
+    await backendMocks.triggerCapture();
+    await flushPromises();
+    controlledImages[1]!.resolve();
+    await flushPromises();
+    expect(wrapper.find("section.cursor-crosshair").exists()).toBe(true);
+    expect(wrapper.find("[data-testid='result-error']").exists()).toBe(false);
+  });
+
+  it("ignores an older captured image that fails after a newer capture is ready", async () => {
+    vi.stubGlobal("Image", ControlledImage);
+    const wrapper = mount(App);
+    await flushPromises();
+    await backendMocks.triggerCapture();
+    await flushPromises();
+    await backendMocks.triggerCapture();
+    await flushPromises();
+    controlledImages[1]!.resolve();
+    await flushPromises();
+
+    controlledImages[0]!.onerror?.();
+    await flushPromises();
+
+    expect(wrapper.find("section.cursor-crosshair").exists()).toBe(true);
+    expect(wrapper.find("[data-testid='result-error']").exists()).toBe(false);
+    expect(backendMocks.showCaptureWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["cancel", "new capture"])("ignores a late selection submission failure after %s", async action => {
+    let rejectTranslation!: (error: Error) => void;
+    backendMocks.translateRegion.mockImplementationOnce(() => new Promise((_resolve, reject) => {
+      rejectTranslation = reject;
+    }));
+    const wrapper = mount(App);
+    await flushPromises();
+    await backendMocks.triggerCapture();
+    await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", { button: 0, clientX: 80, clientY: 80 });
+    await layer.trigger("mouseup", { button: 0, clientX: 460, clientY: 300 });
+    await flushPromises();
+
+    if (action === "cancel") window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    else await backendMocks.triggerCapture();
+    await flushPromises();
+    rejectTranslation(new Error("STALE_SELECTION_FAILURE"));
+    await flushPromises();
+
+    expect(wrapper.find("[data-testid='result-error']").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("STALE_SELECTION_FAILURE");
+    expect(wrapper.find("section.cursor-crosshair").exists()).toBe(action === "new capture");
+    expect(wrapper.find("button[aria-label='Capture']").exists()).toBe(action === "cancel");
+  });
+
   it("shows OCR feedback immediately when submitting a selection", async () => {
     const wrapper = mount(App);
     await flushPromises();
@@ -779,13 +924,76 @@ describe("App capture cancellation", () => {
     window.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 620, clientY: 420 }));
     await flushPromises();
 
-    expect(wrapper.find("[data-testid='result-panel']").text()).toContain("OCR...");
+    expect(wrapper.find("[data-testid='result-panel']").text()).toContain("识别文字中...");
     expect(wrapper.get("[data-testid='result-actions']").classes()).toContain("flex-wrap");
     expect(backendMocks.translateRegion).toHaveBeenCalledTimes(1);
 
     const resultPanel = wrapper.find("[data-testid='result-panel']");
     expect(resultPanel.classes()).not.toContain("backdrop-blur-[2px]");
     expect(resultPanel.classes()).not.toContain("bg-white/92");
+  });
+
+  it.each(["ctrlKey", "metaKey"])("saves settings with %s+S through the form", async modifier => {
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+    await wrapper.get("[data-testid='api-key-input']").setValue("keyboard-test-key");
+
+    const shortcut = new KeyboardEvent("keydown", { key: "s", [modifier]: true, cancelable: true });
+    window.dispatchEvent(shortcut);
+    await flushPromises();
+
+    expect(shortcut.defaultPrevented).toBe(true);
+    expect(backendMocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "keyboard-test-key" }), false);
+    expect(wrapper.find("form").exists()).toBe(false);
+  });
+
+  it("does not submit settings with the save shortcut while recording a hotkey", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+    await wrapper.get("[data-testid='settings-tab-capture']").trigger("click");
+    await wrapper.get("button[title='Record shortcut']").trigger("click");
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, cancelable: true }));
+    await flushPromises();
+
+    expect(backendMocks.saveConfig).not.toHaveBeenCalled();
+    expect(wrapper.find("form").exists()).toBe(true);
+  });
+
+  it("ignores repeated save shortcuts while settings are saving", async () => {
+    let finishSave!: () => void;
+    backendMocks.saveConfig.mockImplementationOnce(() => new Promise(resolve => { finishSave = resolve; }));
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, cancelable: true }));
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, cancelable: true }));
+    await flushPromises();
+    expect(backendMocks.saveConfig).toHaveBeenCalledTimes(1);
+    finishSave();
+    await flushPromises();
+  });
+
+  it.each([
+    ["translate", "拖动选择区域，松手即翻译"],
+    ["screenshot", "拖动选择区域，松手即编辑"],
+    ["reply", "拖动选择区域，松手即生成回复"]
+  ])("shows the immediate action hint for %s capture", async (mode, hint) => {
+    const wrapper = mount(App);
+    await flushPromises();
+    backendMocks.emit("capture-start", { image: "data:image/png;base64,ZmFrZQ==", width: 800, height: 600, source: "browser", mode });
+    await flushPromises();
+
+    expect(wrapper.get("[data-testid='capture-hint']").text()).toContain(hint);
+    await wrapper.get("section.cursor-crosshair").trigger("mousedown", { button: 0, clientX: 80, clientY: 80 });
+    expect(wrapper.find("[data-testid='capture-hint']").exists()).toBe(false);
   });
 
   it("ignores translation events from the previous capture after a new selection starts", async () => {
@@ -1029,9 +1237,9 @@ describe("App capture cancellation", () => {
 
     const progress = wrapper.find("[data-testid='translation-progress']");
     const card = wrapper.find("[data-testid='translation-progress-card']");
-    expect(progress.text()).toContain("Translating...");
+    expect(progress.text()).toContain("翻译中...");
     expect(progress.classes()).toEqual(expect.arrayContaining(["absolute", "inset-0", "items-center", "justify-center"]));
-    expect(card.classes()).toEqual(expect.arrayContaining(["min-h-24", "min-w-32"]));
+    expect(card.classes()).toEqual(expect.arrayContaining(["flex", "items-center", "gap-2.5"]));
   });
 
   it("expands dense plain translations while preserving a readable font size", async () => {
@@ -1746,6 +1954,182 @@ describe("App capture cancellation", () => {
     return wrapper;
   }
 
+  it.each([false, true])("holds Space to reveal the frozen original and restores on release (OCR blocks=%s)", async withBlocks => {
+    const wrapper = await completedCopyResult();
+    if (withBlocks) {
+      backendMocks.emit("ocr-result", { generation: 1, text: "Original", blocks: [{ text: "Original", x: 0, y: 0, width: 1, height: 0.5 }] });
+      await flushPromises();
+    }
+    const panel = wrapper.get("[data-testid='result-panel']");
+    const toolbar = wrapper.get("[data-testid='result-actions']");
+    const panelStyle = panel.attributes("style");
+    const toolbarStyle = toolbar.attributes("style");
+    expect(wrapper.get("[data-testid='original-preview-hint']").text()).toContain("Space");
+    const press = new KeyboardEvent("keydown", { key: " ", code: "Space", cancelable: true });
+    window.dispatchEvent(press);
+    await flushPromises();
+
+    expect(press.defaultPrevented).toBe(true);
+    expect(wrapper.get("[data-testid='result-content']").classes()).toContain("invisible");
+    expect(wrapper.get("[data-testid='result-content']").attributes("aria-hidden")).toBe("true");
+    expect(panel.classes()).not.toContain("bg-white");
+    expect(panel.classes()).not.toContain("ring-1");
+    for (const property of ["left", "top", "width", "height"]) {
+      expect(stylePx(panel.attributes("style"), property)).toBe(stylePx(panelStyle, property));
+    }
+    expect(toolbar.attributes("style")).toBe(toolbarStyle);
+    expect(toolbar.element.closest("[aria-hidden='true']")).toBeNull();
+
+    window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", code: "Space" }));
+    await flushPromises();
+    expect(wrapper.get("[data-testid='result-content']").classes()).not.toContain("invisible");
+    expect(wrapper.get("[data-testid='result-content']").attributes("aria-hidden")).toBe("false");
+  });
+
+  it("restores the translation on window blur and does not carry Space preview into a new capture", async () => {
+    const wrapper = await completedCopyResult();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space" }));
+    await flushPromises();
+    window.dispatchEvent(new Event("blur"));
+    await flushPromises();
+    expect(wrapper.get("[data-testid='result-content']").attributes("aria-hidden")).toBe("false");
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space" }));
+    await flushPromises();
+    await backendMocks.triggerCapture();
+    await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", { clientX: 40, clientY: 40 });
+    await layer.trigger("mouseup", { clientX: 300, clientY: 140 });
+    backendMocks.emit("translation-token", { generation: 2, token: "New translation" });
+    backendMocks.emit("translation-done", { generation: 2 });
+    await flushPromises();
+    expect(wrapper.get("[data-testid='result-content']").attributes("aria-hidden")).toBe("false");
+    expect(wrapper.get("[data-testid='translation-result']").text()).toBe("New translation");
+  });
+
+  it("temporarily hides the expanded translation together with the overlay", async () => {
+    backendMocks.loadConfig.mockResolvedValueOnce({ ...backendMocks.defaultConfig, directImageInput: true });
+    const wrapper = await completedCopyResult();
+    await wrapper.get("button[aria-label='Show full translation']").trigger("click");
+    const expanded = wrapper.get("aside");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space" }));
+    await flushPromises();
+    expect(expanded.element.closest("[aria-hidden='true']")).not.toBeNull();
+    window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", code: "Space" }));
+    await flushPromises();
+    expect(wrapper.get("aside").text()).toContain("测试译文");
+    expect(wrapper.get("[data-testid='result-content']").attributes("aria-hidden")).toBe("false");
+  });
+
+  it.each(["ctrlKey", "metaKey"])("copies and closes a completed result with %s+Enter without duplicate copies", async modifier => {
+    const wrapper = await completedCopyResult();
+    let finishCopy!: () => void;
+    backendMocks.copyText.mockImplementationOnce(() => new Promise<void>(resolve => { finishCopy = resolve; }));
+    const shortcut = new KeyboardEvent("keydown", { key: "Enter", [modifier]: true, cancelable: true });
+    window.dispatchEvent(shortcut);
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", [modifier]: true, cancelable: true }));
+    await flushPromises();
+
+    expect(shortcut.defaultPrevented).toBe(true);
+    expect(backendMocks.copyText).toHaveBeenCalledExactlyOnceWith("测试译文");
+    expect(backendMocks.hideWindow).not.toHaveBeenCalled();
+    expect(wrapper.get("button[aria-label='Copy translated text']").attributes("aria-keyshortcuts")).toContain("Control+Enter");
+    finishCopy();
+    await flushPromises();
+    expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+    expect(wrapper.find("[data-testid='result-panel']").exists()).toBe(false);
+  });
+
+  it("waits for streaming to finish before enabling the copy shortcut and permits copying a partial result", async () => {
+    const wrapper = await completedCopyResult();
+    backendMocks.emit("translation-start", { generation: 1 });
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true }));
+    await flushPromises();
+    expect(backendMocks.copyText).not.toHaveBeenCalled();
+    expect(wrapper.find("[data-testid='result-panel']").exists()).toBe(true);
+
+    backendMocks.emit("workflow-error", { generation: 1, stage: "translation", message: "Connection interrupted" });
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true }));
+    await flushPromises();
+    expect(backendMocks.copyText).toHaveBeenCalledExactlyOnceWith("测试译文");
+    expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores result shortcuts while composing, repeating Enter, or adding extra modifiers", async () => {
+    const wrapper = await completedCopyResult();
+    for (const options of [{ isComposing: true }, { keyCode: 229 }, { altKey: true }, { shiftKey: true }]) {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space", ...options }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, ...options }));
+    }
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, repeat: true }));
+    await flushPromises();
+    expect(wrapper.get("[data-testid='result-content']").attributes("aria-hidden")).toBe("false");
+    expect(backendMocks.copyText).not.toHaveBeenCalled();
+  });
+
+  it.each(["input", "textarea", "select", "contenteditable"])("preserves typing keys inside %s controls", async kind => {
+    const wrapper = await completedCopyResult();
+    const control = document.createElement(kind === "contenteditable" ? "div" : kind);
+    if (kind === "contenteditable") control.setAttribute("contenteditable", "true");
+    document.body.appendChild(control);
+    try {
+      const press = new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true, cancelable: true });
+      control.dispatchEvent(press);
+      control.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }));
+      await flushPromises();
+      expect(press.defaultPrevented).toBe(false);
+      expect(wrapper.get("[data-testid='result-content']").attributes("aria-hidden")).toBe("false");
+      expect(backendMocks.copyText).not.toHaveBeenCalled();
+    } finally {
+      control.remove();
+    }
+  });
+
+  it.each(["reply", "extensions"])("keeps result shortcuts out of the %s panel", async kind => {
+    const wrapper = await completedCopyResult();
+    await wrapper.get(kind === "reply" ? "[data-testid='reply-from-result']" : "[data-testid='result-extensions']").trigger("click");
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space" }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true }));
+    await flushPromises();
+    expect(wrapper.get("[data-testid='result-content']").attributes("aria-hidden")).toBe("false");
+    expect(backendMocks.copyText).not.toHaveBeenCalled();
+  });
+
+  it.each([{ isComposing: true }, { keyCode: 229 }])("keeps settings open when Escape belongs to an IME composition (%s)", async options => {
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", ...options }));
+    await flushPromises();
+    expect(wrapper.find("[data-testid='settings-shell']").exists()).toBe(true);
+    expect(backendMocks.hideWindow).not.toHaveBeenCalled();
+  });
+
+  it("detects Codex only while its settings category is active", async () => {
+    backendMocks.loadConfig.mockResolvedValueOnce({ ...backendMocks.defaultConfig, provider: "codex" });
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+    expect(backendMocks.getCodexStatus).toHaveBeenCalledTimes(1);
+
+    await wrapper.get("[data-testid='settings-tab-library']").trigger("click");
+    await wrapper.get("button[aria-label='Close']").trigger("click");
+    await wrapper.get("button[aria-label='Settings']").trigger("click");
+    await flushPromises();
+    expect(backendMocks.getCodexStatus).toHaveBeenCalledTimes(1);
+
+    await wrapper.get("[data-testid='settings-tab-ai']").trigger("click");
+    await flushPromises();
+    expect(backendMocks.getCodexStatus).toHaveBeenCalledTimes(2);
+  });
+
   it("paints vision translation text when copying an image without OCR boxes", async () => {
     backendMocks.loadConfig.mockResolvedValueOnce({...backendMocks.defaultConfig,directImageInput:true});
     const wrapper = await completedCopyResult();
@@ -1859,7 +2243,7 @@ describe("App capture cancellation", () => {
     await flushPromises();
 
     expect(backendMocks.translateRegion).toHaveBeenLastCalledWith({ x: 148, y: 26, width: 452, height: 52 }, "to-en", 2);
-    expect(wrapper.text()).toContain("Translating...");
+    expect(wrapper.text()).toContain("翻译中...");
   });
 
   it("drops stale workflow events from an earlier generation", async () => {

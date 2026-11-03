@@ -599,6 +599,21 @@ function commitText(): void {
   redraw();
 }
 
+function onTextDraftKeyDown(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === 229 || (event.key !== "Enter" && event.key !== "Escape")) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.key === "Enter") commitText();
+  else textDraft.value = null;
+}
+
+function onExtractedTextKeyDown(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === 229 || event.key !== "Escape") return;
+  event.preventDefault();
+  event.stopPropagation();
+  closeTextExtraction();
+}
+
 function undo(): void {
   annotations.value.pop();
   redraw();
@@ -678,7 +693,6 @@ async function extractImageText(): Promise<void> {
   const sequence = ++extractionSequence;
   textExtractionOpen.value = true;
   extractingText.value = true;
-  extractedText.value = "";
   textExtractionError.value = "";
   copiedExtractedText.value = false;
 
@@ -687,9 +701,11 @@ async function extractImageText(): Promise<void> {
     if (disposed || sequence !== extractionSequence) {
       return;
     }
-    extractedText.value = result.text.trim();
-    originalExtractedText.value = extractedText.value;
-    if (!extractedText.value) {
+    const text = result.text.trim();
+    if (text) {
+      extractedText.value = text;
+      originalExtractedText.value = text;
+    } else {
       textExtractionError.value = "\u672a\u8bc6\u522b\u5230\u6587\u5b57\uff0c\u53ef\u4ee5\u91cd\u65b0\u8bc6\u522b\u6216\u624b\u52a8\u8f93\u5165\u3002";
     }
   } catch (error) {
@@ -745,7 +761,6 @@ async function extractImageTable(): Promise<void> {
   const sequence = ++tableExtractionSequence;
   tableExtractionOpen.value = true;
   extractingTable.value = true;
-  tableCells.value = [];
   tableExtractionError.value = "";
   copiedTableFormat.value = "";
   try {
@@ -888,8 +903,7 @@ function clamp(value: number, min: number, max: number): number {
       type="text"
       placeholder="输入文字"
       @mousedown.stop
-      @keydown.enter.prevent.stop="commitText"
-      @keydown.escape.prevent.stop="textDraft = null"
+      @keydown="onTextDraftKeyDown"
       @blur="commitText"
     />
 
@@ -1047,7 +1061,7 @@ function clamp(value: number, min: number, max: number): number {
         </div>
       </header>
 
-      <div v-if="textExtractionError" class="mx-4 mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
+      <div v-if="textExtractionError" role="alert" class="mx-4 mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
         {{ textExtractionError }}
       </div>
 
@@ -1060,7 +1074,7 @@ function clamp(value: number, min: number, max: number): number {
           :placeholder="'\u8bc6\u522b\u7ed3\u679c\u4f1a\u663e\u793a\u5728\u8fd9\u91cc\uff0c\u4e5f\u53ef\u4ee5\u624b\u52a8\u8f93\u5165\u6587\u5b57'"
           spellcheck="false"
           data-testid="extracted-text-editor"
-          @keydown.escape.stop.prevent="closeTextExtraction"
+          @keydown="onExtractedTextKeyDown"
         />
         <div
           v-if="extractingText"

@@ -16,6 +16,7 @@ const inputMode = ref<"ocr" | "image">(props.directImageInput && props.region ? 
 const previewImage = ref("");
 const stage = ref<"ocr" | "image" | "writing" | "done">("ocr");
 const busy = ref(false), error = ref(""), copied = ref(false);
+const copying = ref(false);
 const requestID = ref("");
 const answerRef = ref<HTMLTextAreaElement | null>(null);
 const generatedFor = ref("");
@@ -27,6 +28,7 @@ const style = computed(() => {
   return { left: position.left + "px", top: position.top + "px", width: position.width + "px", height: position.height + "px" };
 });
 let disposed = false, buffer = "", animation: number | null = null;
+let generation = 0;
 let off = () => {};
 function flush() {
   if (animation !== null) { window.cancelAnimationFrame(animation); animation = null; }
@@ -44,6 +46,7 @@ function queue(token: string) {
 async function generate() {
   if (busy.value) return;
   if (!source.value.trim() && !props.region) { error.value = label("请先提供需要回复的消息。", "Provide the message to reply to first."); return; }
+  generation++;
   error.value = ""; answer.value = ""; copied.value = false; previewImage.value = "";
   busy.value = true; stage.value = inputMode.value === "image" ? "image" : source.value.trim() ? "writing" : "ocr";
   generatedFor.value = signature.value;
@@ -59,17 +62,31 @@ async function generate() {
   }
 }
 async function stop() {
-  const id = requestID.value;
+  const id = requestID.value, current = generation;
   requestID.value = "";
   flush(); busy.value = false;
-  if (id) try { await cancelTextAction(id); } catch (reason) { error.value = String(reason); }
+  if (id) try { await cancelTextAction(id); } catch (reason) {
+    if (!disposed && current === generation) error.value = String(reason);
+  }
 }
 async function copy(close = false) {
-  if (busy.value || dirty.value || !answer.value.trim()) return;
-  try { await copyText(answer.value.trim()); copied.value = true; if (close && !disposed) emit("copied"); }
-  catch (reason) { if (!disposed) error.value = String(reason instanceof Error ? reason.message : reason); }
+  if (copying.value || busy.value || dirty.value || !answer.value.trim()) return;
+  const text = answer.value.trim(), current = generation, context = signature.value;
+  const isCurrent = () => !disposed && current === generation && text === answer.value.trim() && context === signature.value;
+  copying.value = true;
+  try {
+    await copyText(text);
+    if (!isCurrent()) return;
+    copied.value = true;
+    if (close) emit("copied");
+  } catch (reason) {
+    if (isCurrent()) error.value = String(reason instanceof Error ? reason.message : reason);
+  } finally {
+    if (!disposed) copying.value = false;
+  }
 }
 function keydown(event: KeyboardEvent) {
+  if (event.isComposing || event.keyCode === 229) return;
   if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); emit("close"); }
   if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void copy(true); }
 }
@@ -144,8 +161,8 @@ onBeforeUnmount(() => {
         <button v-if="busy" type="button" class="settings-secondary-button" data-testid="reply-stop" @click="stop"><Square class="h-3 w-3" />{{ label('停止', 'Stop') }}</button>
         <button v-else type="button" class="settings-secondary-button" data-testid="reply-generate" @click="generate"><RefreshCw class="h-3.5 w-3.5" />{{ label('重新生成', 'Regenerate') }}</button>
         <div class="flex gap-2">
-          <button type="button" class="settings-secondary-button" :disabled="busy || dirty || !answer.trim()" :aria-label="label('复制回复', 'Copy reply')" @click="copy()"><Check v-if="copied" class="h-3.5 w-3.5" /><Copy v-else class="h-3.5 w-3.5" /></button>
-          <button type="button" class="settings-primary-button" data-testid="reply-copy-close" :disabled="busy || dirty || !answer.trim()" @click="copy(true)">{{ label('复制并收起', 'Copy & close') }}</button>
+          <button type="button" class="settings-secondary-button" :disabled="copying || busy || dirty || !answer.trim()" :aria-busy="copying" :aria-label="label('复制回复', 'Copy reply')" @click="copy()"><LoaderCircle v-if="copying" class="h-3.5 w-3.5 animate-spin" /><Check v-else-if="copied" class="h-3.5 w-3.5" /><Copy v-else class="h-3.5 w-3.5" /></button>
+          <button type="button" class="settings-primary-button" data-testid="reply-copy-close" :disabled="copying || busy || dirty || !answer.trim()" :aria-busy="copying" @click="copy(true)">{{ copying ? label('正在复制…', 'Copying…') : label('复制并收起', 'Copy & close') }}</button>
         </div>
       </div>
       <p class="mt-2 text-[10px] text-slate-400">{{ inputMode === 'image' ? label('上传选区截图 · 由你确认后使用 · Ctrl+Enter 复制收起', 'Selected image upload · Review before use · Ctrl+Enter to copy & close') : label('仅发送识别文字 · 由你确认后使用 · Ctrl+Enter 复制收起', 'Text only · Review before use · Ctrl+Enter to copy & close') }}</p>
