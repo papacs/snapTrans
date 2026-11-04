@@ -2,15 +2,14 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { Check, Copy, LoaderCircle, MessageSquare, RefreshCw, Square, X } from "lucide-vue-next";
 import { cancelTextAction, copyText, onBackendEvent, startTextAction, type SelectionRegion, type TextActionEvent } from "../services/backend";
-import { replyPanelPosition, replyScenes, type ReplyScene } from "../utils/reply";
+import { rememberedReplyScene, replyPanelPosition, replyScenes, type ReplyScene } from "../utils/reply";
 import type { Rect, Size } from "../utils/selection";
 
 const props = defineProps<{ source?: string; region?: SelectionRegion; anchor: Rect; viewport: Size; locale: string; directImageInput?: boolean }>();
 const emit = defineEmits<{ close: []; copied: [] }>();
 const en = computed(() => props.locale === "en");
 const label = (zh: string, english: string) => en.value ? english : zh;
-const remembered = sessionStorage.getItem("snaptrans.reply.scene");
-const scene = ref<ReplyScene>(remembered === "work" || remembered === "social" ? remembered : "general");
+const scene = ref<ReplyScene>(rememberedReplyScene());
 const source = ref(props.source ?? ""), intent = ref(""), answer = ref("");
 const inputMode = ref<"ocr" | "image">(props.directImageInput && props.region ? "image" : "ocr");
 const previewImage = ref("");

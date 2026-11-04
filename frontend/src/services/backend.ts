@@ -1,4 +1,5 @@
 import { normalizeFeatures, type FeatureFlags } from "../utils/features";
+import type { ReplyScene } from "../utils/reply";
 export interface AppConfig {
   features: FeatureFlags;
   uiLanguage: "zh-CN" | "en";
@@ -282,6 +283,12 @@ export async function triggerScreenshot(): Promise<void> {
 export async function triggerReply(): Promise<void> {
   if (hasWailsBackend()) { await window.go!.desktop!.App!.TriggerReply(); return; }
   emitFallback("capture-start", createFallbackCapture("reply"));
+}
+
+export async function warmReply(scene: ReplyScene, inputMode: "ocr" | "image"): Promise<void> {
+  if (hasWailsBackend()) {
+    await window.go!.desktop!.App!.WarmReply(scene, inputMode);
+  }
 }
 
 export async function showCaptureWindow(): Promise<void> {

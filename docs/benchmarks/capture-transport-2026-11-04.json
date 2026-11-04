@@ -1,0 +1,40 @@
+{
+  "date": "2026-11-04",
+  "machine": "Windows amd64, Intel Core i7-9750H",
+  "input": "Deterministic synthetic 1920x1080 RGBA images, seed 42. No user screen, OCR, subscription inference or network requests.",
+  "fixtures": {
+    "document": "Flat light background and repeated dark text-like strokes",
+    "mixed": "Document with random RGB pixels at x>1000 and y>400",
+    "noise": "Random RGB pixels across the entire opaque image"
+  },
+  "webview": {
+    "method": "Independent hidden production Wails v2 app, memory asset handler, Cache-Control no-store, new Image().decode(), unique query per pass, same 1920x1080 pixels; each image encoded once before startup.",
+    "limitations": "Sequential fixed order, three passes, background compilation/test load. encode_once_ms are uncontrolled preparation samples, not evidence for encoding speed. Decode includes asset transfer and decoding. These are synthetic fixtures, not a replay of the user's capture.",
+    "samples": [
+      {"fixture":"document","mode":"no-compression","bytes":6224691,"encode_once_ms":2859.481,"decode_ms":[1233.9,819.2,584.5],"decode_median_ms":819.2},
+      {"fixture":"document","mode":"best-speed","bytes":12512,"encode_once_ms":1060.226,"decode_ms":[195.8,145.7,105.4],"decode_median_ms":145.7},
+      {"fixture":"mixed","mode":"no-compression","bytes":6224691,"encode_once_ms":1262.192,"decode_ms":[1649.7,687.9,878.6],"decode_median_ms":878.6},
+      {"fixture":"mixed","mode":"best-speed","bytes":1913856,"encode_once_ms":2207.675,"decode_ms":[1029.8,530,559.4],"decode_median_ms":559.4},
+      {"fixture":"noise","mode":"no-compression","bytes":6224691,"encode_once_ms":103.047,"decode_ms":[1681.3,797.5,1167],"decode_median_ms":1167},
+      {"fixture":"noise","mode":"best-speed","bytes":6224691,"encode_once_ms":3248.04,"decode_ms":[2025.4,757.2,1356.8],"decode_median_ms":1356.8}
+    ]
+  },
+  "go_encoding": {
+    "command": "go test ./internal/capture -run '^$' -bench '^BenchmarkSyntheticDesktopPNG$' -benchtime=3x -count=2",
+    "method": "Each ns/op includes selection when adaptive, then PNG encoding, without base64 or WebView. Two samples of three iterations per case. No concurrent heavy commands intentionally launched during this run; other system load uncontrolled.",
+    "samples": [
+      {"fixture":"document","mode":"plain","ns_per_op":[75977033,57107400],"encoded_bytes":6224691},
+      {"fixture":"document","mode":"adaptive","ns_per_op":[121872167,143294033],"encoded_bytes":12512},
+      {"fixture":"mixed","mode":"plain","ns_per_op":[154964067,118997967],"encoded_bytes":6224691},
+      {"fixture":"mixed","mode":"adaptive","ns_per_op":[84811767,102697033],"encoded_bytes":6224691},
+      {"fixture":"noise","mode":"plain","ns_per_op":[75553767,90080467],"encoded_bytes":6224691},
+      {"fixture":"noise","mode":"adaptive","ns_per_op":[97060267,83754567],"encoded_bytes":6224691}
+    ],
+    "interpretation": "Adaptive selects best-speed for the document, no-compression for mixed/noise. Encoding the document costs more CPU but transfers far fewer bytes. Timing variation does not establish encoding gains for mixed/noise. Do not sum timings from separate benchmark runs as an end-to-end result."
+  },
+  "production_policy": "Keep images below one million pixels uncompressed. For larger frames, compress a 16x16 distributed RGBA sample with flate.BestSpeed; choose PNG BestSpeed only when that sample compresses to <=20%, otherwise NoCompression. Never encode the whole frame twice. OCR EncodePNGBytes retains NoCompression. Resolution and pixels are preserved.",
+  "other_findings": {
+    "reply_setup": "Latest user log: a reply discarded an unused translation thread (unsubscribe32ms + config125ms + thread/start787ms). Prepare the known reply scene/input prompt during selection, retaining the configured reply effort. This does not establish a reduction in the separate ~9.9s model first-output wait.",
+    "rejected_experiment": "HTTP gzip around an uncompressed PNG failed Image.decode in the tested Wails host; not applied to production."
+  }
+}

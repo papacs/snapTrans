@@ -59,6 +59,55 @@ const table: OCRResultPayload = {
 };
 
 describe("screenshot extraction recovery", () => {
+  it.each(["text", "table"] as const)("ignores an earlier copy failure after editing the extracted %s", async kind => {
+    let fail!: (reason: Error) => void;
+    mocks.extract.mockResolvedValueOnce(kind === "text" ? {text:"Original text",blocks:[]} : table);
+    mocks.copy.mockImplementationOnce(() => new Promise<void>((_resolve,reject) => { fail = reject; }));
+    const wrapper = editor();
+    await wrapper.get(`[data-testid="screenshot-extract-${kind}"]`).trigger("click");
+    await flushPromises();
+    await wrapper.get(kind === "text" ? '[data-testid="copy-extracted-text"]' : '[data-testid="copy-table-tsv"]').trigger("click");
+    const input = wrapper.get<HTMLInputElement | HTMLTextAreaElement>(kind === "text" ? '[data-testid="extracted-text-editor"]' : '[data-testid="table-cell-1-1"]');
+    await input.setValue("Edited content");
+    fail(new Error("OLD_COPY_FAILURE"));
+    await flushPromises();
+    expect(input.element.value).toBe("Edited content");
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+  });
+  it.each(["success", "failure"] as const)("ignores an old text copy's %s after recognizing again", async outcome => {
+    let finish!: () => void;
+    let fail!: (reason: Error) => void;
+    mocks.extract.mockResolvedValueOnce({text:"Old recognized text",blocks:[]}).mockResolvedValueOnce({text:"New recognized text",blocks:[]});
+    mocks.copy.mockImplementationOnce(() => new Promise<void>((resolve,reject) => { finish = resolve; fail = reject; }));
+    const wrapper = editor();
+    await wrapper.get('[data-testid="screenshot-extract-text"]').trigger("click");
+    await flushPromises();
+    await wrapper.get('[data-testid="copy-extracted-text"]').trigger("click");
+    await wrapper.get('[data-testid="retry-text-extraction"]').trigger("click");
+    await flushPromises();
+    if(outcome === "success") finish(); else fail(new Error("OLD_COPY_FAILURE"));
+    await flushPromises();
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="extracted-text-editor"]').element.value).toBe("New recognized text");
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="copy-extracted-text"]').text()).not.toContain("已复制");
+  });
+  it.each(["success", "failure"] as const)("ignores an old table copy's %s after recognizing again", async outcome => {
+    let finish!: () => void;
+    let fail!: (reason: Error) => void;
+    mocks.extract.mockResolvedValueOnce(table).mockResolvedValueOnce({...table,blocks:table.blocks.map(block => block.text === "92" ? {...block,text:"99"} : block)});
+    mocks.copy.mockImplementationOnce(() => new Promise<void>((resolve,reject) => { finish = resolve; fail = reject; }));
+    const wrapper = editor();
+    await wrapper.get('[data-testid="screenshot-extract-table"]').trigger("click");
+    await flushPromises();
+    await wrapper.get('[data-testid="copy-table-tsv"]').trigger("click");
+    await wrapper.get('[data-testid="retry-table-extraction"]').trigger("click");
+    await flushPromises();
+    if(outcome === "success") finish(); else fail(new Error("OLD_COPY_FAILURE"));
+    await flushPromises();
+    expect(wrapper.get<HTMLInputElement>('[data-testid="table-cell-1-1"]').element.value).toBe("99");
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="copy-table-tsv"]').text()).not.toContain("Copied");
+  });
   it.each(["failure", "empty"] as const)("keeps edited text after a retry returns %s", async result => {
     let finish!: (value: OCRResultPayload) => void;
     let fail!: (error: Error) => void;
@@ -119,6 +168,18 @@ describe("screenshot extraction recovery", () => {
 });
 
 describe("screenshot editor IME shortcuts", () => {
+  it("commits an existing text annotation before starting one at another position", async () => {
+    const wrapper = editor();
+    await wrapper.get('[data-testid="annotation-text"]').trigger("click");
+    const canvas = wrapper.get('[data-testid="screenshot-viewport"] canvas');
+    await canvas.trigger("mousedown", {button:0,clientX:120,clientY:100});
+    await wrapper.get('input[placeholder="输入文字"]').setValue("First annotation");
+    await canvas.trigger("mousedown", {button:0,clientX:240,clientY:160});
+    expect(wrapper.get('[data-testid="annotation-undo"]').attributes("disabled")).toBeUndefined();
+    const context = document.createElement("canvas").getContext("2d")!;
+    expect(context.fillText).toHaveBeenCalledWith("First annotation",expect.any(Number),expect.any(Number));
+    expect(wrapper.get<HTMLInputElement>('input[placeholder="输入文字"]').element.value).toBe("");
+  });
   it.each([{ isComposing: true }, { keyCode: 229 }])("keeps text annotation drafts while the IME handles Enter or Escape (%s)", async options => {
     const wrapper = editor();
     await wrapper.get('[data-testid="annotation-text"]').trigger("click");

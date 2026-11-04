@@ -31,6 +31,7 @@ import ExtensionWorkbench from "./components/ExtensionWorkbench.vue";
 import LearningLibrary from "./components/LearningLibrary.vue";
 import { normalizeFeatures } from "./utils/features";
 import { clearComparisonBaseline, filterLibrary, libraryMarkdown } from "./utils/extensions";
+import { rememberedReplyScene } from "./utils/reply";
 import ScreenshotEditor from "./components/ScreenshotEditor.vue";
 import {
   clearHistory,
@@ -61,6 +62,7 @@ import {
   translateRegion,
   translateSelection,
   triggerCapture,
+  warmReply,
   type AppConfig,
   type CapturePayload,
   type EnvironmentStatus,
@@ -761,6 +763,9 @@ function onKeyDown(event: KeyboardEvent): void {
 }
 
 async function startCapture(payload: CapturePayload): Promise<void> {
+  if (payload.mode === "reply" && !configLoading.value) {
+    void warmReply(rememberedReplyScene(), savedConfig.directImageInput ? "image" : "ocr").catch(() => {});
+  }
   translationInputOverride.value = undefined;
   replyOpen.value = false;
   extensionOpen.value=false;sourceText.value="";
@@ -1485,7 +1490,12 @@ async function saveSettings(): Promise<void> {
     Object.assign(savedConfig, draft);
     savedAutoStart.value = autoStart;
     settingsSaving.value = false;
-    if (session !== settingsSession || !settingsOpen.value) return;
+    if (session !== settingsSession || !settingsOpen.value) {
+      // A reopened form stayed disabled while this save was pending. Refresh
+      // its draft and invalidate OS reads started before the save completed.
+      if (settingsOpen.value) discardSettingsDraft();
+      return;
+    }
     await closeSettings();
   } catch (error) {
     settingsSaving.value = false;

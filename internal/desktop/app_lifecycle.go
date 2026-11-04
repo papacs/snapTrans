@@ -22,6 +22,29 @@ func (a *App) lifetimeContextLocked() context.Context {
 	return a.lifetimeCtx
 }
 
+func (a *App) startCaptureContextLocked() {
+	if a.captureCancel != nil {
+		a.captureCancel()
+	}
+	a.captureCtx, a.captureCancel = context.WithCancel(a.lifetimeContextLocked())
+	a.captureMode = ""
+}
+
+func (a *App) captureContext(epoch uint64) context.Context {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.captureContextLocked(epoch)
+}
+
+func (a *App) captureContextLocked(epoch uint64) context.Context {
+	if !a.shuttingDown && a.captureEpoch == epoch && a.captureCtx != nil {
+		return a.captureCtx
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
 func (a *App) stopBackgroundWork() {
 	a.configMu.Lock()
 	defer a.configMu.Unlock()

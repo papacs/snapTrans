@@ -341,6 +341,7 @@ function onMouseDown(event: MouseEvent): void {
   const scale = canvasScale();
 
   if (activeTool.value === "text") {
+    commitText();
     textDraft.value = { point, value: "" };
     void nextTick(() => textInputRef.value?.focus());
     return;
@@ -753,8 +754,11 @@ async function copyExtractedText(): Promise<void> {
     return;
   }
 
+  const sequence = extractionSequence, text = extractedText.value;
+  const isCurrent = () => !disposed && sequence === extractionSequence && text === extractedText.value;
   try {
-    await copyText(extractedText.value);
+    await copyText(text);
+    if (!isCurrent()) return;
     textExtractionError.value = "";
     copiedExtractedText.value = true;
     if (copiedTextTimer !== null) {
@@ -765,6 +769,7 @@ async function copyExtractedText(): Promise<void> {
       copiedTextTimer = null;
     }, 1200);
   } catch (error) {
+    if (!isCurrent()) return;
     textExtractionError.value = error instanceof Error ? error.message : "\u590d\u5236\u6587\u5b57\u5931\u8d25";
   }
 }
@@ -814,9 +819,12 @@ function closeTableExtraction(): void {
 
 async function copyExtractedTable(format: "tsv" | "markdown"): Promise<void> {
   if (extractingTable.value || !tableCells.value.length) return;
+  const sequence = tableExtractionSequence, cells = tableCells.value;
+  const isCurrent = () => !disposed && sequence === tableExtractionSequence && cells === tableCells.value;
   try {
-    const text = format === "tsv" ? tableToTSV(tableCells.value) : tableToMarkdown(tableCells.value);
+    const text = format === "tsv" ? tableToTSV(cells) : tableToMarkdown(cells);
     await copyText(text);
+    if (!isCurrent()) return;
     tableExtractionError.value = "";
     copiedTableFormat.value = format;
     if (copiedTableTimer !== null) window.clearTimeout(copiedTableTimer);
@@ -825,6 +833,7 @@ async function copyExtractedTable(format: "tsv" | "markdown"): Promise<void> {
       copiedTableTimer = null;
     }, 1200);
   } catch (error) {
+    if (!isCurrent()) return;
     tableExtractionError.value = error instanceof Error ? error.message : (props.locale === "en" ? "Copy failed" : "复制表格失败");
   }
 }

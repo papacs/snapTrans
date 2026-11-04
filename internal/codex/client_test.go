@@ -253,6 +253,12 @@ func fakeServer(mode string) {
 			if mode == "bad-url" {
 				loginURL = "https://example.com/phishing"
 			}
+			if mode == "login-server-request" {
+				respond(map[string]any{"loginId": "login-test", "authUrl": loginURL})
+				write(map[string]any{"id": 900, "method": "account/login/completed", "params": map[string]any{"loginId": "login-test", "success": true}})
+				notify("account/login/completed", map[string]any{"loginId": "login-test", "success": false, "error": "login callback failed"})
+				continue
+			}
 			// Exercise buffering of a fast callback before the RPC response.
 			notify("account/login/completed", map[string]any{"loginId": "login-test", "success": true})
 			respond(map[string]any{"loginId": "login-test", "authUrl": loginURL})
@@ -667,6 +673,11 @@ func TestLoginBuffersCallbackAndValidatesURL(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoginIgnoresRejectedServerRequest(t *testing.T) {
+	err := Login(context.Background(), fakeExecutable(t, "login-server-request"), func(string) {})
+	require.ErrorContains(t, err, "login callback failed")
 }
 
 func TestLocalCodexStatus(t *testing.T) {

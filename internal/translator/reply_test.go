@@ -48,7 +48,7 @@ func TestReplySceneAndInputValidation(t *testing.T) {
 	require.Error(t, client.Reply(context.Background(), "", "work", "", "en", func(string) {}))
 	require.Error(t, client.Reply(context.Background(), "text", "unknown", "", "en", func(string) {}))
 	for _, scene := range []string{"general", "work", "social"} {
-		prompt, err := replyPrompt(scene, "zh-CN")
+		prompt, err := replyPrompt(scene, "zh-CN", false)
 		require.NoError(t, err)
 		require.Contains(t, prompt, "Output only the reply")
 	}

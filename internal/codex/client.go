@@ -367,7 +367,7 @@ func Login(ctx context.Context, path string, openURL func(string)) error {
 		if err != nil {
 			return err
 		}
-		if msg.Method != "account/login/completed" {
+		if len(msg.ID) > 0 || msg.Method != "account/login/completed" {
 			continue
 		}
 		var event struct {

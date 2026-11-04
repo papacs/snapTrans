@@ -7,6 +7,11 @@ export const replyScenes = [
 ] as const;
 export type ReplyScene = typeof replyScenes[number]["id"];
 
+export function rememberedReplyScene(): ReplyScene {
+  const remembered = sessionStorage.getItem("snaptrans.reply.scene");
+  return remembered === "work" || remembered === "social" ? remembered : "general";
+}
+
 export function replyPanelPosition(anchor: Rect, viewport: Size) {
   const width = Math.min(440, Math.max(0, viewport.width - 32));
   const height = Math.min(620, Math.max(0, viewport.height - 32));

@@ -3,6 +3,7 @@ package translator
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -83,4 +84,47 @@ func TestAPITranslationWarmupOnlyRequestsModels(t *testing.T) {
 	client := NewOpenAICompatible(Options{APIKey: "fixture", BaseURL: server.URL})
 	require.NoError(t, client.WarmTranslation(context.Background(), DirectionToChinese))
 	require.Equal(t, 1, requests)
+}
+
+func TestReplyWarmInstructionsMatchActualSceneLocaleAndInput(t *testing.T) {
+	var actualPrompt string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only the system message is needed; image user content is multipart.
+		var request struct {
+			Messages []struct{ Content json.RawMessage }
+		}
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+		require.NoError(t, json.Unmarshal(request.Messages[0].Content, &actualPrompt))
+		writeBoundaryChunk(w, "A concise reply.", "stop")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+	client := NewOpenAICompatible(Options{APIKey: "fixture", BaseURL: server.URL, Model: "gpt-6-luna", FastTranslation: true, CodexReasoningEffort: "high"})
+	for _, scene := range []string{"general", "work", "social"} {
+		for _, locale := range []string{"en", "zh-CN"} {
+			for _, withImage := range []bool{false, true} {
+				var images []string
+				if withImage {
+					images = []string{testScreenshot(t)}
+				}
+				require.NoError(t, client.Reply(context.Background(), "PRIVATE_SCREEN_TEXT", scene, "PRIVATE_INTENT", locale, func(string) {}, images...))
+				warmPrompt, err := replyPrompt(scene, locale, withImage)
+				require.NoError(t, err)
+				require.Equal(t, actualPrompt, warmPrompt)
+				require.NotContains(t, warmPrompt, "PRIVATE_SCREEN_TEXT")
+				require.NotContains(t, warmPrompt, "PRIVATE_INTENT")
+				require.Equal(t, "high", client.options.CodexReasoningEffort)
+			}
+		}
+	}
+}
+
+func TestReplyWarmupRejectsUnknownSceneAndPreservesOptions(t *testing.T) {
+	client := NewOpenAICompatible(Options{Provider: "codex", Model: "gpt-6-luna", FastTranslation: true, CodexReasoningEffort: "high"})
+	original := client.options
+	require.ErrorContains(t, client.WarmReply(context.Background(), "unknown", "en", false), "unknown reply scene")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.ErrorIs(t, client.WarmReply(ctx, "general", "en", true), context.Canceled)
+	require.Equal(t, original, client.options)
 }

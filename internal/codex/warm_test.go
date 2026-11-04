@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -216,6 +217,126 @@ func TestSpeculativeWarmPreservesLastUnusedConversation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, prepared.id, id)
 	returnWarm(borrowed, borrowed.cmd.Path, epoch)
+}
+
+func TestRequestedWarmReplacesOnlyMismatchedUnusedSession(t *testing.T) {
+	path := fakeExecutable(t, "prepared")
+	require.NoError(t, WarmSession(context.Background(), path, "test-model", "translate to Chinese", "low"))
+	warmProcess.Lock()
+	first := warmProcess.idle
+	old := first.prepared
+	warmProcess.Unlock()
+	key := sessionKey{model: "test-model", instructions: "reply in English", effort: "high"}
+	require.NoError(t, WarmSessionRequested(context.Background(), path, key.model, key.instructions, key.effort))
+	require.NoError(t, WarmSessionRequested(context.Background(), path, key.model, key.instructions, key.effort))
+	warmProcess.Lock()
+	current, prepared := warmProcess.idle, first.prepared
+	matched := first.hasPreparedSession(key)
+	warmProcess.Unlock()
+	require.Same(t, first, current)
+	require.True(t, matched, "a known reply must prepare its actual prompt and saved effort")
+	require.NotNil(t, prepared)
+	require.NotEqual(t, old.id, prepared.id)
+	borrowed, epoch, err := takeWarm(context.Background(), path)
+	require.NoError(t, err)
+	var stats struct{ ThreadStarts, Unsubscribes, TurnStarts int }
+	require.NoError(t, borrowed.call("test/stats", nil, &stats))
+	require.Equal(t, 2, stats.ThreadStarts)
+	require.Equal(t, 1, stats.Unsubscribes)
+	require.Zero(t, stats.TurnStarts, "preparation must not submit model input")
+	returnWarm(borrowed, borrowed.cmd.Path, epoch)
+}
+
+func holdProcessWarm(t *testing.T, path string) func() {
+	t.Helper()
+	warmProcess.Lock()
+	ready := make(chan struct{})
+	warmProcess.warming, warmProcess.warmingPath, warmProcess.ready = true, path, ready
+	warmProcess.Unlock()
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			warmProcess.Lock()
+			if warmProcess.ready == ready {
+				warmProcess.warming, warmProcess.ready = false, nil
+			}
+			close(ready)
+			warmProcess.Unlock()
+		})
+	}
+	t.Cleanup(release)
+	return release
+}
+
+func TestRequestedWarmWaitsForProcessPreparation(t *testing.T) {
+	path := fakeExecutable(t, "prepared")
+	require.NoError(t, Warm(context.Background(), path))
+	release := holdProcessWarm(t, path)
+	finished := make(chan error, 1)
+	key := sessionKey{model: "test-model", instructions: "reply in English", effort: "high"}
+	go func() {
+		finished <- WarmSessionRequested(context.Background(), path, key.model, key.instructions, key.effort)
+	}()
+	select {
+	case err := <-finished:
+		t.Fatalf("known task was dropped during process preparation: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	release()
+	select {
+	case err := <-finished:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("requested preparation did not finish")
+	}
+	warmProcess.Lock()
+	defer warmProcess.Unlock()
+	require.NotNil(t, warmProcess.idle)
+	require.True(t, warmProcess.idle.hasPreparedSession(key))
+}
+
+func TestRequestedWarmWaitingCannotReviveClosedGeneration(t *testing.T) {
+	path := fakeExecutable(t, "prepared")
+	require.NoError(t, Warm(context.Background(), path))
+	release := holdProcessWarm(t, path)
+	finished := make(chan error, 1)
+	go func() { finished <- WarmSessionRequested(context.Background(), path, "test-model", "reply", "high") }()
+	select {
+	case err := <-finished:
+		t.Fatalf("requested preparation did not wait: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	CloseIdle()
+	release()
+	select {
+	case err := <-finished:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("stale requested preparation did not finish")
+	}
+	warmProcess.Lock()
+	defer warmProcess.Unlock()
+	require.Nil(t, warmProcess.idle)
+	require.False(t, warmProcess.warming)
+}
+
+func TestRequestedWarmWaitRespectsCancellationAndActiveRequest(t *testing.T) {
+	path := fakeExecutable(t, "prepared")
+	require.NoError(t, Warm(context.Background(), path))
+	release := holdProcessWarm(t, path)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, WarmSessionRequested(ctx, path, "test-model", "reply", "high"), context.DeadlineExceeded)
+	release()
+	output, err := StreamFast(context.Background(), path, "test-model", "translate only", "source", "low", func(string) {
+		require.NoError(t, WarmSessionRequested(context.Background(), path, "test-model", "reply", "high"))
+		warmProcess.Lock()
+		competing := warmProcess.idle
+		warmProcess.Unlock()
+		require.Nil(t, competing, "a known task must not start competing preparation during inference")
+	})
+	require.NoError(t, err)
+	require.Equal(t, "[1] 你好", output)
 }
 
 func TestSessionRefillScopeReusesProcessForFreshRepairThenReplenishes(t *testing.T) {

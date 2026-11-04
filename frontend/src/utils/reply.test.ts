@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { replyPanelPosition } from "./reply";
+import { rememberedReplyScene, replyPanelPosition } from "./reply";
+
+describe("remembered reply scene", () => {
+  it.each([null,"general","work","social","unknown"])("uses the same stored scene or default for %s", value => {
+    const previous = sessionStorage.getItem("snaptrans.reply.scene");
+    try {
+      if(value === null) sessionStorage.removeItem("snaptrans.reply.scene");
+      else sessionStorage.setItem("snaptrans.reply.scene",value);
+      expect(rememberedReplyScene()).toBe(value === "work" || value === "social" ? value : "general");
+    } finally {
+      if(previous === null) sessionStorage.removeItem("snaptrans.reply.scene");
+      else sessionStorage.setItem("snaptrans.reply.scene",previous);
+    }
+  });
+});
 
 describe("reply panel placement", () => {
   it("stays beside the source when there is room", () => {

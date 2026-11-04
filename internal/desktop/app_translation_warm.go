@@ -69,6 +69,10 @@ func (a *App) cancelTranslationWarmups() {
 }
 
 func (a *App) cancelTranslationWarmupsLocked() {
+	if a.replyWarmStop != nil {
+		a.replyWarmStop()
+		a.replyWarmStop = nil
+	}
 	if a.translationWarmStop != nil {
 		a.translationWarmStop()
 		a.translationWarmCtx, a.translationWarmStop = nil, nil
@@ -79,6 +83,13 @@ func (a *App) cancelTranslationWarmupsLocked() {
 }
 
 func (a *App) prewarmTranslationConnection() {
+	a.prewarmCaptureConnection("translate")
+}
+
+func (a *App) prewarmCaptureConnection(mode string) {
+	if mode != "translate" && mode != "reply" {
+		return
+	}
 	cfg, parent := a.translationWarmSnapshot()
 	if parent == nil {
 		return
@@ -88,7 +99,9 @@ func (a *App) prewarmTranslationConnection() {
 		go func() {
 			defer cancel()
 			var err error
-			if cfg.DirectImageInput {
+			if cfg.DirectImageInput || mode == "reply" {
+				// The reply scene lives in frontend session state. Prepare its
+				// exact thread only after WarmReply receives that known shape.
 				err = codex.Warm(ctx, cfg.CodexPath, cfg.CodexModel)
 			} else {
 				// Guess the usual target without reading the screen. A different
@@ -115,6 +128,52 @@ func (a *App) prewarmTranslationConnection() {
 	}
 
 	go a.runTranslationWarmup(parent, cfg, target)
+}
+
+// WarmReply receives only the upcoming reply shape, never captured content.
+// Capture/configuration lifetimes and a later scene request cancel old work.
+func (a *App) WarmReply(scene, inputMode string) error {
+	if scene != "general" && scene != "work" && scene != "social" {
+		return errors.New("unknown reply scene")
+	}
+	if inputMode != "ocr" && inputMode != "image" {
+		return errors.New("unknown reply input mode")
+	}
+	a.mu.Lock()
+	if a.shuttingDown || a.captureMode != "reply" || a.frame == nil {
+		a.mu.Unlock()
+		return context.Canceled
+	}
+	parent := a.captureContextLocked(a.captureEpoch)
+	if err := parent.Err(); err != nil {
+		a.mu.Unlock()
+		return err
+	}
+	cfg := a.cfg.WithDefaults()
+	if cfg.Provider != "codex" {
+		a.mu.Unlock()
+		return nil
+	}
+	if a.translationWarmCtx == nil {
+		a.translationWarmCtx, a.translationWarmStop = context.WithCancel(a.lifetimeContextLocked())
+	}
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+	stop := context.AfterFunc(a.translationWarmCtx, cancel)
+	if a.replyWarmStop != nil {
+		a.replyWarmStop()
+	}
+	a.replyWarmStop = cancel
+	a.mu.Unlock()
+	go func() {
+		defer cancel()
+		defer stop()
+		client := translator.NewOpenAICompatible(translationOptions(cfg))
+		err := client.WarmReply(ctx, scene, cfg.UILanguage, inputMode == "image")
+		if err != nil && ctx.Err() == nil && !errors.Is(err, context.Canceled) && a.log != nil {
+			a.log.Errorf("Codex reply warm-up failed: %v", err)
+		}
+	}()
+	return nil
 }
 
 func (a *App) runTranslationWarmup(parent context.Context, cfg config.Config, target string) {

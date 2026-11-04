@@ -18,7 +18,7 @@ func TestNewCaptureInvalidatesOldSelection(t *testing.T) {
 	_, coalesced, started := app.beginCapture()
 	require.False(t, started)
 	require.Equal(t, first, coalesced)
-	app.finishCapture()
+	app.finishCapture(first)
 	_, next, started := app.beginCapture()
 	require.True(t, started)
 	require.Greater(t, next, first)

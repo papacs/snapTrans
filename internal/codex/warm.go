@@ -139,6 +139,16 @@ func WarmSession(ctx context.Context, path, model, instructions, effort string) 
 	return warm(ctx, path, &sessionKey{model: model, instructions: instructions, effort: effort}, nil)
 }
 
+// WarmSessionRequested prepares a known upcoming task, replacing an unused
+// session with a different key. Unlike speculative warming, it can wait for an
+// in-flight process warm-up inside the caller's background deadline.
+func WarmSessionRequested(ctx context.Context, path, model, instructions, effort string) error {
+	warmProcess.Lock()
+	epoch := warmProcess.epoch
+	warmProcess.Unlock()
+	return warmWithPolicy(ctx, path, &sessionKey{model: model, instructions: instructions, effort: effort}, &epoch, true)
+}
+
 type sessionRefillContextKey struct{}
 
 type sessionRefill struct {
@@ -207,17 +217,40 @@ func refillSession(next sessionRefill) {
 }
 
 func warm(ctx context.Context, path string, key *sessionKey, expectedEpoch *uint64) error {
+	return warmWithPolicy(ctx, path, key, expectedEpoch, false)
+}
+
+func warmWithPolicy(ctx context.Context, path string, key *sessionKey, expectedEpoch *uint64, requested bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	warmProcess.Lock()
-	if warmProcess.warming || warmProcess.active > 0 || (expectedEpoch != nil && (warmProcess.epoch != *expectedEpoch || warmProcess.idle == nil)) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		warmProcess.Lock()
+		if warmProcess.active > 0 || (expectedEpoch != nil && (warmProcess.epoch != *expectedEpoch || (!requested && warmProcess.idle == nil))) {
+			warmProcess.Unlock()
+			return nil
+		}
+		if !warmProcess.warming {
+			break
+		}
+		ready := warmProcess.ready
+		wait := requested && warmProcess.warmingPath == path
 		warmProcess.Unlock()
-		return nil
+		if !wait {
+			return nil
+		}
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
-	if warmProcess.idle != nil && (key == nil || warmProcess.idle.prepared != nil) {
+	if warmProcess.idle != nil && (key == nil || (!requested && warmProcess.idle.prepared != nil) || (requested && warmProcess.idle.hasPreparedSession(*key))) {
 		warmProcess.Unlock()
 		return nil
 	}

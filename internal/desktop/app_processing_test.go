@@ -24,7 +24,7 @@ func TestClosedCaptureCannotRestartProcessingAfterCropFinishes(t *testing.T) {
 func TestStaleCaptureCannotCancelNewCaptureProcessing(t *testing.T) {
 	app := NewApp(nil)
 	_, oldEpoch, _ := app.beginCapture()
-	app.finishCapture()
+	app.finishCapture(oldEpoch)
 	_, newEpoch, _ := app.beginCapture()
 	current, cancel := app.newProcessingContext(newEpoch)
 	defer cancel()

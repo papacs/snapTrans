@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"math/rand"
 	"strings"
 	"testing"
 	"time"
@@ -64,9 +65,21 @@ func TestCaptureResultDoesNotExposeInternalMetrics(t *testing.T) {
 }
 
 func TestPNGCompressionLevelPrioritizesLocalCaptureLatency(t *testing.T) {
-	require.Equal(t, png.NoCompression, pngCompressionLevel(image.Rect(0, 0, 1920, 1080)))
-	require.Equal(t, png.NoCompression, pngCompressionLevel(image.Rect(0, 0, 2560, 1440)))
-	require.Equal(t, png.NoCompression, pngCompressionLevel(image.Rect(0, 0, 3840, 2160)))
+	require.Equal(t, png.NoCompression, pngCompressionLevel(image.NewRGBA(image.Rect(0, 0, 800, 600))))
+	flat := solidFrame(1920, 1080, color.RGBA{R: 250, G: 250, B: 250, A: 255})
+	require.Equal(t, png.BestSpeed, pngCompressionLevel(flat))
+	noise := image.NewRGBA(image.Rect(-10, -20, 1910, 1060))
+	rng := rand.New(rand.NewSource(42))
+	for i := 0; i < len(noise.Pix); i += 4 {
+		value := rng.Uint32()
+		noise.Pix[i], noise.Pix[i+1], noise.Pix[i+2], noise.Pix[i+3] = byte(value), byte(value>>8), byte(value>>16), 255
+	}
+	require.Equal(t, png.NoCompression, pngCompressionLevel(noise))
+	encoded, err := encodePNGBytesWithLevel(flat, pngCompressionLevel(flat))
+	require.NoError(t, err)
+	decoded, err := png.Decode(bytes.NewReader(encoded))
+	require.NoError(t, err)
+	assertSamePixels(t, flat, decoded)
 }
 
 func BenchmarkScreenshotEncoding1080p(b *testing.B) {
@@ -103,6 +116,44 @@ func BenchmarkScreenshotEncoding1080p(b *testing.B) {
 	})
 }
 
+func BenchmarkSyntheticDesktopPNG(b *testing.B) {
+	for _, kind := range []string{"document", "mixed", "noise"} {
+		frame := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
+		rng := rand.New(rand.NewSource(42))
+		for y := 0; y < 1080; y++ {
+			for x := 0; x < 1920; x++ {
+				value := color.RGBA{R: 250, G: 250, B: 250, A: 255}
+				if kind == "noise" || (kind == "mixed" && x > 1000 && y > 400) {
+					value.R, value.G, value.B = uint8(rng.Intn(256)), uint8(rng.Intn(256)), uint8(rng.Intn(256))
+				} else if x > 40 && x < 1700 && y > 40 && y%36 < 12 && x%11 < 6 {
+					value.R, value.G, value.B = 30, 40, 50
+				}
+				frame.SetRGBA(x, y, value)
+			}
+		}
+		b.Run(kind, func(b *testing.B) {
+			for _, mode := range []string{"plain", "adaptive"} {
+				b.Run(mode, func(b *testing.B) {
+					b.ReportAllocs()
+					var encoded []byte
+					for i := 0; i < b.N; i++ {
+						level := png.NoCompression
+						if mode == "adaptive" {
+							level = pngCompressionLevel(frame)
+						}
+						var err error
+						encoded, err = encodePNGBytesWithLevel(frame, level)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+					b.ReportMetric(float64(len(encoded)), "encoded-B")
+				})
+			}
+		})
+	}
+}
+
 func BenchmarkActiveDisplayEncoding(b *testing.B) {
 	monitors, err := physicalMonitors()
 	require.NoError(b, err)
@@ -118,7 +169,7 @@ func BenchmarkActiveDisplayEncoding(b *testing.B) {
 	require.NoError(b, err)
 
 	b.Run("adaptive", func(b *testing.B) {
-		benchmarkPNGEncoding(b, frame, pngCompressionLevel(frame.Bounds()))
+		benchmarkPNGEncoding(b, frame, pngCompressionLevel(frame))
 	})
 	b.Run("png-best-speed", func(b *testing.B) {
 		benchmarkPNGEncoding(b, frame, png.BestSpeed)

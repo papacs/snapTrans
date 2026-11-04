@@ -2,12 +2,14 @@ package capture
 
 import (
 	"bytes"
+	"compress/flate"
 	"context"
 	"encoding/base64"
 	"errors"
 	"image"
 	"image/draw"
 	"image/png"
+	"io"
 	"math"
 	"strings"
 	"sync"
@@ -73,6 +75,11 @@ func (p *pngEncoderBufferPool) Put(buffer *png.EncoderBuffer) {
 }
 
 var sharedPNGEncoderBuffers pngEncoderBufferPool
+
+var pngProbeWriters = sync.Pool{New: func() any {
+	writer, _ := flate.NewWriter(io.Discard, flate.BestSpeed)
+	return writer
+}}
 
 func AllDisplays(ctx context.Context) (Result, error) {
 	if err := ctx.Err(); err != nil {
@@ -162,7 +169,7 @@ func captureMonitors(ctx context.Context, monitors []physicalMonitor) (Result, e
 	displays := LogicalDisplays(monitors)
 	captureDuration := time.Since(captureStartedAt)
 	encodeStartedAt := time.Now()
-	compressionLevel := pngCompressionLevel(frame.Bounds())
+	compressionLevel := pngCompressionLevel(frame)
 	encoded, err := encodePNGBytesWithLevel(frame, compressionLevel)
 	if err != nil {
 		return Result{}, err
@@ -186,13 +193,35 @@ func captureMonitors(ctx context.Context, monitors []physicalMonitor) (Result, e
 }
 
 func encodePNGDataURL(frame image.Image) (string, int, error) {
-	return encodePNGDataURLWithLevel(frame, pngCompressionLevel(frame.Bounds()))
+	return encodePNGDataURLWithLevel(frame, pngCompressionLevel(frame))
 }
 
-func pngCompressionLevel(_ image.Rectangle) png.CompressionLevel {
-	// The WebView fetches this lossless image from the in-memory asset handler,
-	// so it never crosses the Wails JSON bridge as base64. NoCompression avoids
-	// spending up to a second deflating a frame that is consumed locally once.
+func pngCompressionLevel(frame image.Image) png.CompressionLevel {
+	bounds := frame.Bounds()
+	if int64(bounds.Dx())*int64(bounds.Dy()) < 1_000_000 {
+		return png.NoCompression
+	}
+	// Large, mostly flat desktop pages compress enough to avoid expensive
+	// WebView transfer copies. A tiny distributed probe keeps complex images
+	// on the fast uncompressed path without encoding the whole frame twice.
+	var sample [16 * 16 * 4]byte
+	for y := 0; y < 16; y++ {
+		for x := 0; x < 16; x++ {
+			r, g, b, a := frame.At(bounds.Min.X+(2*x+1)*bounds.Dx()/32, bounds.Min.Y+(2*y+1)*bounds.Dy()/32).RGBA()
+			i := (y*16 + x) * 4
+			sample[i], sample[i+1], sample[i+2], sample[i+3] = byte(r>>8), byte(g>>8), byte(b>>8), byte(a>>8)
+		}
+	}
+	var compressed bytes.Buffer
+	probe := pngProbeWriters.Get().(*flate.Writer)
+	probe.Reset(&compressed)
+	_, err := probe.Write(sample[:])
+	closeErr := probe.Close()
+	probe.Reset(io.Discard)
+	pngProbeWriters.Put(probe)
+	if err == nil && closeErr == nil && compressed.Len()*5 <= len(sample) {
+		return png.BestSpeed
+	}
 	return png.NoCompression
 }
 

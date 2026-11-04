@@ -13,6 +13,10 @@ import (
 // SaveConfig serializes these transactions. Hold mu until the disk write and
 // registrations agree, so capture and shutdown see one complete configuration.
 func (a *App) saveConfigAndShortcuts(current, next config.Config) error {
+	return a.applyConfigAndShortcuts(current, next, true)
+}
+
+func (a *App) applyConfigAndShortcuts(current, next config.Config, persist bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.shuttingDown {
@@ -71,8 +75,10 @@ func (a *App) saveConfigAndShortcuts(current, next config.Config) error {
 			return rollback(fmt.Errorf("shortcut %q is unavailable: %w", newKeys[i], err))
 		}
 	}
-	if err := a.configStore.Save(next); err != nil {
-		return rollback(err)
+	if persist {
+		if err := a.configStore.Save(next); err != nil {
+			return rollback(err)
+		}
 	}
 	// Invalidate old work before publishing the new configuration. A request
 	// admitted after this lock is released must never be canceled as old work.

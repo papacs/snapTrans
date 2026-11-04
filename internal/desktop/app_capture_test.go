@@ -13,16 +13,39 @@ import (
 func TestBeginCaptureCoalescesConcurrentRequests(t *testing.T) {
 	app := NewApp(nil)
 
-	wasVisible, _, started := app.beginCapture()
+	wasVisible, epoch, started := app.beginCapture()
 	require.True(t, started)
 	require.False(t, wasVisible)
 
 	_, _, started = app.beginCapture()
 	require.False(t, started)
 
-	app.finishCapture()
+	app.finishCapture(epoch)
 	_, _, started = app.beginCapture()
 	require.True(t, started)
+}
+
+func TestCanceledCaptureAllowsNewCaptureBeforeOldCleanup(t *testing.T) {
+	for _, dismiss := range []struct {
+		name string
+		run  func(*App) error
+	}{{"hide", (*App).HideWindow}, {"settings", (*App).ShowSettings}} {
+		t.Run(dismiss.name, func(t *testing.T) {
+			app := NewApp(nil)
+			_, oldEpoch, started := app.beginCapture()
+			require.True(t, started)
+			require.NoError(t, dismiss.run(app))
+			_, newEpoch, started := app.beginCapture()
+			require.True(t, started, "canceled native capture/probe must not hold the next capture slot")
+			app.finishCapture(oldEpoch)
+			require.True(t, app.captureInFlight, "old completion must not release the new capture slot")
+			app.windowVisible = true
+			require.False(t, app.hideCaptureWindow(oldEpoch, false))
+			require.True(t, app.windowVisible, "old cleanup must not hide the new window")
+			app.finishCapture(newEpoch)
+			require.False(t, app.captureInFlight)
+		})
+	}
 }
 
 func TestBeginCaptureOnlyRequestsHideDelayForVisibleWindow(t *testing.T) {
@@ -34,6 +57,15 @@ func TestBeginCaptureOnlyRequestsHideDelayForVisibleWindow(t *testing.T) {
 	require.True(t, started)
 	require.True(t, wasVisible)
 	require.False(t, app.windowVisible)
+}
+
+func TestNewCaptureCannotReusePreviousFrameBeforeItsImageIsReady(t *testing.T) {
+	app := NewApp(nil)
+	app.frame = solidTestFrame(32, 32)
+	_, _, started := app.beginCapture()
+	require.True(t, started)
+	require.Nil(t, app.frame)
+	require.ErrorContains(t, app.TranslateRegion(TranslateRegionRequest{Width: 16, Height: 16}, "to-zh", 1), "no captured frame")
 }
 
 func TestCaptureWindowPreparationIsReusedOnSameDisplay(t *testing.T) {

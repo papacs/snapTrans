@@ -78,6 +78,7 @@ const backendMocks = vi.hoisted(() => {
     getCodexStatus: vi.fn(async () => ({authenticated:true,email:"",plan:"plus",models:[]})),
     testConnection: vi.fn(async (_config: unknown) => {}),
     startTextAction: vi.fn(async (_request: import("./services/backend").TextActionRequest) => {}),
+    warmReply: vi.fn(async (_scene: import("./utils/reply").ReplyScene, _inputMode: "ocr" | "image") => {}),
     cancelTextAction: vi.fn(async (_id: string) => {}),
     saveConfig: vi.fn(async (_config: unknown, _autoStart?: boolean) => {}),
     setAutoStart: vi.fn(async () => {}),
@@ -141,6 +142,7 @@ vi.mock("./services/backend", () => ({
   saveConfig: backendMocks.saveConfig,
   testConnection: backendMocks.testConnection,
   startTextAction: backendMocks.startTextAction,
+  warmReply: backendMocks.warmReply,
   cancelTextAction: backendMocks.cancelTextAction,
   triggerReply: vi.fn(async () => backendMocks.emit("capture-start", {image:"data:image/png;base64,ZmFrZQ==",width:800,height:600,source:"browser",mode:"reply"})),
   setAutoStart: backendMocks.setAutoStart,
@@ -227,6 +229,7 @@ describe("App capture cancellation", () => {
     backendMocks.translateRegion.mockClear();
     backendMocks.translateSelection.mockClear();
     backendMocks.startTextAction.mockClear();
+    backendMocks.warmReply.mockClear();
     backendMocks.cancelTextAction.mockClear();
     backendMocks.saveScreenshot.mockClear();
     backendMocks.showCaptureWindow.mockClear();
@@ -315,6 +318,32 @@ describe("App capture cancellation", () => {
     await wrapper.get('[aria-label="关闭回复助手"]').trigger("click");await flushPromises();
     expect(backendMocks.cancelTextAction).toHaveBeenCalledWith(request.id);
     expect(backendMocks.hideWindow).toHaveBeenCalled();
+  });
+
+  it.each([false, true])("warms only the remembered reply scene and input mode before selection (image=%s)", async directImageInput => {
+    sessionStorage.setItem("snaptrans.reply.scene", "work");
+    backendMocks.loadConfig.mockResolvedValueOnce({...backendMocks.defaultConfig,directImageInput});
+    backendMocks.warmReply.mockRejectedValueOnce(new Error("Warmup unavailable"));
+    const wrapper = mount(App);
+    await flushPromises();
+    await backendMocks.triggerCapture();
+    await flushPromises();
+    expect(backendMocks.warmReply).not.toHaveBeenCalled();
+    await backendMocks.triggerScreenshot();
+    await flushPromises();
+    expect(backendMocks.warmReply).not.toHaveBeenCalled();
+    backendMocks.emit("capture-start", {image:"data:image/png;base64,test",width:800,height:600,mode:"reply"});
+    await flushPromises();
+    expect(backendMocks.warmReply).toHaveBeenCalledExactlyOnceWith("work",directImageInput ? "image" : "ocr");
+    expect(wrapper.find("section.cursor-crosshair").exists()).toBe(true);
+    expect(backendMocks.startTextAction).not.toHaveBeenCalled();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", {button:0,clientX:80,clientY:80});
+    await layer.trigger("mouseup", {button:0,clientX:460,clientY:300});
+    await flushPromises();
+    expect(backendMocks.startTextAction).toHaveBeenCalledWith(expect.objectContaining({action:"reply",scene:"work",inputMode:directImageInput ? "image" : "ocr"}));
+    expect(backendMocks.warmReply).toHaveBeenCalledTimes(1);
+    sessionStorage.removeItem("snaptrans.reply.scene");
   });
 
   it("can reply from a vision translation without OCR text", async () => {
@@ -2701,6 +2730,32 @@ describe("settings drafts and history", () => {
   await flushPromises();
   expect(backendMocks.showSettingsWindow).not.toHaveBeenCalled();
   expect(wrapper.find("section.cursor-crosshair").exists()).toBe(true);
+ });
+ it("refreshes a reopened settings draft after its pending save succeeds and ignores its earlier OS read", async () => {
+  let finishSave!: () => void;
+  let finishRead!: (enabled: boolean) => void;
+  backendMocks.saveConfig.mockImplementationOnce(() => new Promise<void>(resolve => { finishSave = resolve; }));
+  const wrapper = await settings();
+  await wrapper.get('[data-testid="api-key-input"]').setValue("new-saved-key");
+  await wrapper.get('[data-testid="autostart-toggle"]').setValue(true);
+  await wrapper.get("form").trigger("submit");
+  // A capture leaves the old settings session before its save returns.
+  backendMocks.emit("capture-start", { image: "data:image/png;base64,new", width: 800, height: 600 });
+  backendMocks.isAutoStartEnabled.mockImplementationOnce(() => new Promise<boolean>(resolve => { finishRead = resolve; }));
+  backendMocks.emit("settings-open", {});
+  await flushPromises();
+  expect(wrapper.get("fieldset").attributes("disabled")).toBeDefined();
+  finishSave();
+  await flushPromises();
+  expect(wrapper.get<HTMLInputElement>('[data-testid="api-key-input"]').element.value).toBe("new-saved-key");
+  expect(wrapper.get<HTMLInputElement>('[data-testid="autostart-toggle"]').element.checked).toBe(true);
+  expect(wrapper.get<HTMLInputElement>('[data-testid="autostart-toggle"]').element.disabled).toBe(false);
+  finishRead(false);
+  await flushPromises();
+  expect(wrapper.get<HTMLInputElement>('[data-testid="autostart-toggle"]').element.checked).toBe(true);
+  await wrapper.get("form").trigger("submit");
+  await flushPromises();
+  expect(backendMocks.saveConfig).toHaveBeenLastCalledWith(expect.objectContaining({apiKey:"new-saved-key"}),true);
  });
  it("ignores autostart reads from a settings session that was closed", async () => {
   let finishOld!: (enabled: boolean) => void;

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"snaptrans/internal/capture"
 	"snaptrans/internal/selection"
 	"snaptrans/internal/textregion"
@@ -36,6 +35,12 @@ func (a *App) invalidateCaptureRequest() {
 
 func (a *App) invalidateCaptureRequestLocked() {
 	a.captureEpoch++
+	a.captureInFlight = false
+	a.captureMode = ""
+	if a.captureCancel != nil {
+		a.captureCancel()
+		a.captureCtx, a.captureCancel = nil, nil
+	}
 	if a.finishingScroll != nil {
 		a.finishingScroll.Cancel()
 		a.finishingScroll = nil
@@ -60,14 +65,13 @@ func (a *App) TriggerTranslation() error {
 		return nil
 	}
 	a.prewarmTranslationConnection()
-	a.cancelProcessing()
 	go func() {
-		defer a.finishCapture()
+		defer a.finishCapture(epoch)
 		if window == 0 {
 			a.captureAndEmit(wasVisible, "translate", epoch, "")
 			return
 		}
-		ctx, cancel := context.WithTimeout(a.lifetimeContext(), selection.ProbeTimeout)
+		ctx, cancel := context.WithTimeout(a.captureContext(epoch), selection.ProbeTimeout)
 		selected, err := selection.DefaultReader().Read(ctx, window)
 		cancel()
 		if !a.captureRequestCurrent(epoch) {
@@ -102,13 +106,14 @@ func (a *App) captureSelectedText(selected selection.Result, wasVisible bool, ep
 	// Preserve the visible source without changing its selection or clipboard.
 	// Only the text reaches the translation API.
 	if wasVisible {
-		runtime.WindowHide(a.ctx)
-		waitForWindowHidden()
+		if !a.hideCaptureWindow(epoch, true) {
+			return context.Canceled
+		}
 	}
 	if !a.captureRequestCurrent(epoch) {
 		return context.Canceled
 	}
-	frame, err := capture.SelectionDisplay(a.lifetimeContext(), selected.Bounds())
+	frame, err := capture.SelectionDisplay(a.captureContext(epoch), selected.Bounds())
 	if err != nil {
 		return err
 	}

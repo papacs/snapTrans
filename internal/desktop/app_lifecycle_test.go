@@ -192,3 +192,23 @@ func TestLifetimeContextSupportsZeroValueAppFixture(t *testing.T) {
 	require.ErrorIs(t, processing.Err(), context.Canceled)
 	require.ErrorIs(t, app.lifetimeContext().Err(), context.Canceled)
 }
+
+func TestCaptureParentLivesThroughNativeCompletionAndCancelsOnReplacement(t *testing.T) {
+	app := NewApp(nil)
+	_, first, started := app.beginCapture()
+	require.True(t, started)
+	parent := app.captureContext(first)
+	require.NoError(t, parent.Err())
+	app.captureMode = "reply"
+	app.finishCapture(first)
+	require.NoError(t, parent.Err(), "reply prewarm must outlive native image acquisition")
+	_, second, started := app.beginCapture()
+	require.True(t, started)
+	require.ErrorIs(t, parent.Err(), context.Canceled)
+	require.Empty(t, app.captureMode)
+	current := app.captureContext(second)
+	require.NoError(t, current.Err())
+	require.NoError(t, app.HideWindow())
+	require.ErrorIs(t, current.Err(), context.Canceled)
+	require.ErrorIs(t, app.captureContext(app.currentCaptureEpoch()).Err(), context.Canceled, "closed capture context must not be recreated")
+}

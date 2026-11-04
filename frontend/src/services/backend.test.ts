@@ -1,8 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { beginScrollingScreenshot, cancelScrollingScreenshot, stepScrollingScreenshot, finishScrollingScreenshot, copyImageDataUrl, copyText, defaultConfig, saveConfig, testConnection, loadConfig, clearHistory, getHistory, getCodexStatus, loginCodex, translateRegion } from "./backend";
+import { warmReply, beginScrollingScreenshot, cancelScrollingScreenshot, stepScrollingScreenshot, finishScrollingScreenshot, copyImageDataUrl, copyText, defaultConfig, saveConfig, testConnection, loadConfig, clearHistory, getHistory, getCodexStatus, loginCodex, translateRegion } from "./backend";
 
 afterEach(() => { delete window.go; delete window.runtime; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe("native boundary", () => {
+ it("warms a reply with only its scene and input mode", async () => {
+  const warm = vi.fn(async () => {});
+  window.go = {desktop:{App:{WarmReply:warm}}} as unknown as Window["go"];
+  await warmReply("social","image");
+  expect(warm).toHaveBeenCalledExactlyOnceWith("social","image");
+ });
+ it("treats reply warmup as a no-op in browser preview", async () => {
+  await expect(warmReply("general","ocr")).resolves.toBeUndefined();
+ });
  it("waits for a previous scrolling cancellation before beginning the next session without blocking step or finish", async () => {
   let finishCancel!: () => void;
   const cancel = vi.fn(() => new Promise<void>(resolve => { finishCancel = resolve; }));

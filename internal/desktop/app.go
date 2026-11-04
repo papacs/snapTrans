@@ -106,6 +106,10 @@ type App struct {
 	captureOriginY   int
 	captureInFlight  bool
 	captureEpoch     uint64
+	captureCtx       context.Context
+	captureCancel    context.CancelFunc
+	captureMode      string
+	replyWarmStop    context.CancelFunc
 	selectedText     *capture.SelectedText
 	windowVisible    bool
 	frontendReady    bool
@@ -229,8 +233,13 @@ func (a *App) LoadConfig() (config.Config, error) {
 	}
 
 	a.mu.Lock()
-	a.cfg = cfg
+	current := a.cfg
 	a.mu.Unlock()
+	if cfg != current {
+		if err := a.applyConfig(cfg, false); err != nil {
+			return current, err
+		}
+	}
 	return cfg, nil
 }
 
@@ -281,6 +290,10 @@ func (a *App) SaveConfig(next config.Config) error {
 
 // The caller holds configMu across the complete settings transaction.
 func (a *App) saveConfig(next config.Config) error {
+	return a.applyConfig(next, true)
+}
+
+func (a *App) applyConfig(next config.Config, persist bool) error {
 	next = next.WithDefaults()
 	if next.Provider != "openai-compatible" && next.Provider != "codex" {
 		return fmt.Errorf("unsupported model provider: %s", next.Provider)
@@ -296,7 +309,7 @@ func (a *App) saveConfig(next config.Config) error {
 	current := a.cfg
 	a.mu.Unlock()
 
-	if err := a.saveConfigAndShortcuts(current, next); err != nil {
+	if err := a.applyConfigAndShortcuts(current, next, persist); err != nil {
 		return err
 	}
 
@@ -370,30 +383,34 @@ func (a *App) BeginScrollingScreenshot(request ScrollCaptureRequest) (capture.Ma
 	}
 
 	a.mu.Lock()
-	if a.shuttingDown || a.captureInFlight {
+	if a.shuttingDown || a.captureInFlight || a.scrollCapture != nil {
 		a.mu.Unlock()
 		return capture.ManualScrollStatus{}, errors.New("another capture is already running")
 	}
 	a.captureInFlight = true
 	a.captureEpoch++
+	epoch := a.captureEpoch
+	a.cancelProcessingLocked()
+	a.startCaptureContextLocked()
 	a.selectedText = nil
+	a.frame = nil
 	wasVisible := a.windowVisible
 	a.windowVisible = false
 	a.mu.Unlock()
 
-	runtime.WindowHide(a.ctx)
-	if wasVisible {
-		waitForWindowHidden()
+	if !a.hideCaptureWindow(epoch, wasVisible) {
+		a.finishCapture(epoch)
+		return capture.ManualScrollStatus{}, context.Canceled
 	}
 
 	rect := image.Rect(request.X, request.Y, request.X+request.Width, request.Y+request.Height)
 	target, err := findManualScrollTarget(rect)
 	if err != nil {
-		a.finishCapture()
+		a.finishCapture(epoch)
 		return capture.ManualScrollStatus{}, err
 	}
 	session, err := capture.StartManualScrollCaptureWithSource(
-		a.lifetimeContext(),
+		a.captureContext(epoch),
 		rect,
 		capture.ManualScrollOptions{},
 		func(frameRect image.Rectangle) (image.Image, error) {
@@ -401,17 +418,24 @@ func (a *App) BeginScrollingScreenshot(request ScrollCaptureRequest) (capture.Ma
 		},
 	)
 	if err != nil {
-		a.finishCapture()
+		a.finishCapture(epoch)
 		return capture.ManualScrollStatus{}, err
 	}
 
 	if err := applyManualScrollHole(overlay, rect); err != nil {
 		session.Cancel()
-		a.finishCapture()
+		a.finishCapture(epoch)
 		return capture.ManualScrollStatus{}, err
 	}
 
 	a.mu.Lock()
+	if a.shuttingDown || a.captureEpoch != epoch {
+		a.mu.Unlock()
+		session.Cancel()
+		restoreManualScrollOverlay(overlay)
+		a.finishCapture(epoch)
+		return capture.ManualScrollStatus{}, context.Canceled
+	}
 	a.scrollCapture = session
 	a.scrollOverlay = overlay
 	a.windowVisible = true
@@ -459,7 +483,7 @@ func (a *App) FinishScrollingScreenshot() (capture.Result, error) {
 	}
 	defer a.finishScrollExport(session)
 	_, err := session.CaptureNext()
-	a.finishScrollingCaptureWindow(overlay)
+	a.finishScrollingCaptureWindow(overlay, epoch)
 	a.scrollMu.Unlock()
 	if err != nil {
 		return capture.Result{}, err
@@ -497,7 +521,7 @@ func (a *App) CancelScrollingScreenshot() error {
 
 // The caller holds scrollMu through native restoration and visibility changes.
 func (a *App) cancelScrollingScreenshot() {
-	session, overlay, _ := a.takeScrollCapture(false)
+	session, overlay, epoch := a.takeScrollCapture(false)
 	a.mu.Lock()
 	if a.finishingScroll != nil && a.finishingEpoch == a.captureEpoch {
 		a.finishingScroll.Cancel()
@@ -508,7 +532,7 @@ func (a *App) cancelScrollingScreenshot() {
 		return
 	}
 	session.Cancel()
-	a.finishScrollingCaptureWindow(overlay)
+	a.finishScrollingCaptureWindow(overlay, epoch)
 }
 
 func (a *App) takeScrollCapture(finishing bool) (*capture.ManualScrollCapture, uintptr, uint64) {
@@ -548,15 +572,10 @@ func (a *App) storeScrollAsset(session *capture.ManualScrollCapture, epoch uint6
 	return a.captureAssets.Store(data), nil
 }
 
-func (a *App) finishScrollingCaptureWindow(overlay uintptr) {
+func (a *App) finishScrollingCaptureWindow(overlay uintptr, epoch uint64) {
 	restoreManualScrollOverlay(overlay)
-	a.finishCapture()
-	if a.ctx != nil {
-		runtime.WindowHide(a.ctx)
-	}
-	a.mu.Lock()
-	a.windowVisible = false
-	a.mu.Unlock()
+	a.finishCapture(epoch)
+	a.hideCaptureWindow(epoch, false)
 }
 
 func (a *App) triggerCaptureMode(mode string) error {
@@ -566,11 +585,11 @@ func (a *App) triggerCaptureMode(mode string) error {
 		return nil
 	}
 	if mode == "translate" || mode == "reply" {
-		a.prewarmTranslationConnection()
+		a.prewarmCaptureConnection(mode)
 	}
 
 	go func() {
-		defer a.finishCapture()
+		defer a.finishCapture(epoch)
 		a.captureAndEmit(wasVisible, mode, epoch, "")
 	}()
 	return nil
@@ -583,11 +602,14 @@ func (a *App) beginCapture() (wasVisible bool, epoch uint64, started bool) {
 	defer a.scrollMu.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.shuttingDown || a.captureInFlight {
+	if a.shuttingDown || a.captureInFlight || a.scrollCapture != nil {
 		return false, a.captureEpoch, false
 	}
 	a.captureEpoch++
+	a.cancelProcessingLocked()
+	a.startCaptureContextLocked()
 	a.selectedText = nil
+	a.frame = nil
 	a.captureInFlight = true
 	wasVisible = a.windowVisible
 	a.windowVisible = false
@@ -596,10 +618,29 @@ func (a *App) beginCapture() (wasVisible bool, epoch uint64, started bool) {
 	return wasVisible, a.captureEpoch, true
 }
 
-func (a *App) finishCapture() {
+func (a *App) finishCapture(epoch uint64) {
 	a.mu.Lock()
-	a.captureInFlight = false
+	if a.captureEpoch == epoch {
+		a.captureInFlight = false
+	}
 	a.mu.Unlock()
+}
+
+func (a *App) hideCaptureWindow(epoch uint64, wait bool) bool {
+	a.mu.Lock()
+	if a.shuttingDown || a.captureEpoch != epoch {
+		a.mu.Unlock()
+		return false
+	}
+	a.windowVisible = false
+	if a.ctx != nil {
+		runtime.WindowHide(a.ctx)
+	}
+	a.mu.Unlock()
+	if wait && a.ctx != nil {
+		waitForWindowHidden()
+	}
+	return a.captureRequestCurrent(epoch)
 }
 
 func (a *App) ShowCaptureWindow() error {
@@ -889,14 +930,15 @@ func (a *App) captureAndEmit(wasVisible bool, mode string, epoch uint64, notice 
 	}
 
 	startedAt := time.Now()
-	a.cancelProcessing()
-	runtime.WindowHide(a.ctx)
-	if wasVisible {
-		waitForWindowHidden()
+	if !a.hideCaptureWindow(epoch, wasVisible) {
+		return
 	}
 
-	result, err := capture.ActiveDisplay(a.lifetimeContext())
+	result, err := capture.ActiveDisplay(a.captureContext(epoch))
 	if err != nil {
+		if !a.captureRequestCurrent(epoch) {
+			return
+		}
 		a.emitError("capture", err, 0)
 		if _, dialogErr := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 			Type:    runtime.ErrorDialog,
@@ -919,6 +961,7 @@ func (a *App) publishCapture(result capture.Result, mode string, epoch uint64, n
 		return
 	}
 	a.selectedText = result.SelectedText
+	a.captureMode = mode
 	result.Notice = notice
 	a.captureOriginX = result.OriginX
 	a.captureOriginY = result.OriginY
