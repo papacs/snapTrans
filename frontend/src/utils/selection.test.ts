@@ -66,6 +66,14 @@ describe("capture pointer helpers", () => {
 });
 
 describe("mapCssRectToImageRect", () => {
+  it("clamps both physical edges when DPI metadata is present", () => {
+    expect(mapCssRectToImageRect(
+      { x: 900, y: 500, width: 400, height: 300 },
+      { width: 1000, height: 600 },
+      { width: 2000, height: 1200 },
+      [{ x: 0, y: 0, width: 1000, height: 600, scale: 2 }],
+    )).toEqual({ x: 1800, y: 1000, width: 200, height: 200 });
+  });
   it("maps CSS coordinates to source image pixels for high DPI screenshots", () => {
     expect(
       mapCssRectToImageRect(

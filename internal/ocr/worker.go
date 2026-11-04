@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -143,7 +144,9 @@ func (w *Worker) startProcess(ctx context.Context) error {
 	// Startup cancellation is handled explicitly below. The child must not be
 	// tied to the short-lived warm-up context after it reports ready.
 	cmd := newRapidOCRWorkerCommand(context.Background(), resolved)
-	cmd.Dir = filepath.Dir(resolved)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -227,6 +230,8 @@ func (w *Worker) startProcess(ctx context.Context) error {
 
 func newRapidOCRWorkerCommand(ctx context.Context, resolvedExecutable string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, resolvedExecutable, "--ensureAscii=1")
+	cmd.Dir = filepath.Dir(resolvedExecutable)
+	configureOCRRuntime(cmd)
 	configureOCRCommand(cmd)
 	return cmd
 }
@@ -234,11 +239,23 @@ func newRapidOCRWorkerCommand(ctx context.Context, resolvedExecutable string) *e
 // Run submits the image data URL and returns the parsed result. It waits
 // for the worker to be ready first, so the first request may also perform
 // the initial process warm-up.
-func (w *Worker) Run(ctx context.Context, imageDataURL string) (Result, error) {
+func (w *Worker) Run(ctx context.Context, imageDataURL string) (result Result, err error) {
+	startedAt := time.Now()
+	var queueElapsed, startupElapsed, prepareElapsed, exchangeElapsed, parseElapsed time.Duration
+	var imageWidth, imageHeight, imageSize int
+	defer func() {
+		slog.Info("OCR engine request", "mode", "persistent", "queue_ms", queueElapsed.Milliseconds(),
+			"startup_ms", startupElapsed.Milliseconds(), "prepare_ms", prepareElapsed.Milliseconds(),
+			"recognize_ms", exchangeElapsed.Milliseconds(), "parse_ms", parseElapsed.Milliseconds(),
+			"total_ms", time.Since(startedAt).Milliseconds(), "image_width", imageWidth,
+			"image_height", imageHeight, "image_bytes", imageSize, "success", err == nil)
+	}()
 	runCtx, cancel := w.runContext(ctx)
 	defer cancel()
-	if err := w.acquireRun(runCtx); err != nil {
-		return Result{}, err
+	queueErr := w.acquireRun(runCtx)
+	queueElapsed = time.Since(startedAt)
+	if queueErr != nil {
+		return Result{}, queueErr
 	}
 	restartAfterRun := false
 	defer func() {
@@ -248,7 +265,13 @@ func (w *Worker) Run(ctx context.Context, imageDataURL string) (Result, error) {
 		}
 	}()
 
+	startupStarted := time.Now()
 	if err := w.ensureReady(runCtx); err != nil {
+		startupElapsed = time.Since(startupStarted)
+		return Result{}, err
+	}
+	startupElapsed = time.Since(startupStarted)
+	if err := runCtx.Err(); err != nil {
 		return Result{}, err
 	}
 
@@ -261,15 +284,21 @@ func (w *Worker) Run(ctx context.Context, imageDataURL string) (Result, error) {
 	stdout := w.stdout
 	w.mu.Unlock()
 
+	prepareStarted := time.Now()
 	imageBytes, err := DecodeImageDataURL(imageDataURL)
 	if err != nil {
 		return Result{}, err
 	}
-	imageWidth, imageHeight := imageDimensions(imageBytes)
+	imageWidth, imageHeight = imageDimensions(imageBytes)
+	imageSize = len(imageBytes)
 
 	command, err := json.Marshal(map[string]string{"image_base64": base64.StdEncoding.EncodeToString(imageBytes)})
 	if err != nil {
 		return Result{}, fmt.Errorf("ocr worker: encode command: %w", err)
+	}
+	prepareElapsed = time.Since(prepareStarted)
+	if err := runCtx.Err(); err != nil {
+		return Result{}, err
 	}
 
 	type output struct {
@@ -277,6 +306,7 @@ func (w *Worker) Run(ctx context.Context, imageDataURL string) (Result, error) {
 		err  error
 	}
 	resultCh := make(chan output, 1)
+	exchangeStarted := time.Now()
 	go func() {
 		if _, err := fmt.Fprintln(stdin, string(command)); err != nil {
 			resultCh <- output{err: fmt.Errorf("ocr worker: write command: %w", err)}
@@ -288,6 +318,7 @@ func (w *Worker) Run(ctx context.Context, imageDataURL string) (Result, error) {
 
 	select {
 	case <-runCtx.Done():
+		exchangeElapsed = time.Since(exchangeStarted)
 		// A request already written to the stream cannot be abandoned safely:
 		// its late response would otherwise be consumed by the next capture.
 		// Stop it before releasing the run gate, then warm a clean worker.
@@ -296,14 +327,21 @@ func (w *Worker) Run(ctx context.Context, imageDataURL string) (Result, error) {
 		if errors.Is(runCtx.Err(), context.Canceled) {
 			return Result{}, runCtx.Err()
 		}
-		return Result{}, fmt.Errorf("RapidOCR timed out after %s", w.timeout)
+		return Result{}, fmt.Errorf("RapidOCR timed out after %s: %w", w.timeout, runCtx.Err())
 	case out := <-resultCh:
+		exchangeElapsed = time.Since(exchangeStarted)
 		if out.err != nil {
 			w.stopProcess()
 			restartAfterRun = true
 			return Result{}, out.err
 		}
-		return ExtractResultFromJSON(out.data, imageWidth, imageHeight)
+		if err := runCtx.Err(); err != nil {
+			return Result{}, err
+		}
+		parseStarted := time.Now()
+		result, err = ExtractResultFromJSON(out.data, imageWidth, imageHeight)
+		parseElapsed = time.Since(parseStarted)
+		return result, err
 	}
 }
 
@@ -319,9 +357,6 @@ func readOneResult(reader io.Reader) ([]byte, error) {
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
-			continue
-		}
-		if strings.Contains(strings.ToLower(line), "init completed") {
 			continue
 		}
 		if len(buffer) == 0 && !strings.HasPrefix(line, "{") && !strings.HasPrefix(line, "[") {

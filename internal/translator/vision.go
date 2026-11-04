@@ -39,6 +39,7 @@ func visionMessage(text, dataURL string) (openai.ChatCompletionMessage, error) {
 // Chinese/English direction without another model or local recognition pass.
 func (d *OpenAICompatible) TranslateImage(ctx context.Context, dataURL string, direction Direction, onDirection func(Direction), onToken func(string)) error {
 	d = d.forTranslation()
+	direction = NormalizeDirection(string(direction))
 	if d.options.Provider != "codex" && strings.TrimSpace(d.options.APIKey) == "" {
 		return errors.New("LLM API key is required")
 	}
@@ -70,8 +71,11 @@ func (d *OpenAICompatible) TranslateImage(ctx context.Context, dataURL string, d
 		if cached.direction != DirectionAuto {
 			onDirection(cached.direction)
 		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		onToken(cached.text)
-		return nil
+		return ctx.Err()
 	}
 	resolvedDirection := direction
 	var complete strings.Builder
@@ -79,6 +83,9 @@ func (d *OpenAICompatible) TranslateImage(ctx context.Context, dataURL string, d
 	headerDone := false
 	hasOutput := false
 	write := func(text string) {
+		if ctx.Err() != nil {
+			return
+		}
 		complete.WriteString(text)
 		hasOutput = hasOutput || strings.TrimSpace(text) != ""
 		onToken(text)
@@ -115,6 +122,9 @@ func (d *OpenAICompatible) TranslateImage(ctx context.Context, dataURL string, d
 	}
 	if !headerDone {
 		flushPrefix()
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 	if !hasOutput {
 		return errors.New("vision model returned no translation; capture again or switch to OCR")

@@ -281,6 +281,9 @@ export function layoutTranslations(
   parsed: ParsedTranslationOutput,
   direction: TranslationDirection,
   measure: MeasureText = approximateTextWidth,
+  // Regions are immutable for a frozen capture. Reuse completed lines while
+  // later lines stream; new capture geometry naturally creates new keys.
+  cache?: WeakMap<SourceRegion, OverlayBlock>,
 ): OverlayLayout {
   const blocks: OverlayBlock[] = [];
   for (const region of regions) {
@@ -295,7 +298,14 @@ export function layoutTranslations(
     );
     const text = joinTranslation(parts);
     if (!text) continue; // Leave source visible until a usable translation arrives.
+    const cached = cache?.get(region);
+    if (cached?.text === text) {
+      blocks.push(cached);
+      continue;
+    }
     const width = Math.max(1, region.bounds.width - 2);
+    const shortSource = region.indices.length === 1 && !prose(sources[region.indices[0]!]!.text, region.bounds);
+    const fitShortText = region.kind === "label" || shortSource;
     let fontSize =
       region.kind === "label"
         ? Math.min(
@@ -303,15 +313,18 @@ export function layoutTranslations(
             fontSizeForTranslationBlock(text, region.bounds),
           )
         : region.fontSize;
-    fontSize = Math.max(Math.min(10, region.fontSize), fontSize);
+    const minimumFontSize = fitShortText ? 8 : 10;
+    fontSize = Math.max(Math.min(minimumFontSize, region.fontSize), fontSize);
     const prefix = text.match(/^(?:\d+[.)、．]|[•*\-])\s+/)?.[0] ?? "";
     let indent = prefix ? Math.min(width * 0.25, measure(prefix, fontSize)) : 0;
     let lineHeight = Math.round(fontSize * 1.25);
     let lines = wrapOverlayText(text, fontSize, width, measure, indent);
-    // At most two pixels of fitting: do not turn overflowing text into tiny print.
-    const minFont = Math.max(10, region.fontSize - 2);
+    // Short labels must fit the measured glyphs, not the approximate prefit
+    // or the surrounding paragraph's typical font size. Prose keeps readable sizing.
+    const minFont = fitShortText ? Math.min(8, fontSize) : Math.max(10, region.fontSize - 2);
+    const preferSingleLine = fitShortText && measure(text, minFont) <= width;
     while (
-      lines.length * lineHeight > region.availableHeight &&
+      (lines.length * lineHeight > region.availableHeight || (preferSingleLine && lines.length > 1)) &&
       fontSize > minFont
     ) {
       fontSize--;
@@ -319,12 +332,15 @@ export function layoutTranslations(
       indent = prefix ? Math.min(width * 0.25, measure(prefix, fontSize)) : 0;
       lines = wrapOverlayText(text, fontSize, width, measure, indent);
     }
+    if (fitShortText && lines.length === 1 && fontSize <= region.availableHeight) {
+      lineHeight = Math.min(lineHeight, region.availableHeight);
+    }
     const capacity = Math.max(
       1,
       Math.floor(region.availableHeight / lineHeight),
     );
-    const truncated = lines.length > capacity;
-    if (truncated) {
+    const truncated = lines.length > capacity || lineHeight > region.availableHeight;
+    if (lines.length > capacity) {
       lines = lines.slice(0, capacity);
       lines[lines.length - 1] = ellipsize(
         lines.at(-1)!,
@@ -333,7 +349,7 @@ export function layoutTranslations(
         measure,
       );
     }
-    blocks.push({
+    const block: OverlayBlock = {
       ...region,
       fontSize,
       text,
@@ -345,7 +361,9 @@ export function layoutTranslations(
         Math.min(region.availableHeight, lines.length * lineHeight),
       ),
       truncated,
-    });
+    };
+    cache?.set(region, block);
+    blocks.push(block);
   }
   return { blocks, truncated: blocks.some((b) => b.truncated) };
 }

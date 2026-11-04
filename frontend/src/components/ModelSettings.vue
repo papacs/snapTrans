@@ -155,7 +155,7 @@ onBeforeUnmount(() => { ++sequence; if (signingIn.value) void cancelCodexLogin()
         <option value="medium">{{ locale === 'en' ? 'Balanced · medium thinking' : '均衡 · 适度思考' }}</option>
         <option value="high">{{ locale === 'en' ? 'Thorough · more thinking' : '深入 · 更多思考' }}</option>
         <option value="xhigh">{{ locale === 'en' ? 'Extended thinking · slower' : '深度思考 · 等待更久' }}</option>
-        <option value="none">{{ locale === 'en' ? 'No thinking (e.g. GPT-6 Luna)' : '不启用思考（如 GPT-6 Luna）' }}</option>
+        <option value="none">{{ locale === 'en' ? 'No thinking (supported models only)' : '不启用思考（仅支持该档位的模型）' }}</option>
         <option value="default">{{ locale === 'en' ? 'Follow local Codex settings' : '跟随本机 Codex 设置' }}</option>
       </select>
       <span class="settings-help">{{ locale === 'en' ? 'Light thinking suits translation and short replies. Your local Codex configuration is unchanged.' : '轻量思考适合翻译与简短回复，不会修改本机 Codex 配置。' }}</span>
@@ -164,7 +164,7 @@ onBeforeUnmount(() => { ++sequence; if (signingIn.value) void cancelCodexLogin()
   <label v-if="config.provider === 'codex'" class="settings-toggle mt-4">
     <span class="min-w-0 pr-3">
       <span class="settings-toggle-title">{{ locale === 'en' ? 'Prioritize translation speed' : '翻译优先速度（推荐）' }}</span>
-      <span class="settings-toggle-description">{{ locale === 'en' ? 'Use concise translation instructions and no thinking on Luna. Replies keep the thinking setting above. Recent successful translations are reused locally.' : '翻译使用精简指令，Luna 不启用思考；回复仍使用上方强度。近期成功译文在本机复用。' }}</span>
+      <span class="settings-toggle-description">{{ locale === 'en' ? 'Use concise translation instructions and light thinking on Luna. Replies keep the thinking setting above. Recent successful translations are reused locally.' : '翻译使用精简指令，Luna 使用轻量思考；回复仍使用上方强度。近期成功译文在本机复用。' }}</span>
     </span>
     <input v-model="config.fastTranslation" data-testid="fast-translation" type="checkbox" class="peer sr-only" />
     <span class="settings-switch" aria-hidden="true" />

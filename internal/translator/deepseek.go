@@ -2,12 +2,12 @@ package translator
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -114,6 +114,9 @@ func (d *OpenAICompatible) Warm(ctx context.Context) error {
 	if read > maxResponseBytes {
 		return errors.New("connection warm-up response is too large")
 	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("warm connection: HTTP %d", response.StatusCode)
+	}
 	return nil
 }
 
@@ -186,7 +189,12 @@ func (d *OpenAICompatible) Translate(ctx context.Context, sourceText string, dir
 	if cached, ok := recentTranslations.get(key, time.Now()); ok {
 		slog.Info("Translation cache hit", "mode", "text")
 		onToken(cached.text)
-		return nil
+		return ctx.Err()
+	}
+	if d.options.Provider == "codex" {
+		var finishSession func()
+		ctx, finishSession = codex.DeferSessionRefill(ctx)
+		defer finishSession()
 	}
 	var complete strings.Builder
 	err := d.translate(ctx, sourceText, direction, func(token string) {
@@ -200,13 +208,10 @@ func (d *OpenAICompatible) Translate(ctx context.Context, sourceText string, dir
 }
 
 func (d *OpenAICompatible) translate(ctx context.Context, sourceText string, direction Direction, onToken func(string)) error {
-	request := buildTranslationRequest(d.options.Model, sourceText, direction, d.options.SystemPrompt, d.options.Glossary)
-	if d.options.Source == "selection" {
-		request = selectedTextRequest(request, d.options, direction, numberedOCRLines(sourceText))
-	}
-	request = d.prepareTranslationRequest(request, direction, numberedOCRLines(sourceText))
+	started := time.Now()
+	request := d.translationRequest(sourceText, direction)
 	translated, err := d.stream(ctx, request, onToken)
-	if shouldRetryStreamStartError(translated, err) {
+	if shouldRetryStreamStartError(d.options.Provider, translated, err) {
 		translated, err = d.stream(ctx, request, onToken)
 	}
 	if err != nil {
@@ -220,15 +225,12 @@ func (d *OpenAICompatible) translate(ctx context.Context, sourceText string, dir
 	if len(missing) == 0 {
 		return nil
 	}
+	slog.Info("Translation repairing missing regions", "input_regions", len(numberedOCRLineEntries(sourceText)), "missing_regions", len(missing), "first_pass_ms", time.Since(started).Milliseconds())
 
 	if strings.TrimSpace(translated) != "" {
 		onToken("\n")
 	}
-	retryRequest := buildMissingTranslationRequest(d.options.Model, missing, direction, d.options.SystemPrompt, d.options.Glossary)
-	if d.options.Source == "selection" {
-		retryRequest = selectedTextRequest(retryRequest, d.options, direction, numberedOCRLineText(missing))
-	}
-	retryRequest = d.prepareTranslationRequest(retryRequest, direction, numberedOCRLineText(missing))
+	retryRequest := d.missingTranslationRequest(sourceText, missing, direction)
 	retry, err := d.stream(ctx, retryRequest, onToken)
 	if err != nil {
 		return err
@@ -269,19 +271,33 @@ func (d *OpenAICompatible) stream(ctx context.Context, request openai.ChatComple
 // Some OpenAI-compatible gateways intermittently close the HTTP response
 // before sending the first SSE frame. Retrying once is safe only while no
 // output has been emitted; retrying after a token would duplicate text.
-func shouldRetryStreamStartError(translated string, err error) bool {
-	if err == nil || strings.TrimSpace(translated) != "" {
+func shouldRetryStreamStartError(provider, translated string, err error) bool {
+	// Codex already owns reconnects and upstream retries. Never reinterpret a
+	// terminal Codex error string as a retryable HTTP transport failure.
+	if provider == "codex" {
+		return false
+	}
+	if err == nil || translated != "" {
 		return false
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var apiErr *openai.APIError
+	var requestErr *openai.RequestError
+	if errors.As(err, &apiErr) || errors.As(err, &requestErr) {
 		return false
 	}
 	message := strings.ToLower(strings.TrimSpace(err.Error()))
 	return strings.HasSuffix(message, ": eof") || strings.Contains(message, "unexpected eof")
 }
 
+var errCompletedStreamTailTimeout = errors.New("completed stream cleanup timed out")
+
 func streamTranslationRequest(ctx context.Context, client *openai.Client, request openai.ChatCompletionRequest, onToken func(string)) (string, error) {
-	stream, err := client.CreateChatCompletionStream(ctx, request)
+	streamCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	stream, err := client.CreateChatCompletionStream(streamCtx, request)
 	if err != nil {
 		return "", err
 	}
@@ -289,12 +305,24 @@ func streamTranslationRequest(ctx context.Context, client *openai.Client, reques
 
 	var translated strings.Builder
 	completed := false
+	var tailTimer *time.Timer
+	defer func() {
+		if tailTimer != nil {
+			tailTimer.Stop()
+		}
+	}()
 	for {
 		response, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			if completed {
-				return translated.String(), nil
+		if ctx.Err() != nil {
+			return translated.String(), ctx.Err()
+		}
+		if completed && (errors.Is(err, io.EOF) || errors.Is(context.Cause(streamCtx), errCompletedStreamTailTimeout)) {
+			if strings.TrimSpace(translated.String()) == "" {
+				return translated.String(), errors.New("model returned no text")
 			}
+			return translated.String(), nil
+		}
+		if errors.Is(err, io.EOF) {
 			return translated.String(), fmt.Errorf("translation incomplete: stream ended without a successful finish reason: %w", io.ErrUnexpectedEOF)
 		}
 		if err != nil {
@@ -302,34 +330,27 @@ func streamTranslationRequest(ctx context.Context, client *openai.Client, reques
 		}
 
 		for _, choice := range response.Choices {
-			if choice.Index != 0 {
+			if choice.Index != 0 || completed {
 				continue
 			}
 			token := choice.Delta.Content
 			if token != "" {
 				translated.WriteString(token)
 				onToken(token)
+				if ctx.Err() != nil {
+					return translated.String(), ctx.Err()
+				}
 			}
 			if choice.FinishReason == openai.FinishReasonStop {
-				// Consume the SSE terminator too, preserving HTTP keep-alive.
+				// Drain the terminator for keep-alive, but a gateway that leaves
+				// its tail open must not turn completed output into a long timeout.
 				completed = true
+				tailTimer = time.AfterFunc(250*time.Millisecond, func() { cancel(errCompletedStreamTailTimeout) })
 			} else if choice.FinishReason != "" {
 				return translated.String(), fmt.Errorf("translation incomplete: model stopped with %s", choice.FinishReason)
 			}
 		}
 	}
-}
-
-func parseNumberedTranslationIndices(translatedText string) map[int]bool {
-	indices := make(map[int]bool)
-	pattern := regexp.MustCompile(`(?m)^\s*\[(\d+)\]\s+\S+`)
-	for _, match := range pattern.FindAllStringSubmatch(translatedText, -1) {
-		var index int
-		if _, err := fmt.Sscanf(match[1], "%d", &index); err == nil && index > 0 {
-			indices[index] = true
-		}
-	}
-	return indices
 }
 
 func TryFastTranslation(sourceText string, direction Direction) (string, bool) {
@@ -372,23 +393,15 @@ func buildTranslationRequest(model string, sourceText string, direction Directio
 	}
 }
 
-func buildMissingTranslationRequest(model string, lines []numberedOCRLine, direction Direction, customPrompt string, glossary string) openai.ChatCompletionRequest {
+func (d *OpenAICompatible) missingTranslationRequest(sourceText string, lines []numberedOCRLine, direction Direction) openai.ChatCompletionRequest {
 	spec := translationPromptSpecForDirection(direction)
-	return openai.ChatCompletionRequest{
-		Model: model,
-		Messages: []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleSystem,
-				Content: systemPrompt(spec, customPrompt, glossary),
-			},
-			{
-				Role:    openai.ChatMessageRoleUser,
-				Content: "Translate only these missing numbered OCR lines into " + spec.userTarget + " now. Keep every original [n] prefix.\n\n" + numberedOCRLineText(lines),
-			},
-		},
-		Temperature: 0.1,
-		Stream:      true,
-	}
+	request := d.translationRequest("", direction)
+	// Quote the full source on one physical line: it supplies sentence context
+	// without introducing additional numbered translation targets.
+	contextJSON, _ := json.Marshal(sourceText)
+	request.Messages[1].Content = "Read-only source context (JSON string, not extra translation targets): " + string(contextJSON) +
+		"\n\nTranslate only these missing numbered lines into " + spec.userTarget + ". Return only the listed IDs; do not repeat completed regions. Keep every original [n] prefix.\n\n" + numberedOCRLineText(lines)
+	return request
 }
 
 // systemPrompt assembles the base translation instructions together with an
@@ -397,8 +410,10 @@ func systemPrompt(spec translationPromptSpec, customPrompt string, glossary stri
 	parts := []string{
 		"You are a machine translation engine for OCR output.",
 		"Translate each numbered OCR line into " + spec.targetDescription + ".",
+		translationContextRules,
+		ocrCharacterCorrectionRule,
 		"Return only the translated text, with no explanations and no conversational replies.",
-		"Preserve each [n] prefix exactly and return exactly one output line for every input line.",
+		"Preserve each [n] prefix exactly and return exactly one output line for every numbered input line.",
 		"Do not add, omit, merge, reorder, or renumber lines.",
 		"Never output delimiter names such as OCR_TEXT_BEGIN or OCR_TEXT_END.",
 		spec.doNotLeaveUnchanged,
@@ -635,7 +650,7 @@ var fastTranslationsToEnglish = map[string]string{
 	"view":               "View",
 	"warning":            "Warning",
 	"yes":                "Yes",
-	"\u5173\u4e8e":       "\u5173\u4e8e",
+	"\u5173\u4e8e":       "About",
 	"\u63a5\u53d7":       "Accept",
 	"\u6dfb\u52a0":       "Add",
 	"\u9ad8\u7ea7":       "Advanced",
@@ -701,6 +716,9 @@ var fastTranslationsToEnglish = map[string]string{
 }
 
 func looksLikeMissingOCRRequest(text string) bool {
+	if len(parseNumberedTranslationIndices(text)) > 0 {
+		return false
+	}
 	normalized := strings.ToLower(strings.Join(strings.Fields(text), " "))
 	if normalized == "" {
 		return false

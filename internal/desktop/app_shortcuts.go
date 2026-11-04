@@ -1,9 +1,11 @@
 package desktop
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
+	"snaptrans/internal/codex"
 	"snaptrans/internal/config"
 	"snaptrans/internal/hotkeys"
 )
@@ -13,6 +15,9 @@ import (
 func (a *App) saveConfigAndShortcuts(current, next config.Config) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.shuttingDown {
+		return context.Canceled
+	}
 	oldKeys := [3]string{current.ShortcutKey, current.ScreenshotShortcutKey, current.ReplyShortcutKey}
 	newKeys := [3]string{next.ShortcutKey, next.ScreenshotShortcutKey, next.ReplyShortcutKey}
 	registrations := [3]*hotkeys.Registration{a.shortcut, a.screenshotShortcut, a.replyShortcut}
@@ -26,7 +31,7 @@ func (a *App) saveConfigAndShortcuts(current, next config.Config) error {
 	}
 	rollback := func(cause error) error {
 		for i := range registrations {
-			if newKeys[i] != oldKeys[i] && registrations[i] != nil {
+			if registrations[i] != nil && registrations[i] != previous[i] {
 				cause = errors.Join(cause, registrations[i].Unregister())
 				registrations[i] = nil
 			}
@@ -56,7 +61,8 @@ func (a *App) saveConfigAndShortcuts(current, next config.Config) error {
 		return rollback(releaseErr)
 	}
 	for i := range registrations {
-		if newKeys[i] == oldKeys[i] {
+		// Startup owns initial bindings; a running app retries missing handles.
+		if newKeys[i] == oldKeys[i] && (registrations[i] != nil || a.ctx == nil) {
 			continue
 		}
 		var err error
@@ -67,6 +73,18 @@ func (a *App) saveConfigAndShortcuts(current, next config.Config) error {
 	}
 	if err := a.configStore.Save(next); err != nil {
 		return rollback(err)
+	}
+	// Invalidate old work before publishing the new configuration. A request
+	// admitted after this lock is released must never be canceled as old work.
+	a.cancelTranslationWarmupsLocked()
+	translationChanged := translationTaskOptions(current) != translationTaskOptions(next) || current.DirectImageInput != next.DirectImageInput
+	if translationChanged || workerSettings(current) != workerSettings(next) || current.PersistentOCR != next.PersistentOCR {
+		a.invalidateCaptureRequestLocked()
+		a.cancelProcessingLocked()
+		a.cancelTextActionLocked()
+	}
+	if translationChanged && (current.Provider == "codex" || next.Provider == "codex") {
+		codex.CloseIdle()
 	}
 	a.cfg = next
 	publish()

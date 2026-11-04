@@ -785,6 +785,59 @@ describe("App capture cancellation", () => {
     expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["success", "failure"] as const)("does not complete or reopen a cancelled scrolling capture after a late finish %s", async outcome => {
+    let finish!: (result: Awaited<ReturnType<typeof backendMocks.finishScrollingScreenshot>>) => void;
+    let fail!: (error: Error) => void;
+    let cancel!: () => void;
+    backendMocks.finishScrollingScreenshot.mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject; }));
+    backendMocks.cancelScrollingScreenshot.mockImplementationOnce(() => new Promise<void>(resolve => { cancel = resolve; }));
+    const wrapper = mount(App);
+    await flushPromises();
+    await backendMocks.triggerScreenshot();
+    await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", { button: 0, clientX: 80, clientY: 70 });
+    await layer.trigger("mouseup", { button: 0, clientX: 520, clientY: 360 });
+    await flushPromises();
+    await wrapper.get('[data-testid="screenshot-scroll-down"]').trigger("click");
+    await flushPromises();
+    await wrapper.get('[data-testid="manual-scroll-complete"]').trigger("click");
+    await wrapper.get('[data-testid="manual-scroll-cancel"]').trigger("click");
+    const showCalls = backendMocks.showCaptureWindow.mock.calls.length;
+    if (outcome === "success") finish({ image: "data:image/png;base64,old", width: 440, height: 870, originX: 0, originY: 0, source: "browser", mode: "screenshot", scrollFrames: 3 });
+    else fail(new Error("OLD_SCROLL_FINISH_FAILURE"));
+    await flushPromises();
+    expect(backendMocks.copyImageDataUrl).not.toHaveBeenCalled();
+    expect(backendMocks.showCaptureWindow).toHaveBeenCalledTimes(showCalls);
+    expect(wrapper.text()).not.toContain("OLD_SCROLL_FINISH_FAILURE");
+    cancel();
+    await flushPromises();
+    expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cancel the next capture when an old scrolling begin finishes after cancellation", async () => {
+    let finishBegin!: (result: {frames:number;width:number;height:number}) => void;
+    backendMocks.beginScrollingScreenshot.mockImplementationOnce(() => new Promise(resolve => { finishBegin = resolve; }));
+    const wrapper = mount(App);
+    await flushPromises();
+    await backendMocks.triggerScreenshot();
+    await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", { button: 0, clientX: 80, clientY: 70 });
+    await layer.trigger("mouseup", { button: 0, clientX: 520, clientY: 360 });
+    await flushPromises();
+    await wrapper.get('[data-testid="screenshot-scroll-down"]').trigger("click");
+    await wrapper.get('[data-testid="manual-scroll-cancel"]').trigger("click");
+    await flushPromises();
+    await backendMocks.triggerScreenshot();
+    await flushPromises();
+    finishBegin({frames:1,width:440,height:290});
+    await flushPromises();
+    expect(backendMocks.cancelScrollingScreenshot).toHaveBeenCalledTimes(1);
+    expect(wrapper.find("section.cursor-crosshair").exists()).toBe(true);
+    expect(backendMocks.copyImageDataUrl).not.toHaveBeenCalled();
+  });
+
   it("ignores an older screenshot that finishes loading after a newer capture", async () => {
     vi.stubGlobal("Image", ControlledImage);
     mount(App);
@@ -1355,6 +1408,80 @@ describe("App capture cancellation", () => {
     expect(resultPanel.attributes("style")).toContain("top: 140px");
     expect(resultPanel.attributes("style")).toContain("width: 260px");
     expect(resultPanel.attributes("style")).toContain("min-height: 80px");
+  });
+
+  it("fits complete short labels as their indexed translations stream", async () => {
+    const frames: FrameRequestCallback[] = [];
+    let frameID = 0;
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => { frames.push(callback); return ++frameID; }));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", { clientX: 14, clientY: 20 });
+    await layer.trigger("mouseup", { clientX: 603, clientY: 527 });
+    await flushPromises();
+    const box = (text: string, x: number, y: number, width: number, height: number) => ({
+      text, x: x / 589, y: y / 507, width: width / 589, height: height / 507,
+    });
+    backendMocks.emit("ocr-result", { generation: 1, blocks: [
+      box("Hi 聪,", 25, 31, 43, 23),
+      box("The rankings order every model by tokens sent through the API.", 27, 139, 513, 20),
+      box("Pick one near the top for the work you have in mind.", 26, 163, 517, 20),
+      box("NEXT", 27, 366, 33, 16),
+    ] });
+    backendMocks.emit("translation-token", { generation: 1, token: "[1]" });
+    frames.shift()?.(0);
+    await flushPromises();
+    expect(wrapper.find("[data-testid='translation-progress']").exists()).toBe(true);
+    expect(wrapper.findAll("[data-testid='ocr-block']")).toHaveLength(0);
+    backendMocks.emit("translation-token", { generation: 1, token: " 嗨，" });
+    frames.shift()?.(16);
+    await flushPromises();
+    expect(wrapper.get("[data-testid='ocr-block']").text()).toBe("嗨，");
+
+    backendMocks.emit("translation-token", { generation: 1, token: "聪，\n[4] 下一" });
+    frames.shift()?.(32);
+    await flushPromises();
+    expect(wrapper.findAll("[data-testid='ocr-block']").map(label => label.text())).toEqual(["嗨，聪，", "下一"]);
+
+    backendMocks.emit("translation-token", { generation: 1, token: "步" });
+    backendMocks.emit("translation-done", { generation: 1 });
+    await flushPromises();
+    const labels = wrapper.findAll("[data-testid='ocr-block']");
+    expect(labels.map(label => label.text())).toEqual(["嗨，聪，", "下一步"]);
+    expect(labels.every(label => label.attributes("title") === undefined)).toBe(true);
+    expect(stylePx(labels[0]!.attributes("style"), "left")).toBe(25);
+    expect(stylePx(labels[1]!.attributes("style"), "width")).toBe(33);
+  });
+
+  it("keeps repaired region translations in source order for full text and copy", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", { clientX: 14, clientY: 20 });
+    await layer.trigger("mouseup", { clientX: 314, clientY: 180 });
+    await flushPromises();
+    backendMocks.emit("ocr-result", { generation: 1, blocks: [
+      { text: "The first paragraph stays in its original place.", x: 0, y: 0.1, width: 0.2, height: 0.1 },
+      { text: "The second paragraph stays in its original place.", x: 0, y: 0.4, width: 0.2, height: 0.1 },
+      { text: "The third paragraph stays in its original place.", x: 0, y: 0.7, width: 0.2, height: 0.1 },
+    ] });
+    const third = "第三行这是需要完整显示的较长译文";
+    backendMocks.emit("translation-token", { generation: 1, token: "[1] 第一行旧稿\n[3] " + third });
+    backendMocks.emit("translation-token", { generation: 1, token: "\n[2] 第二行\n[1] 第一行已修正\n[99] 超出选区的多余内容" });
+    backendMocks.emit("translation-done", { generation: 1 });
+    await flushPromises();
+    const expected = "第一行已修正\n第二行\n" + third;
+    await wrapper.get("button[aria-label='Show full translation']").trigger("click");
+    expect(wrapper.get("aside .whitespace-pre-wrap").text()).toBe(expected);
+    await wrapper.get("button[aria-label='Copy translated text']").trigger("click");
+    await flushPromises();
+    expect(backendMocks.copyText).toHaveBeenCalledWith(expected);
   });
 
   it("renders translated OCR blocks at their original positions", async () => {
@@ -1938,7 +2065,7 @@ describe("App capture cancellation", () => {
     expect(wrapper.text()).not.toContain("不应该出现");
   });
 
-  async function completedCopyResult() {
+  async function completedCopyResult({ complete = true, withBlocks = false } = {}) {
     const wrapper = mount(App);
     await flushPromises();
     await wrapper.get("button[aria-label='Capture']").trigger("click");
@@ -1948,18 +2075,106 @@ describe("App capture cancellation", () => {
     await layer.trigger("mousemove", { clientX: 300, clientY: 140 });
     await layer.trigger("mouseup", { clientX: 300, clientY: 140 });
     await flushPromises();
+    if (withBlocks) {
+      backendMocks.emit("ocr-result", { generation: 1, text: "Original", blocks: [{ text: "Original", x: 0, y: 0, width: 1, height: 0.5 }] });
+    }
     backendMocks.emit("translation-token", { generation: 1, token: "测试译文" });
-    backendMocks.emit("translation-done", { generation: 1 });
+    if (complete) backendMocks.emit("translation-done", { generation: 1 });
     await flushPromises();
     return wrapper;
   }
 
-  it.each([false, true])("holds Space to reveal the frozen original and restores on release (OCR blocks=%s)", async withBlocks => {
+  it.each(["success", "failure"] as const)("ignores old original-copy feedback when a new result is already visible (%s)", async outcome => {
+    const wrapper = await completedCopyResult({ complete: false, withBlocks: true });
+    backendMocks.emit("workflow-error", { generation: 1, stage: "ocr", message: "OCR interrupted" });
+    await flushPromises();
+    let finish!: () => void;
+    let fail!: (error: Error) => void;
+    backendMocks.copyText.mockImplementationOnce(() => new Promise<void>((resolve, reject) => { finish = resolve; fail = reject; }));
+    await wrapper.get('button[aria-label="Copy original text"]').trigger("click");
+    expect(backendMocks.copyText).toHaveBeenCalledWith("Original");
+    await backendMocks.triggerCapture();
+    await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", { clientX: 40, clientY: 40 });
+    await layer.trigger("mouseup", { clientX: 300, clientY: 140 });
+    backendMocks.emit("translation-token", { generation: 2, token: "新的译文" });
+    backendMocks.emit("translation-done", { generation: 2 });
+    await flushPromises();
+    if (outcome === "success") finish(); else fail(new Error("clipboard unavailable"));
+    await flushPromises();
+    expect(wrapper.get('[data-testid="translation-result"]').text()).toBe("新的译文");
+    expect(wrapper.text()).not.toContain(outcome === "success" ? "已复制" : "复制失败");
+    expect(backendMocks.hideWindow).not.toHaveBeenCalled();
+  });
+
+  it("ignores duplicate completion and late stream events after a terminal result", async () => {
+    backendMocks.loadConfig.mockResolvedValueOnce({ ...backendMocks.defaultConfig, autoCopy: true });
     const wrapper = await completedCopyResult();
-    if (withBlocks) {
-      backendMocks.emit("ocr-result", { generation: 1, text: "Original", blocks: [{ text: "Original", x: 0, y: 0, width: 1, height: 0.5 }] });
-      await flushPromises();
-    }
+    expect(backendMocks.copyText).toHaveBeenCalledTimes(1);
+    backendMocks.emit("translation-token", { generation: 1, token: "过期译文" });
+    backendMocks.emit("translation-start", { generation: 1 });
+    backendMocks.emit("ocr-start", { generation: 1 });
+    backendMocks.emit("translation-done", { generation: 1 });
+    backendMocks.emit("workflow-error", { generation: 1, stage: "translation", message: "LATE_ERROR" });
+    await flushPromises();
+    expect(wrapper.get("[data-testid='translation-result']").text()).toBe("测试译文");
+    expect(wrapper.find("[data-testid='translation-progress']").exists()).toBe(false);
+    expect(wrapper.find("[data-testid='partial-translation']").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("LATE_ERROR");
+    expect(backendMocks.copyText).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps completed source regions and direction unchanged after late metadata", async () => {
+    const wrapper = await completedCopyResult({ withBlocks: true });
+    const style = wrapper.get("[data-testid='ocr-block']").attributes("style");
+    const changed = { text: "CORRUPTED_SOURCE", x: 0.5, y: 0.5, width: 0.2, height: 0.1 };
+    backendMocks.emit("ocr-result", { generation: 1, text: "CORRUPTED_SOURCE", blocks: [changed] });
+    backendMocks.emit("text-regions", { generation: 1, source: "ocr", text: "CORRUPTED_SOURCE", blocks: [changed] });
+    backendMocks.emit("translation-direction", { generation: 1, direction: "to-en" });
+    await flushPromises();
+    expect(wrapper.get("[data-testid='ocr-block']").attributes("style")).toBe(style);
+    expect(wrapper.get("button[aria-label='Reverse translation direction']").attributes("title")).toContain("Chinese to English");
+    await wrapper.get("[data-testid='reply-from-result']").trigger("click");
+    await flushPromises();
+    expect(backendMocks.startTextAction).toHaveBeenCalledWith(expect.objectContaining({ text: "Original" }));
+  });
+
+  it("keeps OCR timeout terminal, permits retry, and preserves an interrupted translation", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("button[aria-label='Capture']").trigger("click");
+    await flushPromises();
+    const layer = wrapper.get("section.cursor-crosshair");
+    await layer.trigger("mousedown", { clientX: 40, clientY: 40 });
+    await layer.trigger("mouseup", { clientX: 300, clientY: 140 });
+    await flushPromises();
+    backendMocks.emit("workflow-error", { generation: 1, stage: "ocr", message: "OCR timed out" });
+    await flushPromises();
+    expect(wrapper.get("[data-testid='result-error']").text()).toContain("OCR timed out");
+    backendMocks.emit("translation-token", { generation: 1, token: "过期译文" });
+    backendMocks.emit("translation-done", { generation: 1 });
+    await flushPromises();
+    expect(wrapper.get("[data-testid='result-error']").text()).toContain("OCR timed out");
+    await wrapper.get("button[aria-label='Retry translation']").trigger("click");
+    await flushPromises();
+    backendMocks.emit("translation-token", { generation: 2, token: "保留部分译文" });
+    backendMocks.emit("workflow-error", { generation: 2, stage: "translation", message: "stream interrupted" });
+    backendMocks.emit("translation-done", { generation: 2 });
+    await flushPromises();
+    expect(wrapper.get("[data-testid='partial-translation']").text()).toContain("翻译中断");
+    expect(wrapper.get("[data-testid='translation-result']").text()).toBe("保留部分译文");
+    await wrapper.get("button[aria-label='Retry translation']").trigger("click");
+    await flushPromises();
+    backendMocks.emit("translation-token", { generation: 3, token: "最终译文" });
+    backendMocks.emit("translation-done", { generation: 3 });
+    await flushPromises();
+    expect(wrapper.get("[data-testid='translation-result']").text()).toBe("最终译文");
+    expect(wrapper.find("[data-testid='partial-translation']").exists()).toBe(false);
+  });
+
+  it.each([false, true])("holds Space to reveal the frozen original and restores on release (OCR blocks=%s)", async withBlocks => {
+    const wrapper = await completedCopyResult({ withBlocks });
     const panel = wrapper.get("[data-testid='result-panel']");
     const toolbar = wrapper.get("[data-testid='result-actions']");
     const panelStyle = panel.attributes("style");
@@ -2043,8 +2258,7 @@ describe("App capture cancellation", () => {
   });
 
   it("waits for streaming to finish before enabling the copy shortcut and permits copying a partial result", async () => {
-    const wrapper = await completedCopyResult();
-    backendMocks.emit("translation-start", { generation: 1 });
+    const wrapper = await completedCopyResult({ complete: false });
     await flushPromises();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true }));
     await flushPromises();
@@ -2144,7 +2358,7 @@ describe("App capture cancellation", () => {
 
   it("keeps vision paragraphs readable and scrollable when the selection is too short", async () => {
     backendMocks.loadConfig.mockResolvedValueOnce({...backendMocks.defaultConfig,directImageInput:true});
-    const wrapper = await completedCopyResult();
+    const wrapper = await completedCopyResult({ complete: false });
     backendMocks.emit("translation-token", {generation:1,token:"\n" + "这是需要完整显示的长段落。\n".repeat(30)});
     backendMocks.emit("translation-done", {generation:1}); await flushPromises();
     expect(stylePx(wrapper.get('[data-testid="result-panel"]').attributes("style"), "height")).toBeGreaterThan(100);
@@ -2422,6 +2636,7 @@ describe("App capture cancellation", () => {
 describe("settings drafts and history", () => {
  beforeEach(() => {
   backendMocks.listeners.clear();
+  backendMocks.hideWindow.mockClear();
   backendMocks.isDesktop = false;
   backendMocks.loadConfig.mockResolvedValue({ ...backendMocks.defaultConfig });
   backendMocks.getHistory.mockResolvedValue([]);
@@ -2430,6 +2645,7 @@ describe("settings drafts and history", () => {
   backendMocks.setAutoStart.mockClear();
   backendMocks.copyText.mockClear();
  });
+ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
  async function settings() {
   const wrapper = mount(App);
   await flushPromises();
@@ -2437,6 +2653,73 @@ describe("settings drafts and history", () => {
   await flushPromises();
   return wrapper;
  }
+ it("keeps initial settings disabled until the saved configuration loads", async () => {
+  let finish!: (config: typeof backendMocks.defaultConfig) => void;
+  backendMocks.loadConfig.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const wrapper = mount(App);
+  await flushPromises();
+  backendMocks.emit("settings-open", {});
+  await flushPromises();
+  expect(wrapper.get("fieldset").attributes("disabled")).toBeDefined();
+  await wrapper.get("form").trigger("submit");
+  expect(backendMocks.saveConfig).not.toHaveBeenCalled();
+  finish({ ...backendMocks.defaultConfig, apiKey: "loaded-key" });
+  await flushPromises();
+  expect(wrapper.get("fieldset").attributes("disabled")).toBeUndefined();
+  expect(wrapper.get<HTMLInputElement>('[data-testid="api-key-input"]').element.value).toBe("loaded-key");
+ });
+ it.each(["success", "failure"] as const)("does not hide a newer capture when an earlier settings save returns %s", async outcome => {
+  backendMocks.isDesktop = true;
+  vi.stubGlobal("Image", MockImage);
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ clearRect: vi.fn(), drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+  let finish!: () => void;
+  let fail!: (error: Error) => void;
+  backendMocks.saveConfig.mockImplementationOnce(() => new Promise<void>((resolve, reject) => { finish = resolve; fail = reject; }));
+  const wrapper = await settings();
+  await wrapper.get('[data-testid="api-key-input"]').setValue("pending-save");
+  await wrapper.get("form").trigger("submit");
+  backendMocks.emit("capture-start", { image: "data:image/png;base64,new", width: 800, height: 600 });
+  await flushPromises();
+  expect(wrapper.find("section.cursor-crosshair").exists()).toBe(true);
+  if (outcome === "success") finish(); else fail(new Error("OLD_SAVE_FAILURE"));
+  await flushPromises();
+  expect(backendMocks.hideWindow).not.toHaveBeenCalled();
+  expect(wrapper.find("section.cursor-crosshair").exists()).toBe(true);
+  backendMocks.emit("settings-open", {});
+  await flushPromises();
+  expect(wrapper.text()).not.toContain("OLD_SAVE_FAILURE");
+  expect(wrapper.get<HTMLInputElement>('[data-testid="api-key-input"]').element.value).toBe(outcome === "success" ? "pending-save" : "");
+ });
+ it("does not show an obsolete settings window after capture has already started", async () => {
+  vi.stubGlobal("Image", MockImage);
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ clearRect: vi.fn(), drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+  backendMocks.showSettingsWindow.mockClear();
+  const wrapper = mount(App);
+  await flushPromises();
+  backendMocks.emit("settings-open", {});
+  backendMocks.emit("capture-start", { image: "data:image/png;base64,new", width: 800, height: 600 });
+  await flushPromises();
+  expect(backendMocks.showSettingsWindow).not.toHaveBeenCalled();
+  expect(wrapper.find("section.cursor-crosshair").exists()).toBe(true);
+ });
+ it("ignores autostart reads from a settings session that was closed", async () => {
+  let finishOld!: (enabled: boolean) => void;
+  let finishCurrent!: (enabled: boolean) => void;
+  backendMocks.isAutoStartEnabled
+    .mockImplementationOnce(() => new Promise<boolean>(resolve => { finishOld = resolve; }))
+    .mockImplementationOnce(() => new Promise<boolean>(resolve => { finishCurrent = resolve; }));
+  const wrapper = await settings();
+  await wrapper.findAll("button").find(button => button.text() === "取消")!.trigger("click");
+  await wrapper.get("button[aria-label='Settings']").trigger("click");
+  await flushPromises();
+  finishOld(true);
+  await flushPromises();
+  expect(wrapper.get<HTMLInputElement>('[data-testid="autostart-toggle"]').element.disabled).toBe(true);
+  finishCurrent(false);
+  await flushPromises();
+  await wrapper.get('[data-testid="autostart-toggle"]').setValue(true);
+  expect(wrapper.get<HTMLInputElement>('[data-testid="autostart-toggle"]').element.checked).toBe(true);
+ });
  it("retains edits across categories, discards on cancel and remembers the category", async () => {
   const wrapper = await settings();
   await wrapper.get('[data-testid="api-key-input"]').setValue('navigation-draft');

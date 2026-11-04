@@ -3,6 +3,7 @@ package capture
 import (
 	"image"
 	"image/color"
+	"image/draw"
 	"math"
 )
 
@@ -54,6 +55,10 @@ func scaleBilinear(target *image.RGBA, src image.Image, srcRect image.Rectangle)
 	if dstWidth <= 0 || dstHeight <= 0 {
 		return
 	}
+	if srcWidth == dstWidth && srcHeight == dstHeight && srcRect.In(src.Bounds()) {
+		draw.Draw(target, target.Bounds(), src, srcRect.Min, draw.Src)
+		return
+	}
 
 	minX := sampleRect.Min.X
 	minY := sampleRect.Min.Y
@@ -78,22 +83,34 @@ func scaleBilinear(target *image.RGBA, src image.Image, srcRect image.Rectangle)
 			x0c := clampInt(x0, minX, maxX)
 			x1c := clampInt(x0+1, minX, maxX)
 
-			var top rgba8
+			var top color.RGBA
 			if isRGBA {
-				top = blendPair(
-					blendPair(rgbaFrame.RGBAAt(x0c, y0c), rgbaFrame.RGBAAt(x1c, y0c), fx),
-					blendPair(rgbaFrame.RGBAAt(x0c, y1c), rgbaFrame.RGBAAt(x1c, y1c), fx),
+				top = blendRGBA(
+					blendRGBA(rgbaFrame.RGBAAt(x0c, y0c), rgbaFrame.RGBAAt(x1c, y0c), fx),
+					blendRGBA(rgbaFrame.RGBAAt(x0c, y1c), rgbaFrame.RGBAAt(x1c, y1c), fx),
 					fy,
 				)
 			} else {
-				top = blendPair(
+				blended := blendPair(
 					blendPair(src.At(x0c, y0c), src.At(x1c, y0c), fx),
 					blendPair(src.At(x0c, y1c), src.At(x1c, y1c), fx),
 					fy,
 				)
+				top = color.RGBA{R: blended.R, G: blended.G, B: blended.B, A: blended.A}
 			}
-			target.SetRGBA(x, y, color.RGBA{R: top.R, G: top.G, B: top.B, A: top.A})
+			target.SetRGBA(x, y, top)
 		}
+	}
+}
+
+// Keep the generic sampler's 16-bit interpolation and rounding without boxing
+// each RGBA sample into color.Color, which allocates for every source pixel.
+func blendRGBA(left, right color.RGBA, fraction float64) color.RGBA {
+	return color.RGBA{
+		R: uint8(lerp16(uint32(left.R)*0x101, uint32(right.R)*0x101, fraction) >> 8),
+		G: uint8(lerp16(uint32(left.G)*0x101, uint32(right.G)*0x101, fraction) >> 8),
+		B: uint8(lerp16(uint32(left.B)*0x101, uint32(right.B)*0x101, fraction) >> 8),
+		A: uint8(lerp16(uint32(left.A)*0x101, uint32(right.A)*0x101, fraction) >> 8),
 	}
 }
 

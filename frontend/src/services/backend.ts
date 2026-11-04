@@ -292,15 +292,26 @@ export async function showCaptureWindow(): Promise<void> {
 
 let fallbackScrollRegion: ScrollCaptureRegion | null = null;
 let fallbackScrollFrames = 1;
+let scrollSessionOperation = Promise.resolve();
+
+// Wails calls may execute concurrently; complete an old begin/cancel before
+// letting the next one change the native scrolling session.
+function sequenceScrollSession<T>(work: () => Promise<T>): Promise<T> {
+  const result = scrollSessionOperation.then(work);
+  scrollSessionOperation = result.then(() => {}, () => {});
+  return result;
+}
 
 export async function beginScrollingScreenshot(region: ScrollCaptureRegion): Promise<ManualScrollStatus> {
-  if (hasWailsBackend()) {
-    return window.go!.desktop!.App!.BeginScrollingScreenshot(region);
-  }
+  return sequenceScrollSession(async () => {
+    if (hasWailsBackend()) {
+      return window.go!.desktop!.App!.BeginScrollingScreenshot(region);
+    }
 
-  fallbackScrollRegion = region;
-  fallbackScrollFrames = 1;
-  return { frames: 1, width: region.width, height: region.height };
+    fallbackScrollRegion = region;
+    fallbackScrollFrames = 1;
+    return { frames: 1, width: region.width, height: region.height };
+  });
 }
 
 export async function stepScrollingScreenshot(): Promise<ScrollCaptureStepResult> {
@@ -332,10 +343,12 @@ export async function finishScrollingScreenshot(): Promise<CapturePayload> {
 }
 
 export async function cancelScrollingScreenshot(): Promise<void> {
-  if (hasWailsBackend()) {
-    await window.go!.desktop!.App!.CancelScrollingScreenshot();
-  }
-  fallbackScrollRegion = null;
+  return sequenceScrollSession(async () => {
+    if (hasWailsBackend()) {
+      await window.go!.desktop!.App!.CancelScrollingScreenshot();
+    }
+    fallbackScrollRegion = null;
+  });
 }
 
 export async function showSettingsWindow(): Promise<void> {

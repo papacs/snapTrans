@@ -1,0 +1,305 @@
+{
+  "date": "2026-11-04",
+  "platform": "Windows amd64",
+  "cpu": "Intel Core i7-9750H, 6 cores / 12 logical processors",
+  "engine": "RapidOCR-json v0.2.0",
+  "profile": {
+    "graphOptimizationLevel": 99,
+    "maxSideLen": 1024,
+    "intraOpThreads": 2,
+    "padding": 50,
+    "angleDetection": true,
+    "interOpThreads": 1
+  },
+  "method": "Same synthetic local PNGs and original model weights, persistent engine, no translation requests",
+  "rawEngineComparison": [
+    {
+      "threads": "baseline",
+      "image": "light",
+      "elapsedMs": 3502,
+      "blocks": 10,
+      "textHash": "4dedc72e8bf4bef64671eb24b2331b7bf34373b529c1044560b82368f1399ed4",
+      "reportedTime": null,
+      "processThreads": 19
+    },
+    {
+      "threads": "baseline",
+      "image": "dark",
+      "elapsedMs": 4696,
+      "blocks": 10,
+      "textHash": "8de9caf3ec81f521513c91f2115e0991aff2a344244cff99682f695e7cfc1fd8",
+      "reportedTime": null,
+      "processThreads": 19
+    },
+    {
+      "threads": "baseline",
+      "image": "tiny",
+      "elapsedMs": 2468,
+      "blocks": 5,
+      "textHash": "7f9ead4a2251229ba97934115b27c3f4f07ac31e3b5edb7063df6206e2f3cc2a",
+      "reportedTime": null,
+      "processThreads": 19
+    },
+    {
+      "threads": "baseline",
+      "image": "long",
+      "elapsedMs": 2007,
+      "blocks": 2,
+      "textHash": "b8200a95ecb6ba15e91d1bb404de22d7816a42e91cf41e6376b61f368645c709",
+      "reportedTime": null,
+      "processThreads": 19
+    },
+    {
+      "threads": "baseline",
+      "image": "narrow",
+      "elapsedMs": 1301,
+      "blocks": 3,
+      "textHash": "8b2266fb8ca2e4794a030aebe4aba769f0d1839eaf0113645be8f1e58470beee",
+      "reportedTime": null,
+      "processThreads": 19
+    },
+    {
+      "threads": "baseline",
+      "image": "rotated",
+      "elapsedMs": 3281,
+      "blocks": 10,
+      "textHash": "ba61c2db9fd89e64f7f21a4eae0743c6fb19a552f1dca0b3f242445073dfeea5",
+      "reportedTime": null,
+      "processThreads": 19
+    },
+    {
+      "threads": "baseline",
+      "image": "light",
+      "elapsedMs": 3701,
+      "blocks": 10,
+      "textHash": "4dedc72e8bf4bef64671eb24b2331b7bf34373b529c1044560b82368f1399ed4",
+      "reportedTime": null,
+      "processThreads": 19
+    },
+    {
+      "threads": "baseline",
+      "image": "dark",
+      "elapsedMs": 4121,
+      "blocks": 10,
+      "textHash": "8de9caf3ec81f521513c91f2115e0991aff2a344244cff99682f695e7cfc1fd8",
+      "reportedTime": null,
+      "processThreads": 19
+    },
+    {
+      "threads": "optimized",
+      "image": "light",
+      "elapsedMs": 2562,
+      "blocks": 10,
+      "textHash": "4dedc72e8bf4bef64671eb24b2331b7bf34373b529c1044560b82368f1399ed4",
+      "reportedTime": null,
+      "processThreads": 7
+    },
+    {
+      "threads": "optimized",
+      "image": "dark",
+      "elapsedMs": 2482,
+      "blocks": 10,
+      "textHash": "8de9caf3ec81f521513c91f2115e0991aff2a344244cff99682f695e7cfc1fd8",
+      "reportedTime": null,
+      "processThreads": 7
+    },
+    {
+      "threads": "optimized",
+      "image": "tiny",
+      "elapsedMs": 1203,
+      "blocks": 5,
+      "textHash": "7f9ead4a2251229ba97934115b27c3f4f07ac31e3b5edb7063df6206e2f3cc2a",
+      "reportedTime": null,
+      "processThreads": 7
+    },
+    {
+      "threads": "optimized",
+      "image": "long",
+      "elapsedMs": 1439,
+      "blocks": 2,
+      "textHash": "b8200a95ecb6ba15e91d1bb404de22d7816a42e91cf41e6376b61f368645c709",
+      "reportedTime": null,
+      "processThreads": 7
+    },
+    {
+      "threads": "optimized",
+      "image": "narrow",
+      "elapsedMs": 1040,
+      "blocks": 3,
+      "textHash": "8b2266fb8ca2e4794a030aebe4aba769f0d1839eaf0113645be8f1e58470beee",
+      "reportedTime": null,
+      "processThreads": 7
+    },
+    {
+      "threads": "optimized",
+      "image": "rotated",
+      "elapsedMs": 2104,
+      "blocks": 10,
+      "textHash": "ba61c2db9fd89e64f7f21a4eae0743c6fb19a552f1dca0b3f242445073dfeea5",
+      "reportedTime": null,
+      "processThreads": 7
+    },
+    {
+      "threads": "optimized",
+      "image": "light",
+      "elapsedMs": 2180,
+      "blocks": 10,
+      "textHash": "4dedc72e8bf4bef64671eb24b2331b7bf34373b529c1044560b82368f1399ed4",
+      "reportedTime": null,
+      "processThreads": 7
+    },
+    {
+      "threads": "optimized",
+      "image": "dark",
+      "elapsedMs": 2288,
+      "blocks": 10,
+      "textHash": "8de9caf3ec81f521513c91f2115e0991aff2a344244cff99682f695e7cfc1fd8",
+      "reportedTime": null,
+      "processThreads": 7
+    }
+  ],
+  "qualityComparison": [
+    {
+      "image": "light",
+      "blocks": 10,
+      "textAndBoxesEqual": true,
+      "maxScoreDelta": 1.8212530350503187E-07
+    },
+    {
+      "image": "dark",
+      "blocks": 10,
+      "textAndBoxesEqual": true,
+      "maxScoreDelta": 1.0575017628244865E-07
+    },
+    {
+      "image": "tiny",
+      "blocks": 5,
+      "textAndBoxesEqual": true,
+      "maxScoreDelta": 1.110813835358826E-07
+    },
+    {
+      "image": "long",
+      "blocks": 2,
+      "textAndBoxesEqual": true,
+      "maxScoreDelta": 3.32410519110482E-08
+    },
+    {
+      "image": "narrow",
+      "blocks": 3,
+      "textAndBoxesEqual": true,
+      "maxScoreDelta": 3.6103384837282704E-07
+    },
+    {
+      "image": "rotated",
+      "blocks": 10,
+      "textAndBoxesEqual": true,
+      "maxScoreDelta": 5.960464477539063E-08
+    }
+  ],
+  "productionWorker": {
+    "textAndNormalizedBoxesMatchStock": true,
+    "samples": [
+      {
+        "fixture": "light",
+        "elapsedMs": 2416,
+        "pass": 1
+      },
+      {
+        "fixture": "dark",
+        "elapsedMs": 2197,
+        "pass": 1
+      },
+      {
+        "fixture": "tiny",
+        "elapsedMs": 1116,
+        "pass": 1
+      },
+      {
+        "fixture": "long",
+        "elapsedMs": 1503,
+        "pass": 1
+      },
+      {
+        "fixture": "narrow",
+        "elapsedMs": 656,
+        "pass": 1
+      },
+      {
+        "fixture": "rotated",
+        "elapsedMs": 2156,
+        "pass": 1
+      },
+      {
+        "fixture": "light",
+        "elapsedMs": 2605,
+        "pass": 2
+      },
+      {
+        "fixture": "dark",
+        "elapsedMs": 3239,
+        "pass": 2
+      },
+      {
+        "fixture": "tiny",
+        "elapsedMs": 1229,
+        "pass": 2
+      },
+      {
+        "fixture": "long",
+        "elapsedMs": 1438,
+        "pass": 2
+      },
+      {
+        "fixture": "narrow",
+        "elapsedMs": 617,
+        "pass": 2
+      },
+      {
+        "fixture": "rotated",
+        "elapsedMs": 2105,
+        "pass": 2
+      }
+    ],
+    "unicodeAndSpaceCachePathPassed": true,
+    "backgroundStartupMs": 3151
+  },
+  "cropComparison": {
+    "allocationsAfter": 2,
+    "allocationsBefore": [
+      1350242,
+      1797002
+    ],
+    "pixelsPreserved": true,
+    "native599x500": {
+      "afterMs": [
+        0.95,
+        1.1
+      ],
+      "beforeMs": [
+        210,
+        234
+      ]
+    },
+    "native580x388": {
+      "afterMs": [
+        1.02,
+        1.47
+      ],
+      "beforeMs": [
+        158,
+        168
+      ]
+    }
+  },
+  "limitations": [
+    "Synthetic fixtures rather than the user screenshots from runtime logs.",
+    "Sequential profiles on one computer; timings vary with system load.",
+    "Cold cache creation and model initialization occur separately in background.",
+    "Custom binaries/models and cache failures retain stock behavior."
+  ],
+  "sources": [
+    "https://github.com/hiroi-sora/RapidOCR-json/blob/v0.2.0/cpp/src/CrnnNet.cpp",
+    "https://github.com/microsoft/onnxruntime/blob/v1.12.1/onnxruntime/core/session/inference_session_utils.cc",
+    "https://onnxruntime.ai/docs/performance/model-optimizations/graph-optimizations.html"
+  ]
+}

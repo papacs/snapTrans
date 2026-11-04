@@ -50,6 +50,7 @@ func TestSelectedTextUsesTextOnlyPromptAndRecoversMissingRegion(t *testing.T) {
 	require.Contains(t, first.Messages[1].Content, "[2] World")
 	require.NotContains(t, second.Messages[1].Content, "[1]")
 	require.Contains(t, second.Messages[1].Content, "[2] World")
+	require.Contains(t, second.Messages[1].Content, `"Hello\nWorld"`, "a repair needs the full source context even when it emits only a missing region")
 	require.Contains(t, translated.String(), "你好")
 	require.Contains(t, translated.String(), "世界")
 }

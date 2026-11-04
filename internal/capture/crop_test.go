@@ -1,12 +1,106 @@
 package capture
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func BenchmarkOCRCropPipeline(b *testing.B) {
+	frame := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
+	for y := 0; y < frame.Rect.Dy(); y++ {
+		for x := 0; x < frame.Rect.Dx(); x++ {
+			frame.SetRGBA(x, y, color.RGBA{R: uint8(x), G: uint8(y), B: uint8(x + y), A: 255})
+		}
+	}
+	for _, size := range []image.Point{{505, 89}, {580, 388}, {599, 500}} {
+		b.Run(fmt.Sprintf("%dx%d", size.X, size.Y), func(b *testing.B) {
+			rect := image.Rect(120, 80, 120+size.X, 80+size.Y)
+			b.Run("crop", func(b *testing.B) {
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					CropForOCR(frame, rect)
+				}
+			})
+			cropped := CropForOCR(frame, rect)
+			b.Run("png", func(b *testing.B) {
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					if _, err := EncodePNGBytes(cropped); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		})
+	}
+}
+
+func TestOCRCropDoesNotAllocatePerPixel(t *testing.T) {
+	frame := image.NewRGBA(image.Rect(0, 0, 800, 600))
+	for _, rect := range []image.Rectangle{image.Rect(10, 20, 590, 408), image.Rect(10, 20, 515, 109)} {
+		allocations := testing.AllocsPerRun(3, func() { CropForOCR(frame, rect) })
+		require.Less(t, allocations, 16.0, "crop allocations must stay bounded instead of growing with pixel count")
+	}
+}
+
+func TestOCRCropAtOriginalSizePreservesPixelsAndCoordinates(t *testing.T) {
+	parent := image.NewRGBA(image.Rect(-80, -60, 500, 400))
+	for y := parent.Rect.Min.Y; y < parent.Rect.Max.Y; y++ {
+		for x := parent.Rect.Min.X; x < parent.Rect.Max.X; x++ {
+			parent.SetRGBA(x, y, color.RGBA{R: uint8(x), G: uint8(y), B: uint8(x + y), A: 255})
+		}
+	}
+	frame := parent.SubImage(image.Rect(-40, -30, 400, 350))
+	for _, rect := range []image.Rectangle{image.Rect(-20, -10, 110, 100), image.Rect(120, 100, 250, 220)} {
+		cropped := CropForOCR(frame, rect)
+		require.Equal(t, image.Rect(0, 0, rect.Dx(), rect.Dy()), cropped.Bounds())
+		for y := 0; y < rect.Dy(); y++ {
+			for x := 0; x < rect.Dx(); x++ {
+				require.Equal(t, frame.At(rect.Min.X+x, rect.Min.Y+y), cropped.At(x, y))
+			}
+		}
+		original := frame.At(rect.Min.X, rect.Min.Y)
+		cropped.SetRGBA(0, 0, color.RGBA{})
+		require.Equal(t, original, frame.At(rect.Min.X, rect.Min.Y), "crop pixels must not alias the frozen screenshot")
+	}
+}
+
+func TestOCRCropAtOriginalSizePreservesTransparentSourcePixels(t *testing.T) {
+	frame := image.NewNRGBA(image.Rect(-20, -10, 180, 140))
+	for y := frame.Rect.Min.Y; y < frame.Rect.Max.Y; y++ {
+		for x := frame.Rect.Min.X; x < frame.Rect.Max.X; x++ {
+			frame.SetNRGBA(x, y, color.NRGBA{R: uint8(x), G: uint8(y), B: uint8(x + y), A: uint8(x - y)})
+		}
+	}
+	rect := image.Rect(-10, 0, 120, 100)
+	cropped := CropForOCR(frame, rect)
+	for y := 0; y < rect.Dy(); y++ {
+		for x := 0; x < rect.Dx(); x++ {
+			r, g, b, a := frame.At(rect.Min.X+x, rect.Min.Y+y).RGBA()
+			require.Equal(t, color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: uint8(a >> 8)}, cropped.RGBAAt(x, y))
+		}
+	}
+}
+
+func TestScaledRGBACropMatchesGenericBilinearPixels(t *testing.T) {
+	frame := image.NewRGBA(image.Rect(-80, -60, 500, 400))
+	for y := frame.Rect.Min.Y; y < frame.Rect.Max.Y; y++ {
+		for x := frame.Rect.Min.X; x < frame.Rect.Max.X; x++ {
+			frame.SetRGBA(x, y, color.RGBA{R: uint8(x) / 2, G: uint8(y) / 2, B: uint8(x+y) / 2, A: 128})
+		}
+	}
+	// Hiding the concrete type keeps the original generic sampler as a reference.
+	generic := struct{ image.Image }{frame}
+	for _, rect := range []image.Rectangle{image.Rect(-20, -10, 110, 50), image.Rect(120, 100, 200, 130), image.Rect(10, 20, 30, 35)} {
+		cropped := CropForOCR(frame, rect)
+		expected := CropForOCR(generic, rect)
+		require.Equal(t, expected.Bounds(), cropped.Bounds())
+		require.Equal(t, expected.Pix, cropped.Pix, "resampling must preserve every premultiplied RGBA pixel")
+	}
+}
 
 func TestOCRScaleForRectKeepsLargeSelectionsAtOne(t *testing.T) {
 	require.Equal(t, 1.0, OCRScaleForRect(image.Rect(0, 0, 200, 100)))

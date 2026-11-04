@@ -33,9 +33,11 @@ func shortcutTestApp(t *testing.T) *App {
 		t.Cleanup(func() { _ = registration.Unregister() })
 	}
 	t.Cleanup(func() {
-		_ = app.shortcut.Unregister()
-		_ = app.screenshotShortcut.Unregister()
-		_ = app.replyShortcut.Unregister()
+		for _, registration := range []*hotkeys.Registration{app.shortcut, app.screenshotShortcut, app.replyShortcut} {
+			if registration != nil {
+				_ = registration.Unregister()
+			}
+		}
 	})
 	require.NoError(t, app.configStore.Save(app.cfg))
 	return app

@@ -49,6 +49,7 @@ func (a *App) StartTextAction(request TextActionRequest) error {
 	a.mu.Lock()
 	cfg := a.cfg.WithDefaults()
 	frame := a.frame
+	epoch := a.captureEpoch
 	a.mu.Unlock()
 	if !actionEnabled(cfg.Features, request.Action) {
 		return errors.New("this text action is disabled in settings")
@@ -74,29 +75,18 @@ func (a *App) StartTextAction(request TextActionRequest) error {
 			return errors.New("no captured frame is available; capture again")
 		}
 	}
-	a.mu.Lock()
-	if a.extensionProcessing != nil {
-		a.extensionProcessing()
+	ctx, cancel, revision := a.newTextActionContext(request.ID, epoch, time.Duration(cfg.TranslationTimeoutSeconds)*time.Second)
+	if ctx == nil {
+		return context.Canceled
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.TranslationTimeoutSeconds)*time.Second)
-	a.extensionProcessing = cancel
-	a.extensionRequestID = request.ID
-	a.mu.Unlock()
 	emit := func(event TextActionEvent) {
-		if ctx.Err() == nil && a.ctx != nil {
+		if ctx.Err() == nil && a.textActionCurrent(revision) && a.ctx != nil {
 			runtime.EventsEmit(a.ctx, "text-action", event)
 		}
 	}
 	go func() {
 		defer cancel()
-		defer func() {
-			a.mu.Lock()
-			defer a.mu.Unlock()
-			if a.extensionRequestID == request.ID {
-				a.extensionProcessing = nil
-				a.extensionRequestID = ""
-			}
-		}()
+		defer a.finishTextAction(revision)
 		client := translator.NewOpenAICompatible(translationOptions(cfg))
 		started := time.Now()
 		preparedAt := started
@@ -151,12 +141,43 @@ func (a *App) StartTextAction(request TextActionRequest) error {
 			}
 		}
 		// Timeouts still need a terminal event; explicit cancellation does not.
-		if a.ctx != nil {
+		if a.textActionCurrent(revision) && a.ctx != nil {
 			runtime.EventsEmit(a.ctx, "text-action", event)
 		}
 	}()
 	return nil
 }
+
+func (a *App) newTextActionContext(id string, epoch uint64, timeout time.Duration) (context.Context, context.CancelFunc, uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.shuttingDown || a.captureEpoch != epoch {
+		return nil, nil, 0
+	}
+	if a.extensionProcessing != nil {
+		a.extensionProcessing()
+	}
+	ctx, cancel := context.WithTimeout(a.lifetimeContextLocked(), timeout)
+	a.extensionRevision++
+	a.extensionProcessing, a.extensionRequestID = cancel, id
+	return ctx, cancel, a.extensionRevision
+}
+
+func (a *App) textActionCurrent(revision uint64) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return !a.shuttingDown && a.extensionProcessing != nil && a.extensionRevision == revision
+}
+
+func (a *App) finishTextAction(revision uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.extensionRevision == revision {
+		a.extensionProcessing = nil
+		a.extensionRequestID = ""
+	}
+}
+
 func (a *App) CancelTextAction(id string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -170,6 +191,10 @@ func (a *App) CancelTextAction(id string) error {
 func (a *App) cancelTextAction() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.cancelTextActionLocked()
+}
+
+func (a *App) cancelTextActionLocked() {
 	if a.extensionProcessing != nil {
 		a.extensionProcessing()
 		a.extensionProcessing = nil

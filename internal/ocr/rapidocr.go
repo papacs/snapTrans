@@ -53,6 +53,9 @@ func (r *RapidOCR) ExtractText(ctx context.Context, imageDataURL string) (string
 }
 
 func (r *RapidOCR) ExtractResult(ctx context.Context, imageDataURL string) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
 	if strings.TrimSpace(r.ExecutablePath) == "" {
 		return Result{}, errors.New("RapidOCR executable path is required")
 	}
@@ -61,6 +64,17 @@ func (r *RapidOCR) ExtractResult(ctx context.Context, imageDataURL string) (Resu
 	resolvedExecutable, err := ResolveExecutablePath(r.ExecutablePath, cwd, executable)
 	if err != nil {
 		return Result{}, err
+	}
+	// The bundled engine accepts base64 over stdin. A single-use worker avoids
+	// narrow Windows argv corrupting Unicode temp paths, and never writes the
+	// screenshot to disk. Keep the CLI path for custom executables.
+	if strings.EqualFold(filepath.Base(resolvedExecutable), stockOCRRuntimeProfile.executable.name) {
+		digest, hashErr := hashOCRRuntimeAsset(resolvedExecutable, stockOCRRuntimeProfile.executable.size, nil)
+		if hashErr == nil && digest == stockOCRRuntimeProfile.executable.digest {
+			worker := NewRapidOCRWorker(resolvedExecutable, r.Timeout)
+			defer worker.Close()
+			return worker.Run(ctx, imageDataURL)
+		}
 	}
 
 	imageBytes, err := DecodeImageDataURL(imageDataURL)
@@ -98,7 +112,7 @@ func (r *RapidOCR) ExtractResult(ctx context.Context, imageDataURL string) (Resu
 		output, err = combinedOutputGuarded(altCmd)
 	}
 	if runCtx.Err() != nil {
-		return Result{}, fmt.Errorf("RapidOCR timed out after %s", r.Timeout)
+		return Result{}, fmt.Errorf("RapidOCR request ended: %w", runCtx.Err())
 	}
 	if err != nil {
 		return Result{}, fmt.Errorf("RapidOCR failed: %w: %s", err, strings.TrimSpace(string(output)))
@@ -130,6 +144,7 @@ func NewRapidOCRCommand(ctx context.Context, resolvedExecutable string, imagePat
 	cmd := exec.CommandContext(ctx, resolvedExecutable, "--image="+imagePath)
 	configureOCRCommand(cmd)
 	cmd.Dir = filepath.Dir(resolvedExecutable)
+	configureOCRRuntime(cmd)
 	return cmd
 }
 
@@ -139,6 +154,7 @@ func NewRapidOCRCommandWithImagePathArg(ctx context.Context, resolvedExecutable 
 	cmd := exec.CommandContext(ctx, resolvedExecutable, "--image_path="+imagePath)
 	configureOCRCommand(cmd)
 	cmd.Dir = filepath.Dir(resolvedExecutable)
+	configureOCRRuntime(cmd)
 	return cmd
 }
 
@@ -235,6 +251,20 @@ func ExtractResultFromJSON(raw []byte, imageWidth int, imageHeight int) (Result,
 	if err := decodeFirstJSONValue(raw, &decoded); err != nil {
 		return Result{}, fmt.Errorf("invalid OCR JSON: %w", err)
 	}
+	// Stock RapidOCR uses 100 for text and 101 for a successful empty image.
+	// Error data can contain local paths or diagnostics, never source text.
+	if envelope, ok := decoded.(map[string]any); ok {
+		if code, ok := envelope["code"].(float64); ok {
+			switch {
+			case code == 101:
+				return Result{}, nil
+			case code >= 200:
+				return Result{}, fmt.Errorf("RapidOCR engine returned status %g", code)
+			case code == 100:
+				decoded = envelope["data"]
+			}
+		}
+	}
 
 	parts := make([]string, 0)
 	blocks := make([]Block, 0)
@@ -314,17 +344,25 @@ func collectResult(value any, imageWidth int, imageHeight int, parts *[]string, 
 		if text == "" {
 			return false
 		}
-		appendPart(parts, text)
 		if block, ok := blockFromMap(typed, imageWidth, imageHeight, text); ok {
-			*blocks = append(*blocks, block)
+			if block.Width > 0 && block.Height > 0 {
+				appendPart(parts, text)
+				*blocks = append(*blocks, block)
+			}
+			return true
 		}
+		appendPart(parts, text)
 		return true
 	case []any:
 		if text, ok := textFromArray(typed); ok {
-			appendPart(parts, text)
 			if block, ok := blockFromArray(typed, imageWidth, imageHeight, text); ok {
-				*blocks = append(*blocks, block)
+				if block.Width > 0 && block.Height > 0 {
+					appendPart(parts, text)
+					*blocks = append(*blocks, block)
+				}
+				return true
 			}
+			appendPart(parts, text)
 			return true
 		}
 		hasChildText := false
@@ -408,6 +446,17 @@ func blockFromBox(value any, imageWidth int, imageHeight int, text string) (Bloc
 	if maxX <= minX || maxY <= minY {
 		return Block{}, false
 	}
+	if imageWidth > 0 {
+		minX, maxX = clampFloat(minX, 0, float64(imageWidth)), clampFloat(maxX, 0, float64(imageWidth))
+	}
+	if imageHeight > 0 {
+		minY, maxY = clampFloat(minY, 0, float64(imageHeight)), clampFloat(maxY, 0, float64(imageHeight))
+	}
+	if maxX <= minX || maxY <= minY {
+		// This is boxed text outside the selection, not unpositioned text.
+		// Consume it without falling back to translating padded image content.
+		return Block{}, true
+	}
 
 	return normalizeBlock(text, minX, minY, maxX-minX, maxY-minY, imageWidth, imageHeight), true
 }
@@ -460,12 +509,23 @@ func sortBlocks(blocks []Block) {
 	sort.SliceStable(blocks, func(left int, right int) bool {
 		a := blocks[left]
 		b := blocks[right]
-		rowTolerance := math.Min(a.Height, b.Height) * 0.7
-		if math.Abs(a.Y-b.Y) > rowTolerance {
+		if a.Y != b.Y {
 			return a.Y < b.Y
 		}
 		return a.X < b.X
 	})
+	// Pairwise row tolerances are not transitive: A can share a row with B,
+	// B with C, but A not with C. Anchor each row before sorting it left to right.
+	for start := 0; start < len(blocks); {
+		anchor := blocks[start]
+		end := start + 1
+		for end < len(blocks) && blocks[end].Y-anchor.Y <= math.Min(anchor.Height, blocks[end].Height)*0.7 {
+			end++
+		}
+		row := blocks[start:end]
+		sort.SliceStable(row, func(left, right int) bool { return row[left].X < row[right].X })
+		start = end
+	}
 }
 
 func dedupeBlocks(blocks []Block) []Block {

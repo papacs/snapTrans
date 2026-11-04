@@ -3,6 +3,7 @@ package ocr
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +62,19 @@ func TestReadOneResultReportsEOFWithoutResult(t *testing.T) {
 	require.Contains(t, err.Error(), "process exited")
 }
 
+func TestReadOneResultPreservesTextThatLooksLikeTheStartupBanner(t *testing.T) {
+	for _, raw := range []string{
+		`{"code":100,"data":[{"text":"OCR init completed."}]}`,
+		"{\n\"code\":100,\n\"data\":[{\"text\":\"init completed successfully\"}]\n}",
+	} {
+		actual, err := readOneResult(strings.NewReader("OCR init completed.\n" + raw + "\n"))
+		require.NoError(t, err, "recognized text must never be mistaken for engine logging")
+		result, err := ExtractResultFromJSON(actual, 100, 100)
+		require.NoError(t, err)
+		require.Contains(t, result.Text, "init completed")
+	}
+}
+
 func TestWorkerRunParsesImageDimensionsForBlockNormalization(t *testing.T) {
 	worker := NewRapidOCRWorker("", time.Second)
 	require.NotNil(t, worker)
@@ -105,4 +119,24 @@ func TestCancelledWorkerRequestDoesNotAcquireAvailableGate(t *testing.T) {
 		require.ErrorIs(t, err, context.Canceled)
 		require.Len(t, gate, 1)
 	}
+}
+
+type testOCRInput struct {
+	io.Writer
+	io.Closer
+}
+
+func TestWorkerOwnTimeoutPreservesDeadlineIdentity(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	worker := NewRapidOCRWorker("", 30*time.Millisecond)
+	worker.ready = true
+	worker.stdin = testOCRInput{Writer: io.Discard, Closer: writer}
+	worker.stdout = reader
+	defer worker.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := worker.Run(ctx, "aW1hZ2U=")
+	require.ErrorIs(t, err, context.DeadlineExceeded, "a worker timeout must not trigger another expensive fallback")
+	require.NoError(t, ctx.Err(), "the worker's deadline must be distinguishable from the outer deadline")
 }

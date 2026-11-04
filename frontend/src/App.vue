@@ -94,7 +94,7 @@ import {
 import {
   parseTranslationOutput
 } from "./utils/translation";
-import { buildSourceRegions, layoutTranslations, OVERLAY_FONT_FAMILY } from "./utils/overlay-layout";
+import { buildSourceRegions, layoutTranslations, OVERLAY_FONT_FAMILY, type SourceRegion, type OverlayBlock } from "./utils/overlay-layout";
 import { canvasTextMeasurer, leadingMarkerInset, paintTranslationOverlay } from "./utils/overlay-painter";
 import { nativeSelectionBackdrop } from "./utils/selection-backdrop";
 import { layoutPlainTranslation } from "./utils/plain-translation";
@@ -158,7 +158,9 @@ async function submitSettings(event: Event): Promise<void> {
   await saveSettings();
 }
 const settingsError = ref("");
+const configLoading = ref(true);
 const settingsSaving = ref(false);
+let settingsSession = 0;
 const sourceText = ref("");
 const extensionOpen = ref(false);
 const replyOpen = ref(false);
@@ -291,9 +293,17 @@ function resetTranslationText(): void {
   translationText.value = "";
 }
 
-const parsedTranslation = computed(() => parseTranslationOutput(translationText.value));
+const parsedTranslation = computed(() => parseTranslationOutput(translationText.value, textBlocks.value.length || undefined));
 
-const cleanTranslationText = computed(() => parsedTranslation.value.lines.join("\n").trim());
+const cleanTranslationText = computed(() => {
+  const parsed = parsedTranslation.value;
+  // Repairs can arrive after later regions, or replace an earlier ID. Match
+  // the overlay's latest values and source order when copying region results.
+  const lines = textBlocks.value.length && parsed.hasIndexedEntries
+    ? Object.keys(parsed.indexed).map(Number).sort((left, right) => left - right).map(index => parsed.indexed[index]!)
+    : parsed.lines;
+  return lines.join("\n").trim();
+});
 
 const plainTranslationCard = computed(() => {
   const rect = resultRect.value;
@@ -412,7 +422,7 @@ const canViewOriginal = computed(() => hasReadableResult.value && Boolean(captur
 const showsOriginal = computed(() => canViewOriginal.value && originalPreviewHeld.value);
 watch([workflowGeneration, canViewOriginal, expandedTranslation], releaseOriginalPreview);
 const showsResultProgress = computed(
-  () => phase.value === "processing" || (phase.value === "streaming" && !translationText.value)
+  () => phase.value === "processing" || (phase.value === "streaming" && !cleanTranslationText.value)
 );
 const usesImageInput = computed(() => !translationInputOverride.value && savedConfig.directImageInput && !capture.value?.selectedText);
 const canRetryWithOCR = computed(() => usesImageInput.value && lastImageRegion.value && (phase.value === "error" || phase.value === "partial"));
@@ -460,7 +470,8 @@ const sourceRegions = computed(() => {
   }));
   return buildSourceRegions(textBlocks.value, rect, insets, Boolean(capture.value?.selectedText));
 });
-const overlayLayout = computed(() => layoutTranslations(sourceRegions.value, textBlocks.value, parsedTranslation.value, resolvedTranslationDirection.value, textMeasurer()));
+const overlayLayoutCache = new WeakMap<SourceRegion, OverlayBlock>();
+const overlayLayout = computed(() => layoutTranslations(sourceRegions.value, textBlocks.value, parsedTranslation.value, resolvedTranslationDirection.value, textMeasurer(), overlayLayoutCache));
 const nativeBackdrops = computed(() => {
   const rect=resultRect.value;
   if(!rect || !capture.value?.selectedText) return [];
@@ -559,44 +570,44 @@ onMounted(async () => {
       await startCapture(payload);
     }),
     onBackendEvent<GenerationEvent>("ocr-start", (payload) => {
-      if (!isCurrentGeneration(payload)) {
+      if (!isActiveWorkflow(payload) || phase.value === "streaming") {
         return;
       }
       phase.value = "processing";
     }),
     onBackendEvent<TextRegionsEvent>("text-regions", payload => {
-      if (!isCurrentGeneration(payload)) return;
+      if (!isActiveWorkflow(payload)) return;
       textBlocks.value = payload.blocks ?? [];
       sourceText.value = payload.text ?? "";
     }),
     onBackendEvent<OCRResultEvent>("ocr-result", (payload) => {
-      if (!isCurrentGeneration(payload)) {
+      if (!isActiveWorkflow(payload)) {
         return;
       }
       textBlocks.value = payload.blocks ?? [];
       sourceText.value = payload.text ?? "";
     }),
     onBackendEvent<TranslationDirectionEvent>("translation-direction", (payload) => {
-      if (!isCurrentGeneration(payload) || manualDirection.value) {
+      if (!isActiveWorkflow(payload) || manualDirection.value) {
         return;
       }
       translationDirection.value = payload.direction === "to-en" ? "to-en" : "to-zh";
     }),
     onBackendEvent<GenerationEvent>("translation-start", (payload) => {
-      if (!isCurrentGeneration(payload)) {
+      if (!isActiveWorkflow(payload)) {
         return;
       }
       phase.value = "streaming";
     }),
     onBackendEvent<TranslationTokenEvent>("translation-token", (payload) => {
-      if (!isCurrentGeneration(payload)) {
+      if (!isActiveWorkflow(payload)) {
         return;
       }
       queueTranslationText(payload.token);
       phase.value = "streaming";
     }),
     onBackendEvent<GenerationEvent>("translation-done", (payload) => {
-      if (!isCurrentGeneration(payload)) {
+      if (!isActiveWorkflow(payload)) {
         return;
       }
       flushTranslationText();
@@ -607,6 +618,7 @@ onMounted(async () => {
       if (!isCurrentGeneration(payload)) {
         return;
       }
+      if ((payload.stage === "ocr" || payload.stage === "translation") && !isResultBusy.value) return;
       flushTranslationText();
       if (payload.stage === "translation" && translationText.value.trim()) {
         errorMessage.value = payload.message;
@@ -636,9 +648,16 @@ onMounted(async () => {
       workflowGeneration.value += 1;
       phase.value = "idle";
       const wasOpen = settingsOpen.value;
+      if (!wasOpen) {
+        discardSettingsDraft();
+        settingsError.value = "";
+      }
       settingsOpen.value = true;
+      const session = settingsSession;
       await nextTick();
+      if (!settingsOpen.value || session !== settingsSession) return;
       await showSettingsWindow();
+      if (!settingsOpen.value || session !== settingsSession) return;
       void loadHistory();
       void loadEnvironmentStatus();
       if (!wasOpen) void loadAutoStart();
@@ -646,9 +665,15 @@ onMounted(async () => {
     })
   );
 
-  await frontendReady();
-  Object.assign(savedConfig, await loadConfig());
-  Object.assign(config, savedConfig);
+  try {
+    await frontendReady();
+    Object.assign(savedConfig, await loadConfig());
+    Object.assign(config, savedConfig);
+  } catch (error) {
+    settingsError.value = error instanceof Error ? error.message : "Failed to load settings";
+  } finally {
+    configLoading.value = false;
+  }
 });
 
 onBeforeUnmount(() => {
@@ -678,6 +703,11 @@ function updateViewport(): void {
 
 function isCurrentGeneration(payload: { generation?: number }): boolean {
   return typeof payload.generation !== "number" || payload.generation === workflowGeneration.value;
+}
+
+function isActiveWorkflow(payload: { generation?: number }): boolean {
+  // A terminal result also closes its generation to delayed metadata/tokens.
+  return isCurrentGeneration(payload) && isResultBusy.value;
 }
 
 function releaseOriginalPreview(): void {
@@ -1099,8 +1129,13 @@ async function copyOcrText(): Promise<void> {
   if (!text) {
     return;
   }
-  try { await copyText(text); screenshotNotice.value = settingsText.value.copied; }
-  catch { screenshotNotice.value = settingsText.value.copyFailed; }
+  const generation = workflowGeneration.value;
+  try {
+    await copyText(text);
+    if (generation === workflowGeneration.value) screenshotNotice.value = settingsText.value.copied;
+  } catch {
+    if (generation === workflowGeneration.value) screenshotNotice.value = settingsText.value.copyFailed;
+  }
 }
 
 async function copyTranslatedImage(): Promise<void> {
@@ -1294,8 +1329,10 @@ async function restore(): Promise<void> {
 }
 
 function discardSettingsDraft(): void {
+  settingsSession += 1;
   Object.assign(config, savedConfig);
   autoStartEnabled.value = savedAutoStart.value;
+  autoStartLoading.value = false;
   connectionTestSequence += 1;
   testStatus.value = "idle";
   testMessage.value = "";
@@ -1314,6 +1351,7 @@ async function closeSettings(): Promise<void> {
 }
 
 function openSettings(): void {
+  discardSettingsDraft();
   settingsError.value = "";
   settingsOpen.value = true;
   void loadHistory();
@@ -1331,14 +1369,18 @@ async function loadVersion(): Promise<void> {
 }
 
 async function loadAutoStart(): Promise<void> {
+  const session = settingsSession;
   autoStartLoading.value = true;
   try {
-    savedAutoStart.value = await isAutoStartEnabled();
+    const enabled = await isAutoStartEnabled();
+    if (session !== settingsSession || !settingsOpen.value) return;
+    savedAutoStart.value = enabled;
     autoStartEnabled.value = savedAutoStart.value;
   } catch (error) {
+    if (session !== settingsSession || !settingsOpen.value) return;
     settingsError.value = error instanceof Error ? error.message : "Failed to read autostart";
   } finally {
-    autoStartLoading.value = false;
+    if (session === settingsSession) autoStartLoading.value = false;
   }
 }
 
@@ -1432,7 +1474,8 @@ function onShortcutRecorderKeydown(event: KeyboardEvent): void {
 }
 
 async function saveSettings(): Promise<void> {
-  if (settingsSaving.value || autoStartLoading.value) return;
+  if (configLoading.value || settingsSaving.value || autoStartLoading.value) return;
+  const session = settingsSession;
   settingsError.value = "";
   settingsSaving.value = true;
   try {
@@ -1442,10 +1485,13 @@ async function saveSettings(): Promise<void> {
     Object.assign(savedConfig, draft);
     savedAutoStart.value = autoStart;
     settingsSaving.value = false;
+    if (session !== settingsSession || !settingsOpen.value) return;
     await closeSettings();
   } catch (error) {
     settingsSaving.value = false;
-    settingsError.value = error instanceof Error ? error.message : "Failed to save settings";
+    if (session === settingsSession && settingsOpen.value) {
+      settingsError.value = error instanceof Error ? error.message : "Failed to save settings";
+    }
   }
 }
 
@@ -1758,7 +1804,7 @@ function replyFromResult(): void {
         @submit.prevent="submitSettings"
         @keydown="onShortcutRecorderKeydown"
       >
-        <fieldset class="contents" :disabled="settingsSaving">
+        <fieldset class="contents" :disabled="configLoading || settingsSaving">
         <header
           data-testid="settings-drag-region"
           class="settings-header flex shrink-0 cursor-move select-none items-center justify-between gap-3 border-b border-slate-200/90 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-zinc-950"
@@ -2213,7 +2259,7 @@ function replyFromResult(): void {
               type="submit"
               :title="settingsLocale === 'en' ? 'Save changes (Ctrl+S)' : '保存设置（Ctrl+S）'"
               aria-keyshortcuts="Control+s Meta+s"
-              :disabled="settingsSaving || autoStartLoading"
+              :disabled="configLoading || settingsSaving || autoStartLoading"
             >
               {{ settingsSaving ? settingsText.saving : settingsText.saveChanges }}
             </button>

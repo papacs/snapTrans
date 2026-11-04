@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/kbinani/screenshot"
@@ -47,6 +48,8 @@ type ManualScrollSnapshot struct {
 // reliable downward visual overlap.
 type ManualScrollCapture struct {
 	mu           sync.Mutex
+	ctx          context.Context
+	canceled     atomic.Bool
 	rect         image.Rectangle
 	stitcher     *verticalStitcher
 	captureFrame regionCapture
@@ -103,12 +106,16 @@ func startManualScrollCapture(
 	if err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	stitcher, err := newVerticalStitcher(first, options.MaxPixels)
 	if err != nil {
 		return nil, err
 	}
 
 	return &ManualScrollCapture{
+		ctx:          ctx,
 		rect:         rect,
 		stitcher:     stitcher,
 		captureFrame: captureFrame,
@@ -120,6 +127,9 @@ func startManualScrollCapture(
 func (session *ManualScrollCapture) CaptureNext() (ManualScrollSnapshot, error) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
+	if err := session.cancellationError(); err != nil {
+		return ManualScrollSnapshot{}, err
+	}
 
 	if session.stitcher.frameCount() >= session.maxFrames || session.stitcher.limitReached {
 		return ManualScrollSnapshot{Frames: session.stitcher.frameCount(), Width: session.stitcher.frames[0].Bounds().Dx(), Height: session.stitcher.totalHeight, LimitReached: true}, nil
@@ -128,9 +138,15 @@ func (session *ManualScrollCapture) CaptureNext() (ManualScrollSnapshot, error) 
 	if err != nil {
 		return ManualScrollSnapshot{}, err
 	}
+	if err := session.cancellationError(); err != nil {
+		return ManualScrollSnapshot{}, err
+	}
 	appended := false
 	if session.stitcher.frameCount() < session.maxFrames {
 		appended = session.stitcher.addManual(frame)
+	}
+	if err := session.cancellationError(); err != nil {
+		return ManualScrollSnapshot{}, err
 	}
 	if !appended {
 		return ManualScrollSnapshot{
@@ -162,6 +178,9 @@ func (session *ManualScrollCapture) snapshotLocked(appended bool) (ManualScrollS
 	if err != nil {
 		return ManualScrollSnapshot{}, err
 	}
+	if err := session.cancellationError(); err != nil {
+		return ManualScrollSnapshot{}, err
+	}
 	return ManualScrollSnapshot{
 		PreviewImageBytes: previewBytes,
 		Frames:            session.stitcher.frameCount(),
@@ -175,11 +194,20 @@ func (session *ManualScrollCapture) snapshotLocked(appended bool) (ManualScrollS
 func (session *ManualScrollCapture) Finish() (Result, error) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
+	if err := session.cancellationError(); err != nil {
+		return Result{}, err
+	}
 
 	frame := session.stitcher.image()
+	if err := session.cancellationError(); err != nil {
+		return Result{}, err
+	}
 	encodeStartedAt := time.Now()
 	encoded, err := encodePNGBytesWithLevel(frame, png.BestSpeed)
 	if err != nil {
+		return Result{}, err
+	}
+	if err := session.cancellationError(); err != nil {
 		return Result{}, err
 	}
 	return Result{
@@ -198,7 +226,15 @@ func (session *ManualScrollCapture) Finish() (Result, error) {
 	}, nil
 }
 
-func (session *ManualScrollCapture) Cancel() {}
+// Cancellation must not wait behind a native frame capture holding mu.
+func (session *ManualScrollCapture) Cancel() { session.canceled.Store(true) }
+
+func (session *ManualScrollCapture) cancellationError() error {
+	if session.canceled.Load() {
+		return context.Canceled
+	}
+	return session.ctx.Err()
+}
 
 type verticalStitcher struct {
 	frames        []*image.RGBA

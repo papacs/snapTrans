@@ -5,6 +5,8 @@ import {
   layoutTranslations,
   wrapOverlayText,
   approximateTextWidth,
+  type SourceRegion,
+  type OverlayBlock,
 } from "./overlay-layout";
 import { parseTranslationOutput } from "./translation";
 import {
@@ -30,6 +32,99 @@ const response = [
 ].join("\n");
 
 describe("local screenshot translation layout", () => {
+  it("fits short native selections without changing their left-aligned prose style", () => {
+    const sources: OCRBlock[] = [{ text: "Hi 聪,", x: 0.1, y: 0.1, width: 0.43, height: 0.23 }];
+    const regions = buildSourceRegions(sources, { width: 100, height: 100 }, [], true);
+    const layout = layoutTranslations(regions, sources, parseTranslationOutput("[1] 嗨，聪，"), "to-zh");
+    expect(layout.blocks[0]!.kind).toBe("prose");
+    expect(layout.blocks[0]!.lines).toEqual(["嗨，聪，"]);
+    expect(layout.truncated).toBe(false);
+  });
+
+  it("keeps a single short label inside a tight eight-pixel OCR height", () => {
+    const sources: OCRBlock[] = [{ text: "NEXT", x: 0.1, y: 0.1, width: 0.33, height: 0.1 }];
+    const layout = layoutTranslations(buildSourceRegions(sources, { width: 100, height: 80 }), sources, parseTranslationOutput("[1] 下一步"), "to-zh");
+    const label = layout.blocks[0]!;
+    expect(label.lines).toEqual(["下一步"]);
+    expect(label.lineHeight).toBeLessThanOrEqual(label.height);
+    expect(label.truncated).toBe(false);
+  });
+
+  it("uses the whole paragraph for unevenly distributed indexed translations", () => {
+    const text = [
+      "The rankings order every model by tokens sent through the OpenRouter API,",
+      "split by task, so you can see what developers run for coding, for agents, or for",
+      "extraction. Pick one near the top for the work you have in mind. Any slug on",
+      "the page drops into the model field of the same request, on the same key.",
+    ];
+    const rows = [[27, 139, 513, 20], [26, 163, 517, 20], [26, 188, 509, 20], [26, 212, 495, 20]];
+    const sources = rows.map(([x, y, width, height], index) => ({
+      text: text[index]!, x: x! / 589, y: y! / 507, width: width! / 589, height: height! / 507,
+    }));
+    const translated = [
+      "排名按通过 OpenRouter API 发送的 token 数量为每个模型排序，",
+      "并按任务分类，因此你可以看到开发者在编程、智能体或",
+      "信息提取任务中使用什么模型。为你要做的工作挑一个排名靠前的模型。页面上的任何模型标识都可以填入同一密钥下",
+      "同一请求的 model 字段。",
+    ];
+    const parsed = parseTranslationOutput(translated.map((line, index) => `[${index + 1}] ${line}`).join("\n"));
+    const layout = layoutTranslations(buildSourceRegions(sources, { width: 589, height: 507 }), sources, parsed, "to-zh");
+    expect(layout.blocks).toHaveLength(1);
+    expect(layout.blocks[0]!.text).toBe(translated.join(""));
+    expect(layout.truncated).toBe(false);
+    expect(layout.blocks[0]!.fontSize).toBeGreaterThanOrEqual(13);
+  });
+  it("shows complete greetings and short section labels inside their OCR boxes", () => {
+    const size = { width: 589, height: 507 };
+    const box = (text: string, x: number, y: number, width: number, height: number): OCRBlock => ({
+      text, x: x / size.width, y: y / size.height, width: width / size.width, height: height / size.height,
+    });
+    const sources = [
+      box("Hi 聪,", 25, 31, 43, 23),
+      box("Pick a model from what developers actually run.", 27, 92, 492, 24),
+      box("The rankings order every model by tokens sent through the OpenRouter API,", 27, 139, 513, 20),
+      box("split by task, so you can see what developers run for coding, for agents, or for", 26, 163, 517, 20),
+      box("extraction. Pick one near the top for the work you have in mind. Any slug on", 26, 188, 509, 20),
+      box("the page drops into the model field of the same request, on the same key.", 26, 212, 495, 20),
+      box("See this week's rankings", 49, 268, 159, 24),
+      box("NEXT", 27, 366, 33, 16),
+      box("Or let the router choose: typesafe/jev-router picks a model and a reasoning effort", 26, 392, 514, 20),
+      box("for each request, billed at the price of the model that answers.", 27, 416, 387, 17),
+    ];
+    const regions = buildSourceRegions(sources, size);
+    const layout = layoutTranslations(regions, sources, parseTranslationOutput("[1] 嗨，聪，\n[8] 下一步"), "to-zh");
+    for (const [index, translation] of [[0, "嗨，聪，"], [7, "下一步"]] as const) {
+      const label = layout.blocks.find(block => block.indices[0] === index)!;
+      expect(label.truncated).toBe(false);
+      expect(label.lines).toEqual([translation]);
+      expect(label.fontSize).toBeGreaterThanOrEqual(8);
+      expect(label.lines.length * label.lineHeight).toBeLessThanOrEqual(label.height);
+      expect(approximateTextWidth(translation, label.fontSize)).toBeLessThanOrEqual(label.bounds.width - 2);
+      expect(label.bounds).toEqual(regions.find(region => region.indices[0] === index)!.bounds);
+    }
+  });
+  it("only measures changed regions while text streams and recalculates new geometry", () => {
+    const sources: OCRBlock[] = Array.from({ length: 40 }, (_, index) => ({
+      text: "A complete independent paragraph to translate.",
+      x: 0, y: index / 40, width: 1, height: 0.02,
+    }));
+    const regions = buildSourceRegions(sources, { width: 500, height: 2000 });
+    const output = sources.map((_, index) => `[${index + 1}] 这是已经完成的独立段落翻译。`).join("\n");
+    const cache = new WeakMap<SourceRegion, OverlayBlock>();
+    const measure = vi.fn(approximateTextWidth);
+    const initial = layoutTranslations(regions, sources, parseTranslationOutput(output), "to-zh", measure, cache);
+    expect(initial.blocks).toHaveLength(40);
+    const initialMeasurements = measure.mock.calls.length;
+    measure.mockClear();
+    const streamed = layoutTranslations(regions, sources, parseTranslationOutput(output + "追加的译文"), "to-zh", measure, cache);
+    expect(streamed.blocks[0]).toBe(initial.blocks[0]);
+    expect(streamed.blocks[39]).not.toBe(initial.blocks[39]);
+    expect(measure.mock.calls.length).toBeLessThan(initialMeasurements / 10);
+
+    const resized = layoutTranslations(buildSourceRegions(sources, { width: 200, height: 2000 }), sources, parseTranslationOutput(output), "to-zh", measure, cache);
+    expect(resized.blocks[0]).not.toBe(initial.blocks[0]);
+    expect(resized.blocks[0]!.bounds.width).toBe(200);
+  });
   it("keeps closing Chinese punctuation with its preceding character", () => {
     const lines = wrapOverlayText("一二三。四五六。七八九！", 16, 48);
     expect(lines.join("")).toBe("一二三。四五六。七八九！");

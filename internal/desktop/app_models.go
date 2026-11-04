@@ -30,8 +30,11 @@ func translationTaskOptions(cfg config.Config) translator.Options {
 }
 
 func (a *App) GetCodexStatus(path string) (codex.Status, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(a.lifetimeContext(), 20*time.Second)
 	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return codex.Status{}, err
+	}
 	return codex.Inspect(ctx, path)
 }
 
@@ -42,7 +45,12 @@ func (a *App) LoginCodex(path string) error {
 		a.codexLoginMu.Unlock()
 		return errors.New("a Codex login is already in progress")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(a.lifetimeContext(), 3*time.Minute)
+	if err := ctx.Err(); err != nil {
+		cancel()
+		a.codexLoginMu.Unlock()
+		return err
+	}
 	a.codexLoginCancel = cancel
 	a.codexLoginMu.Unlock()
 	defer func() {
@@ -52,7 +60,7 @@ func (a *App) LoginCodex(path string) error {
 		a.codexLoginMu.Unlock()
 	}()
 	err := codex.Login(ctx, path, func(url string) {
-		if a.ctx != nil {
+		if ctx.Err() == nil && a.ctx != nil {
 			runtime.BrowserOpenURL(a.ctx, url)
 		}
 	})

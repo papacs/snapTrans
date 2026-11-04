@@ -1,0 +1,34 @@
+{
+  "date": "2026-11-04",
+  "platform": "Windows amd64",
+  "observedAppRequests": [
+    {"region": "555x372", "ocrMs": 3828, "firstTranslationTokenMs": 2628, "selectionToFirstTokenMs": 6460, "totalMs": 8496},
+    {"region": "549x416", "ocrMs": 3582, "firstTranslationTokenMs": 5343, "selectionToFirstTokenMs": 8928, "totalMs": 18172, "physicalModelTurns": 2}
+  ],
+  "requestInterpretation": "Already-running cpu-2 OCR profile; queue/startup were zero, no fallback. The second request had a missing-region repair and a collision with background Codex session refill. Production logs do not contain model text, so they cannot prove that specific repair was a numbering false positive.",
+  "coverageRegression": {"modelOutput": "[1]你好，Alex！\n[2]下一步", "expectedPhysicalRequests": 1, "verified": true},
+  "repairRegression": {"sameProcess": true, "freshEphemeralThreads": true, "refillAfterLogicalRequestOnly": true, "noOldInputInPreparedThread": true, "method": "local fake app-server protocol assertions"},
+  "liveTextProbe": {
+    "model": "gpt-6-luna",
+    "effort": "low",
+    "method": "One baseline and one revised prompt, 8 public newsletter text fragments, fictional recipient Alex, prepared session, direct translator stream; excludes OCR, UI, translation memo and logical repair. Requests performed serially.",
+    "baseline": {"firstTokenMs": 4359, "totalMs": 6254, "missingRegions": 0},
+    "revised": {"firstTokenMs": 5855, "totalMs": 8057, "missingRegions": 0},
+    "quality": "Revised output corrected the unambiguous OpenRouter APl OCR substitution to API, retained Alex and typesafe/jev-router, and translated NEXT as 下一步. Both probes retained all region IDs. The revised probe was slower; these two samples do not establish a generation latency improvement."
+  },
+  "labelBrowserChecks": [
+    {"case": "fictional mixed-language greeting", "width": 43, "height": 23, "translatedGlyphWidth": 40, "fontSize": 10, "lineHeight": 13, "truncated": false},
+    {"case": "NEXT to 下一步", "width": 33, "height": 16, "translatedGlyphWidth": 30, "fontSize": 10, "lineHeight": 13, "truncated": false}
+  ],
+  "labelMethod": "Real Chromium canvas measurement using the app font stack and production layout functions, original OCR box dimensions, fictional recipient; screenshots remain in ignored local benchmark directory.",
+  "paragraphBrowserCheck": {"source": "Original 10-region OCR geometry and public source text with fictional recipient; revised live body translations mapped back to their original IDs", "bodyRegionIndices": [2, 3, 4, 5], "bodyFontSize": 15, "bodyWidth": 517, "bodyHeight": 93, "bodyLines": 4, "footerRegionIndices": [8, 9], "footerFontSize": 15, "footerLines": 2, "anyTruncation": false},
+  "ocrDiagnostic": {
+    "method": "Separate diagnostic one-shot runs with only one model profiling at a time, original weights and image dimensions, intra-op 2 and graph optimization 99; local image only. Profiling overhead and separate runs mean durations must not be summed or used as production latency claims.",
+    "detectionModelRunMs": 614.8,
+    "orientationModelRuns": 10,
+    "orientationModelRunMs": 347.0,
+    "recognitionModelRuns": 10,
+    "recognitionModelRunMs": 2883.9,
+    "conclusion": "Recognition model execution is the principal remaining OCR cost; no image downsampling, orientation disabling, model replacement, or thread-count change was made this round."
+  }
+}

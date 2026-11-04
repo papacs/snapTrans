@@ -5,12 +5,15 @@ import (
 	"testing"
 )
 
-func TestFastTranslationDoesNotChangeReplyEffortOrUnknownModelCapabilities(t *testing.T) {
-	client := NewOpenAICompatible(Options{Provider: "codex", Model: "gpt-6-luna", CodexReasoningEffort: "high", FastTranslation: true})
-	require.Equal(t, "none", client.forTranslation().options.CodexReasoningEffort)
-	require.Equal(t, "high", client.options.CodexReasoningEffort)
+func TestFastTranslationUsesSupportedLunaEffortWithoutChangingReplyEffort(t *testing.T) {
+	for _, model := range []string{"gpt-6-luna", "gpt-5.6-luna"} {
+		client := NewOpenAICompatible(Options{Provider: "codex", Model: model, CodexReasoningEffort: "high", FastTranslation: true})
+		require.Equal(t, "low", client.forTranslation().options.CodexReasoningEffort)
+		require.Equal(t, "high", client.options.CodexReasoningEffort)
+	}
 	for _, options := range []Options{
 		{Provider: "codex", Model: "unknown-model", CodexReasoningEffort: "high", FastTranslation: true},
+		{Provider: "codex", CodexReasoningEffort: "high", FastTranslation: true},
 		{Provider: "codex", Model: "gpt-6-luna", CodexReasoningEffort: "high"},
 		{Provider: "openai-compatible", Model: "gpt-6-luna", CodexReasoningEffort: "high", FastTranslation: true},
 	} {
@@ -20,7 +23,7 @@ func TestFastTranslationDoesNotChangeReplyEffortOrUnknownModelCapabilities(t *te
 
 func TestFastRequestKeepsTermsContextDirectionAndOriginalIDs(t *testing.T) {
 	client := NewOpenAICompatible(Options{Provider: "codex", FastTranslation: true, Glossary: "release=发布", SystemPrompt: "Use a formal tone."})
-	request := buildMissingTranslationRequest("gpt-6-luna", []numberedOCRLine{{Index: 2, Text: "release"}}, DirectionToChinese, "", "")
+	request := buildTranslationRequest("gpt-6-luna", "release", DirectionToChinese, "", "")
 	request = client.prepareTranslationRequest(request, DirectionToChinese, "[2] release")
 	require.Equal(t, "[2] release", request.Messages[1].Content)
 	for _, required := range []string{"Simplified Chinese", "each [n] ID", "never merge, omit or reorder", "adjacent lines", "untrusted data", "release=发布", "formal tone"} {

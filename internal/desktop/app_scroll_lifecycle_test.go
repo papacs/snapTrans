@@ -87,10 +87,70 @@ func TestWindowTransitionsWaitForScrollCleanupAlreadyInProgress(t *testing.T) {
 			}
 			select {
 			case err := <-finished:
-				require.NoError(t, err)
+				if err != nil {
+					require.ErrorIs(t, err, context.Canceled, "a newer window transition may invalidate the detached export")
+				}
 			case <-time.After(5 * time.Second):
 				t.Fatal("finished screenshot did not complete")
 			}
 		})
 	}
+}
+
+func scrollAssetSession(t *testing.T) *capture.ManualScrollCapture {
+	t.Helper()
+	frame := solidTestFrame(48, 64)
+	session, err := capture.StartManualScrollCaptureWithSource(context.Background(), frame.Bounds(), capture.ManualScrollOptions{}, func(image.Rectangle) (image.Image, error) {
+		return frame, nil
+	})
+	require.NoError(t, err)
+	t.Cleanup(session.Cancel)
+	return session
+}
+
+func TestDetachedScrollExportIsStillCanceledBeforePublishing(t *testing.T) {
+	app := NewApp(nil)
+	app.scrollCapture = scrollAssetSession(t)
+	session, _, epoch := app.takeScrollCapture(true)
+	require.Nil(t, app.scrollCapture)
+	require.NoError(t, app.CancelScrollingScreenshot())
+	_, err := app.storeScrollAsset(session, epoch, true, []byte("late stitched image"))
+	require.ErrorIs(t, err, context.Canceled)
+	require.Empty(t, app.captureAssets.images)
+}
+
+func TestOldScrollAssetsCannotEnterNewCaptureCache(t *testing.T) {
+	app := NewApp(nil)
+	oldSession := scrollAssetSession(t)
+	app.scrollCapture = oldSession
+	_, _, oldEpoch := app.takeScrollCapture(true)
+	_, newEpoch, started := app.beginCapture()
+	require.True(t, started)
+	current, cancel := app.newProcessingContext(newEpoch)
+	defer cancel()
+	newImage := []byte("new capture image")
+	app.captureAssets.Store(newImage)
+	// An old detached export must not make a late editor cancellation cancel
+	// or erase the newer capture which already owns the shared window.
+	require.NoError(t, app.CancelScrollingScreenshot())
+	require.NoError(t, current.Err())
+	require.Equal(t, newEpoch, app.currentCaptureEpoch())
+	_, err := app.storeScrollAsset(oldSession, oldEpoch, true, []byte("late stitched image"))
+	require.ErrorIs(t, err, context.Canceled)
+	_, err = app.storeScrollAsset(oldSession, oldEpoch, false, []byte("late preview"))
+	require.ErrorIs(t, err, context.Canceled)
+	require.Len(t, app.captureAssets.images, 1)
+	require.Equal(t, len(newImage), app.captureAssets.bytes)
+}
+
+func TestReplacedScrollSessionCannotPublishPreviewInSameCaptureEpoch(t *testing.T) {
+	app := NewApp(nil)
+	previous, current := scrollAssetSession(t), scrollAssetSession(t)
+	app.scrollCapture = current
+	_, err := app.storeScrollAsset(previous, app.currentCaptureEpoch(), false, []byte("stale preview"))
+	require.ErrorIs(t, err, context.Canceled)
+	require.Empty(t, app.captureAssets.images)
+	_, err = app.storeScrollAsset(current, app.currentCaptureEpoch(), false, []byte("current preview"))
+	require.NoError(t, err)
+	require.Len(t, app.captureAssets.images, 1)
 }

@@ -22,17 +22,29 @@ type textRegionsPayload struct {
 	Source     string             `json:"source"`
 }
 
-func (a *App) currentCaptureEpoch() uint64             { a.mu.Lock(); defer a.mu.Unlock(); return a.captureEpoch }
-func (a *App) captureRequestCurrent(epoch uint64) bool { return a.currentCaptureEpoch() == epoch }
+func (a *App) currentCaptureEpoch() uint64 { a.mu.Lock(); defer a.mu.Unlock(); return a.captureEpoch }
+func (a *App) captureRequestCurrent(epoch uint64) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return !a.shuttingDown && a.captureEpoch == epoch
+}
 func (a *App) invalidateCaptureRequest() {
 	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.invalidateCaptureRequestLocked()
+}
+
+func (a *App) invalidateCaptureRequestLocked() {
 	a.captureEpoch++
+	if a.finishingScroll != nil {
+		a.finishingScroll.Cancel()
+		a.finishingScroll = nil
+	}
 	a.selectedText = nil
 	a.frame = nil
 	if a.captureAssets != nil {
 		a.captureAssets.Clear()
 	}
-	a.mu.Unlock()
 }
 
 // TriggerTranslation is the global-hotkey entry. Explicit tray Capture keeps
@@ -55,7 +67,7 @@ func (a *App) TriggerTranslation() error {
 			a.captureAndEmit(wasVisible, "translate", epoch, "")
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), selection.ProbeTimeout)
+		ctx, cancel := context.WithTimeout(a.lifetimeContext(), selection.ProbeTimeout)
 		selected, err := selection.DefaultReader().Read(ctx, window)
 		cancel()
 		if !a.captureRequestCurrent(epoch) {
@@ -96,7 +108,7 @@ func (a *App) captureSelectedText(selected selection.Result, wasVisible bool, ep
 	if !a.captureRequestCurrent(epoch) {
 		return context.Canceled
 	}
-	frame, err := capture.SelectionDisplay(context.Background(), selected.Bounds())
+	frame, err := capture.SelectionDisplay(a.lifetimeContext(), selected.Bounds())
 	if err != nil {
 		return err
 	}
@@ -114,6 +126,10 @@ func (a *App) captureSelectedText(selected selection.Result, wasVisible bool, ep
 }
 func (a *App) TranslateSelection(id string, direction string, generation int) error {
 	a.mu.Lock()
+	if a.shuttingDown {
+		a.mu.Unlock()
+		return context.Canceled
+	}
 	selected := a.selectedText
 	cfg := a.cfg.WithDefaults()
 	if selected == nil || selected.ID != id {
@@ -124,7 +140,7 @@ func (a *App) TranslateSelection(id string, direction string, generation int) er
 	if a.processing != nil {
 		a.processing()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(a.lifetimeContextLocked())
 	a.processing = cancel
 	a.mu.Unlock()
 	lines := make([]string, len(blocks))

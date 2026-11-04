@@ -48,15 +48,55 @@ func (state *translationWarmState) finish(target string, now time.Time, success 
 	}
 }
 
-func (a *App) prewarmTranslationConnection() {
+// Snapshot the configuration and its cancellation parent before scheduling a
+// goroutine. Shutdown or settings changes can then cancel even unstarted work.
+func (a *App) translationWarmSnapshot() (config.Config, context.Context) {
 	a.mu.Lock()
-	cfg := a.cfg.WithDefaults()
-	a.mu.Unlock()
+	defer a.mu.Unlock()
+	if a.shuttingDown {
+		return config.Config{}, nil
+	}
+	if a.translationWarmCtx == nil {
+		a.translationWarmCtx, a.translationWarmStop = context.WithCancel(a.lifetimeContextLocked())
+	}
+	return a.cfg.WithDefaults(), a.translationWarmCtx
+}
+
+func (a *App) cancelTranslationWarmups() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.cancelTranslationWarmupsLocked()
+}
+
+func (a *App) cancelTranslationWarmupsLocked() {
+	if a.translationWarmStop != nil {
+		a.translationWarmStop()
+		a.translationWarmCtx, a.translationWarmStop = nil, nil
+	}
+	a.translationWarmMu.Lock()
+	a.translationWarm = translationWarmState{}
+	a.translationWarmMu.Unlock()
+}
+
+func (a *App) prewarmTranslationConnection() {
+	cfg, parent := a.translationWarmSnapshot()
+	if parent == nil {
+		return
+	}
 	if cfg.Provider == "codex" {
+		ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			if err := codex.Warm(ctx, cfg.CodexPath, cfg.CodexModel); err != nil && !errors.Is(err, context.Canceled) && a.log != nil {
+			var err error
+			if cfg.DirectImageInput {
+				err = codex.Warm(ctx, cfg.CodexPath, cfg.CodexModel)
+			} else {
+				// Guess the usual target without reading the screen. A different
+				// direction or prompt cannot reuse this unused conversation.
+				client := translator.NewOpenAICompatible(translationTaskOptions(cfg))
+				err = client.WarmTranslation(ctx, translator.DirectionToChinese)
+			}
+			if err != nil && parent.Err() == nil && !errors.Is(err, context.Canceled) && a.log != nil {
 				a.log.Errorf("Codex warm-up failed: %v", err)
 			}
 		}()
@@ -68,26 +108,28 @@ func (a *App) prewarmTranslationConnection() {
 
 	target := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	a.translationWarmMu.Lock()
-	started := a.translationWarm.begin(target, time.Now())
+	started := parent.Err() == nil && a.translationWarm.begin(target, time.Now())
 	a.translationWarmMu.Unlock()
 	if !started {
 		return
 	}
 
-	go a.runTranslationWarmup(cfg, target)
+	go a.runTranslationWarmup(parent, cfg, target)
 }
 
-func (a *App) runTranslationWarmup(cfg config.Config, target string) {
+func (a *App) runTranslationWarmup(parent context.Context, cfg config.Config, target string) {
 	startedAt := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), translationWarmTimeout)
+	ctx, cancel := context.WithTimeout(parent, translationWarmTimeout)
 	defer cancel()
 	client := translator.NewOpenAICompatible(translator.Options{APIKey: cfg.APIKey, BaseURL: cfg.BaseURL, Model: cfg.Model})
 	err := client.Warm(ctx)
 
 	a.translationWarmMu.Lock()
-	a.translationWarm.finish(target, time.Now(), err == nil)
+	if parent.Err() == nil {
+		a.translationWarm.finish(target, time.Now(), err == nil)
+	}
 	a.translationWarmMu.Unlock()
-	if err == nil && a.log != nil {
+	if err == nil && parent.Err() == nil && a.log != nil {
 		a.log.Infof("translation connection warmed warm_ms=%d", time.Since(startedAt).Milliseconds())
 	}
 }

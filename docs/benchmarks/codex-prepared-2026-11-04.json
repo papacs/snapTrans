@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-04",
+  "platform": "Windows amd64",
+  "cliVersion": "0.166.0-alpha.5.1",
+  "model": "gpt-6-luna",
+  "effort": "low",
+  "input": "[1] Please send the updated schedule this afternoon.",
+  "waitBeforeEachRequestMs": 3000,
+  "includesOCR": false,
+  "includesFrontend": false,
+  "usesTranslationMemo": false,
+  "comparison": {
+    "order": ["process", "prepared"],
+    "process": {
+      "backgroundPrepareMs": 1034,
+      "firstTokenMs": [10573, 5994, 6114],
+      "totalMs": [10823, 6223, 6368],
+      "successes": 3
+    },
+    "prepared": {
+      "backgroundPrepareMs": 5316,
+      "firstTokenMs": [4319, 2696, 3217],
+      "totalMs": [4352, 3101, 3436],
+      "successes": 3
+    }
+  },
+  "sustainedPrepared": {
+    "backgroundPrepareMs": 2650,
+    "firstTokenMs": [2319, 2420, 3880, 2912, 2729, 2900, 3657, 4583, 4506, 3079, 2918, 2886, 2837, 3008, 1920, 2861, 3129, 4562, 3943, 3457],
+    "totalMs": [2538, 2710, 4150, 3313, 3317, 3104, 4046, 5029, 4714, 4427, 2933, 3097, 2851, 3469, 2097, 2895, 3458, 4779, 6262, 3820],
+    "successes": 20,
+    "firstTokenMedianMs": 2963,
+    "firstTokenP95NearestRankMs": 4562,
+    "totalMedianMs": 3387.5,
+    "totalP95NearestRankMs": 5029
+  },
+  "limitations": [
+    "Synthetic short text on one computer and network; no real screenshots or OCR.",
+    "Three seconds before each request simulates capture and OCR time and allows background preparation.",
+    "Foreground durations exclude separately recorded background preparation.",
+    "Sequential comparison order and small samples cannot isolate all server latency variation.",
+    "Twenty samples do not establish long-term availability or idle connection reliability."
+  ],
+  "sources": [
+    "https://github.com/openai/codex/pull/10698",
+    "https://github.com/openai/codex/pull/22198",
+    "https://github.com/openai/codex/pull/28699",
+    "https://github.com/openai/codex/issues/32526",
+    "https://github.com/openai/codex/issues/40137"
+  ]
+}

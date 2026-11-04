@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"snaptrans/internal/capture"
-	"snaptrans/internal/codex"
 	"snaptrans/internal/config"
 	"snaptrans/internal/history"
 	"snaptrans/internal/hotkeys"
@@ -63,8 +62,10 @@ type sentinelPayload struct {
 }
 
 type App struct {
-	ctx      context.Context
-	trayIcon []byte
+	ctx          context.Context
+	lifetimeCtx  context.Context
+	lifetimeStop context.CancelFunc
+	trayIcon     []byte
 
 	configStore  *config.Store
 	historyStore *history.Store
@@ -83,7 +84,10 @@ type App struct {
 	replyShortcut       *hotkeys.Registration
 	extensionProcessing context.CancelFunc
 	extensionRequestID  string
+	extensionRevision   uint64
 	processing          context.CancelFunc
+	extractionCtx       context.Context
+	extractionCancel    context.CancelFunc
 	ocrWorker           *ocr.Worker
 	ocrWorkerConfig     ocrWorkerSettings
 	ocrCache            ocrResultCache
@@ -93,6 +97,9 @@ type App struct {
 	codexLoginCancel    context.CancelFunc
 	translationWarmMu   sync.Mutex
 	translationWarm     translationWarmState
+	translationWarmCtx  context.Context
+	translationWarmStop context.CancelFunc
+	shuttingDown        bool
 	trayOnce            sync.Once
 
 	captureOriginX   int
@@ -112,10 +119,13 @@ type App struct {
 	frame            image.Image
 	scrollCapture    *capture.ManualScrollCapture
 	scrollOverlay    uintptr
+	finishingScroll  *capture.ManualScrollCapture
+	finishingEpoch   uint64
 }
 
 func NewApp(trayIcon []byte) *App {
-	return &App{captureAssets: newCaptureAssets(), trayIcon: trayIcon}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &App{captureAssets: newCaptureAssets(), trayIcon: trayIcon, lifetimeCtx: ctx, lifetimeStop: cancel}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -159,7 +169,7 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) shutdown(_ context.Context) {
-	codex.CloseIdle()
+	a.stopBackgroundWork()
 	a.CancelCodexLogin()
 	a.cancelTextAction()
 	closeAllPins()
@@ -201,6 +211,14 @@ func (a *App) shutdown(_ context.Context) {
 }
 
 func (a *App) LoadConfig() (config.Config, error) {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	a.mu.Lock()
+	closed := a.shuttingDown
+	a.mu.Unlock()
+	if closed {
+		return config.Config{}, context.Canceled
+	}
 	if a.configStore == nil {
 		return config.Default(), nil
 	}
@@ -258,6 +276,11 @@ func (a *App) emitSettingsOpen() {
 func (a *App) SaveConfig(next config.Config) error {
 	a.configMu.Lock()
 	defer a.configMu.Unlock()
+	return a.saveConfig(next)
+}
+
+// The caller holds configMu across the complete settings transaction.
+func (a *App) saveConfig(next config.Config) error {
 	next = next.WithDefaults()
 	if next.Provider != "openai-compatible" && next.Provider != "codex" {
 		return fmt.Errorf("unsupported model provider: %s", next.Provider)
@@ -279,9 +302,6 @@ func (a *App) SaveConfig(next config.Config) error {
 
 	a.updateTrayShortcuts(next.ShortcutKey, next.ScreenshotShortcutKey)
 	a.syncOCRWorker(next)
-	if next.Provider != current.Provider || next.CodexPath != current.CodexPath || next.CodexModel != current.CodexModel {
-		codex.CloseIdle()
-	}
 	a.prewarmTranslationConnection()
 	return nil
 }
@@ -350,7 +370,7 @@ func (a *App) BeginScrollingScreenshot(request ScrollCaptureRequest) (capture.Ma
 	}
 
 	a.mu.Lock()
-	if a.captureInFlight {
+	if a.shuttingDown || a.captureInFlight {
 		a.mu.Unlock()
 		return capture.ManualScrollStatus{}, errors.New("another capture is already running")
 	}
@@ -373,7 +393,7 @@ func (a *App) BeginScrollingScreenshot(request ScrollCaptureRequest) (capture.Ma
 		return capture.ManualScrollStatus{}, err
 	}
 	session, err := capture.StartManualScrollCaptureWithSource(
-		context.Background(),
+		a.lifetimeContext(),
 		rect,
 		capture.ManualScrollOptions{},
 		func(frameRect image.Rectangle) (image.Image, error) {
@@ -406,6 +426,7 @@ func (a *App) BeginScrollingScreenshot(request ScrollCaptureRequest) (capture.Ma
 func (a *App) StepScrollingScreenshot() (ScrollCaptureStepResult, error) {
 	a.mu.Lock()
 	session := a.scrollCapture
+	epoch := a.captureEpoch
 	a.mu.Unlock()
 	if session == nil {
 		return ScrollCaptureStepResult{}, errors.New("no scrolling capture is active")
@@ -422,19 +443,21 @@ func (a *App) StepScrollingScreenshot() (ScrollCaptureStepResult, error) {
 		Appended:     snapshot.Appended,
 		LimitReached: snapshot.LimitReached,
 	}
-	if len(snapshot.PreviewImageBytes) > 0 {
-		result.PreviewImage = a.captureAssets.Store(snapshot.PreviewImageBytes)
+	result.PreviewImage, err = a.storeScrollAsset(session, epoch, false, snapshot.PreviewImageBytes)
+	if err != nil {
+		return ScrollCaptureStepResult{}, err
 	}
 	return result, nil
 }
 
 func (a *App) FinishScrollingScreenshot() (capture.Result, error) {
 	a.scrollMu.Lock()
-	session, overlay := a.takeScrollCapture()
+	session, overlay, epoch := a.takeScrollCapture(true)
 	if session == nil {
 		a.scrollMu.Unlock()
 		return capture.Result{}, errors.New("no scrolling capture is active")
 	}
+	defer a.finishScrollExport(session)
 	_, err := session.CaptureNext()
 	a.finishScrollingCaptureWindow(overlay)
 	a.scrollMu.Unlock()
@@ -448,7 +471,10 @@ func (a *App) FinishScrollingScreenshot() (capture.Result, error) {
 	if err != nil {
 		return capture.Result{}, err
 	}
-	result.Image = a.captureAssets.Store(result.ImageBytes)
+	result.Image, err = a.storeScrollAsset(session, epoch, true, result.ImageBytes)
+	if err != nil {
+		return capture.Result{}, err
+	}
 	result.ImageBytes = nil
 	if a.log != nil {
 		a.log.Infof(
@@ -471,7 +497,13 @@ func (a *App) CancelScrollingScreenshot() error {
 
 // The caller holds scrollMu through native restoration and visibility changes.
 func (a *App) cancelScrollingScreenshot() {
-	session, overlay := a.takeScrollCapture()
+	session, overlay, _ := a.takeScrollCapture(false)
+	a.mu.Lock()
+	if a.finishingScroll != nil && a.finishingEpoch == a.captureEpoch {
+		a.finishingScroll.Cancel()
+		a.finishingScroll = nil
+	}
+	a.mu.Unlock()
 	if session == nil {
 		return
 	}
@@ -479,14 +511,41 @@ func (a *App) cancelScrollingScreenshot() {
 	a.finishScrollingCaptureWindow(overlay)
 }
 
-func (a *App) takeScrollCapture() (*capture.ManualScrollCapture, uintptr) {
+func (a *App) takeScrollCapture(finishing bool) (*capture.ManualScrollCapture, uintptr, uint64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	session := a.scrollCapture
 	overlay := a.scrollOverlay
 	a.scrollCapture = nil
 	a.scrollOverlay = 0
-	return session, overlay
+	if finishing && session != nil {
+		a.finishingScroll, a.finishingEpoch = session, a.captureEpoch
+	}
+	return session, overlay, a.captureEpoch
+}
+
+func (a *App) finishScrollExport(session *capture.ManualScrollCapture) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.finishingScroll == session {
+		a.finishingScroll = nil
+	}
+}
+
+func (a *App) storeScrollAsset(session *capture.ManualScrollCapture, epoch uint64, final bool, data []byte) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	current := a.scrollCapture
+	if final {
+		current = a.finishingScroll
+	}
+	if a.shuttingDown || a.captureEpoch != epoch || current != session || session == nil {
+		return "", context.Canceled
+	}
+	if len(data) == 0 {
+		return "", nil
+	}
+	return a.captureAssets.Store(data), nil
 }
 
 func (a *App) finishScrollingCaptureWindow(overlay uintptr) {
@@ -524,7 +583,7 @@ func (a *App) beginCapture() (wasVisible bool, epoch uint64, started bool) {
 	defer a.scrollMu.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.captureInFlight {
+	if a.shuttingDown || a.captureInFlight {
 		return false, a.captureEpoch, false
 	}
 	a.captureEpoch++
@@ -680,13 +739,13 @@ func (a *App) TranslateRegion(region TranslateRegionRequest, direction string, g
 func (a *App) newProcessingContext(epoch uint64) (context.Context, context.CancelFunc) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.captureEpoch != epoch {
+	if a.shuttingDown || a.captureEpoch != epoch {
 		return nil, nil
 	}
 	if a.processing != nil {
 		a.processing()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(a.lifetimeContextLocked())
 	a.processing = cancel
 	return ctx, cancel
 }
@@ -713,10 +772,16 @@ func (a *App) ExtractText(base64Image string) (TextExtractionResult, error) {
 
 	a.mu.Lock()
 	cfg := a.cfg.WithDefaults()
+	epoch := a.captureEpoch
 	a.mu.Unlock()
 
+	ctx, cancel := a.newExtractionContext(epoch)
+	if ctx == nil {
+		return TextExtractionResult{}, context.Canceled
+	}
+	defer cancel()
 	startedAt := time.Now()
-	result, err := a.runOCR(context.Background(), cfg, base64Image)
+	result, err := a.runOCR(ctx, cfg, base64Image)
 	if err != nil {
 		if a.log != nil {
 			a.log.Errorf("mode=extract-text stage=ocr error=%v", err)
@@ -759,8 +824,7 @@ func (a *App) HideWindow() error {
 }
 
 func (a *App) QuitApp() error {
-	a.invalidateCaptureRequest()
-	a.cancelProcessing()
+	a.stopBackgroundWork()
 	systray.Quit()
 	if a.ctx != nil {
 		runtime.Quit(a.ctx)
@@ -831,7 +895,7 @@ func (a *App) captureAndEmit(wasVisible bool, mode string, epoch uint64, notice 
 		waitForWindowHidden()
 	}
 
-	result, err := capture.ActiveDisplay(context.Background())
+	result, err := capture.ActiveDisplay(a.lifetimeContext())
 	if err != nil {
 		a.emitError("capture", err, 0)
 		if _, dialogErr := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
@@ -850,7 +914,7 @@ func (a *App) captureAndEmit(wasVisible bool, mode string, epoch uint64, notice 
 
 func (a *App) publishCapture(result capture.Result, mode string, epoch uint64, notice string, startedAt time.Time) {
 	a.mu.Lock()
-	if a.captureEpoch != epoch {
+	if a.shuttingDown || a.captureEpoch != epoch {
 		a.mu.Unlock()
 		return
 	}
@@ -949,6 +1013,9 @@ func (a *App) onTrayReady() {
 }
 
 func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop string, direction translator.Direction, generation int) {
+	if ctx.Err() != nil {
+		return
+	}
 	startedAt := time.Now()
 	if cfg.DirectImageInput {
 		a.processVisionImage(ctx, cfg, base64Crop, direction, generation, startedAt)
@@ -958,7 +1025,9 @@ func (a *App) processImage(ctx context.Context, cfg config.Config, base64Crop st
 
 	result, err := a.runOCR(ctx, cfg, base64Crop)
 	if err != nil {
-		a.emitError("ocr", err, generation)
+		if ctx.Err() == nil {
+			a.emitError("ocr", err, generation)
+		}
 		return
 	}
 	ocrElapsed := time.Since(startedAt)
@@ -1050,8 +1119,10 @@ func (a *App) processText(ctx context.Context, cfg config.Config, text string, b
 }
 
 func (a *App) saveHistory(source string, translated string, direction string) {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
 	a.mu.Lock()
-	record := a.cfg.RecordHistory
+	record := a.cfg.RecordHistory && !a.shuttingDown
 	a.mu.Unlock()
 	if !record {
 		return
@@ -1091,8 +1162,11 @@ func (a *App) TestConnection(draft config.Config) error {
 	if cfg.Provider == "codex" {
 		timeout = 45 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(a.lifetimeContext(), timeout)
 	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return client.Ping(ctx, cfg.DirectImageInput)
 }
 
@@ -1245,10 +1319,17 @@ func (a *App) SaveScreenshot(dataURL string) (string, error) {
 func (a *App) cancelProcessing() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.cancelProcessingLocked()
+}
 
+func (a *App) cancelProcessingLocked() {
 	if a.processing != nil {
 		a.processing()
 		a.processing = nil
+	}
+	if a.extractionCancel != nil {
+		a.extractionCancel()
+		a.extractionCtx, a.extractionCancel = nil, nil
 	}
 }
 

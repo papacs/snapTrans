@@ -29,7 +29,21 @@ func TestLegacyPlaintextKeyIsNotCopiedIntoRecoveryBackup(t *testing.T) {
 	cfg, err := store.Load()
 	require.NoError(t, err)
 	require.NoError(t, store.Save(cfg))
-	backup, err := os.ReadFile(path+".bak")
+	backup, err := os.ReadFile(path + ".bak")
 	require.NoError(t, err)
 	require.NotContains(t, string(backup), "legacy-test-secret", "the recovery file must not reintroduce plaintext credentials during migration")
+}
+
+func TestNullConfigurationRecoversObjectBackup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	store := NewStoreAt(path, "")
+	cfg := Default()
+	cfg.Model = "previous-working-model"
+	require.NoError(t, store.Save(cfg))
+	cfg.Model = "latest-model"
+	require.NoError(t, store.Save(cfg))
+	require.NoError(t, os.WriteFile(path, []byte("null"), 0600))
+	loaded, err := store.Load()
+	require.NoError(t, err)
+	require.Equal(t, "previous-working-model", loaded.Model)
 }

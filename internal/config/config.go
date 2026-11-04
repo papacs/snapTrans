@@ -159,8 +159,14 @@ func (s *Store) Load() (Config, error) {
 	}
 
 	raw, err := jsonfile.ReadValidated(s.Path, func(raw []byte) error {
-		var decoded persistedConfig
-		return json.Unmarshal(raw, &decoded)
+		var decoded *persistedConfig
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return err
+		}
+		if decoded == nil {
+			return errors.New("config must be a JSON object")
+		}
+		return nil
 	})
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

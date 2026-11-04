@@ -1,0 +1,40 @@
+{
+  "date": "2026-11-04",
+  "method": "Deterministic local regression tests and synthetic OCR fixtures; no additional live model requests or changes to user settings/running applications",
+  "regressions": {
+    "ocrCropEdges": "Clip the full box against image bounds before normalization. Partially visible negative-origin boxes keep only their visible area; fully outside boxed text is discarded rather than becoming plain text.",
+    "scrollCancellation": "Session cancellation is nonblocking, propagates the parent context, and is checked after native acquisition/stitching/encoding. A finishing export remains cancelable after detachment; session and epoch ownership is checked before storing its image.",
+    "settingsTransactions": "Configuration loading, saving, autostart rollback, shutdown, and history writes use one transaction boundary. Configuration publication and old-task invalidation occur under the same state lock.",
+    "settingsAndCopyCallbacks": "Delayed saves, autostart reads and original-copy feedback cannot affect a newer settings session or capture. Initial loading blocks saving default values. Begin/Cancel scrolling operations are ordered at the frontend boundary without serializing Finish/Step.",
+    "codexNotifications": "Only consumed asynchronous notifications are deferred, at most 256 messages or 4 MiB. Consumed slots release payload references. Cancellation wins over buffered delivery; unrelated notification shapes and already-rejected server requests are ignored.",
+    "codexState": "Model cursors are fully cycle-checked. Account revision changes invalidate authentication/default-model caches and prepared-session eligibility, including updates arriving during RPC completion.",
+    "codexCompletion": "Streaming deltas remain immediate. A completed notification cannot turn a subsequent rejected turn/start acknowledgement into success. When completion precedes acknowledgement, confirmation waits at most 250 ms and failure retains partial output without replay.",
+    "configRecovery": "A null configuration root is invalid and can recover the valid backup. Missing hotkey registration handles are retried even if the key text is unchanged; failure rolls back only new registrations."
+  },
+  "ocrCompatibilityRecheck": {
+    "reference": "Existing stock-engine JSON for six local synthetic fixtures; compare complete normalized text and boxes on two passes",
+    "allTwelveResultsMatched": true,
+    "unicodeCachePathMatched": true,
+    "singleUseUnicodeTempMatched": true,
+    "startupMs": 5306,
+    "samplesMs": {
+      "light": [3282, 2857],
+      "dark": [3261, 3967],
+      "tiny": [1445, 2734],
+      "long": [1519, 3467],
+      "narrow": [729, 1604],
+      "rotated": [2496, 5508]
+    },
+    "interpretation": "Compatibility and quality recheck while other regression tests were running. Timing varies substantially under load; not a controlled speed comparison. Original models, image resolution and orientation detection are unchanged."
+  },
+  "verification": {
+    "frontendFilesPassed": 19,
+    "frontendTestsPassed": 278,
+    "frontendTypecheck": true,
+    "frontendBuild": true,
+    "goFullSuite": true,
+    "build": "20261104T073403Z-9b164867771d6061",
+    "frontendBundle": "index-BsOFXt5-.js",
+    "executableSha256": "597eb2f1617e72398c2ba89ea4113992b0ae3d4271d6786cb762edc93a751bcc"
+  }
+}

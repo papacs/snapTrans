@@ -2,6 +2,7 @@ package translator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,24 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestCompactNumberedTranslationDoesNotTriggerRepair(t *testing.T) {
+	calls := 0
+	const text = "[1]你好，Alex！\n[2]下一步"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		chunk, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]string{"content": text}, "finish_reason": "stop"}}})
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", chunk)
+	}))
+	defer server.Close()
+	client := NewOpenAICompatible(Options{APIKey: "fixture", BaseURL: server.URL, Model: "fixture-model"})
+	var output string
+	err := client.Translate(context.Background(), "Hi Alex,\nNEXT", DirectionToChinese, func(token string) { output += token })
+	require.NoError(t, err)
+	require.Equal(t, 1, calls, "valid compact ID formatting must not spend a second model request")
+	require.Equal(t, text, output)
+}
 
 func TestIncompleteStreamsAreRejectedAndNeverMemoized(t *testing.T) {
 	for _, ending := range []string{"", "length", "content_filter"} {

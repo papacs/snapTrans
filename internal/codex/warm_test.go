@@ -13,9 +13,10 @@ import (
 
 func TestSlowWarmupCannotConsumeRealRequestTimeout(t *testing.T) {
 	CloseIdle()
+	path := filepath.Join(t.TempDir(), "missing-audit-runtime.exe")
 	warmProcess.Lock()
 	warmProcess.warming = true
-	warmProcess.warmingPath = "missing-audit-runtime.exe"
+	warmProcess.warmingPath = path
 	warmProcess.ready = make(chan struct{})
 	warmProcess.Unlock()
 	defer func() {
@@ -26,7 +27,7 @@ func TestSlowWarmupCannotConsumeRealRequestTimeout(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err := StreamFast(ctx, "missing-audit-runtime.exe", "", "", "", "low", func(string) {})
+	_, err := StreamFast(ctx, path, "", "", "", "low", func(string) {})
 	require.Error(t, err)
 	require.NoError(t, ctx.Err(), "slow prewarming must not hold the request until its deadline")
 }
@@ -78,12 +79,26 @@ func TestSilentRequestRetryIsBounded(t *testing.T) {
 	require.NoError(t, ctx.Err())
 }
 
+func TestUserMessageEventsCannotKeepSilentRequestAlive(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := streamFast(ctx, fakeExecutable(t, "user-message-progress"), "test-model", "translate only", "source", "low", 150*time.Millisecond, func(string) {})
+	require.ErrorIs(t, err, errFirstOutputTimeout)
+	require.NoError(t, ctx.Err(), "echoing the input must not count as model activity")
+}
+
 func TestFirstOutputDeadlineStopsAfterTextArrives(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	path := fakeExecutable(t, "stream-hang")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var tokens string
-	output, err := streamFast(ctx, fakeExecutable(t, "stream-hang"), "test-model", "translate only", "source", "low", 150*time.Millisecond, func(token string) { tokens += token })
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	output, err := streamFast(ctx, path, "test-model", "translate only", "source", "low", 150*time.Millisecond, func(token string) {
+		tokens += token
+		// Start the assertion's wait after the token, excluding Windows process
+		// startup. The first-output watchdog must stay stopped throughout it.
+		time.AfterFunc(300*time.Millisecond, cancel)
+	})
+	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, "[1] 你", output)
 	require.Equal(t, output, tokens)
 }
@@ -98,6 +113,211 @@ func TestResponseIdleDeadlineExcludesSetupAndActiveReasoning(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "[1] 你好", output)
 			require.Equal(t, output, tokens)
+		})
+	}
+}
+
+func TestPrewarmDoesNotStartCompetingProcessDuringTranslation(t *testing.T) {
+	path := fakeExecutable(t, "fast")
+	var prewarmErr error
+	var competing *connection
+	output, err := StreamFast(context.Background(), path, "test-model", "translate only", "source", "low", func(string) {
+		prewarmErr = Warm(context.Background(), path)
+		warmProcess.Lock()
+		competing = warmProcess.idle
+		warmProcess.Unlock()
+	})
+	require.NoError(t, err)
+	require.NoError(t, prewarmErr)
+	require.Equal(t, "[1] 你好", output)
+	require.Nil(t, competing, "capture prewarming must not start another runtime while translation owns one")
+}
+
+func TestWarmSessionPreparesAndReplenishesUnusedConversation(t *testing.T) {
+	path := fakeExecutable(t, "fast")
+	key := sessionKey{model: "test-model", instructions: "translate only", effort: "low"}
+	require.NoError(t, WarmSession(context.Background(), path, key.model, key.instructions, key.effort))
+	warmProcess.Lock()
+	first := warmProcess.idle
+	prepared := first != nil && first.hasPreparedSession(key)
+	warmProcess.Unlock()
+	require.True(t, prepared)
+	output, err := StreamFast(context.Background(), path, key.model, key.instructions, "source", key.effort, func(string) {})
+	require.NoError(t, err)
+	require.Equal(t, "[1] 你好", output)
+	require.Eventually(t, func() bool {
+		warmProcess.Lock()
+		defer warmProcess.Unlock()
+		return warmProcess.idle == first && first.hasPreparedSession(key) && !warmProcess.warming
+	}, 5*time.Second, 10*time.Millisecond, "successful translation should prepare the next independent conversation")
+}
+
+func TestStaleSessionRefillCannotRunAfterCloseIdle(t *testing.T) {
+	path := fakeExecutable(t, "fast")
+	key := sessionKey{model: "test-model", instructions: "translate only", effort: "low"}
+	require.NoError(t, WarmSession(context.Background(), path, key.model, key.instructions, key.effort))
+	warmProcess.Lock()
+	epoch := warmProcess.epoch
+	warmProcess.Unlock()
+	CloseIdle()
+	require.NoError(t, warm(context.Background(), path, &key, &epoch))
+	warmProcess.Lock()
+	defer warmProcess.Unlock()
+	require.Nil(t, warmProcess.idle)
+	require.False(t, warmProcess.warming)
+}
+
+func TestFailedSessionPreparationDoesNotEnterPool(t *testing.T) {
+	path := fakeExecutable(t, "apikey")
+	err := WarmSession(context.Background(), path, "test-model", "translate only", "low")
+	require.ErrorContains(t, err, "sign in to Codex with ChatGPT")
+	warmProcess.Lock()
+	defer warmProcess.Unlock()
+	require.Nil(t, warmProcess.idle)
+	require.False(t, warmProcess.warming)
+}
+
+func TestStaleWarmCheckoutCannotBorrowNewGeneration(t *testing.T) {
+	path := fakeExecutable(t, "fast")
+	require.NoError(t, Warm(context.Background(), path))
+	warmProcess.Lock()
+	oldEpoch := warmProcess.epoch
+	warmProcess.Unlock()
+	CloseIdle()
+	require.NoError(t, Warm(context.Background(), path))
+	warmProcess.Lock()
+	current := warmProcess.idle
+	warmProcess.Unlock()
+	c, _, err := takeWarm(context.Background(), path, oldEpoch)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, c)
+	warmProcess.Lock()
+	defer warmProcess.Unlock()
+	require.Same(t, current, warmProcess.idle, "obsolete preparation must not steal a newer connection")
+}
+
+func TestSpeculativeWarmPreservesLastUnusedConversation(t *testing.T) {
+	path := fakeExecutable(t, "prepared")
+	key := sessionKey{model: "test-model", instructions: "reply in English", effort: "low"}
+	require.NoError(t, WarmSession(context.Background(), path, key.model, key.instructions, key.effort))
+	warmProcess.Lock()
+	c := warmProcess.idle
+	prepared, seq := c.prepared, c.seq
+	warmProcess.Unlock()
+	require.NoError(t, WarmSession(context.Background(), path, key.model, "translate to Chinese", key.effort))
+	warmProcess.Lock()
+	require.Same(t, c, warmProcess.idle)
+	require.Same(t, prepared, c.prepared)
+	require.Equal(t, seq, c.seq, "a speculative direction must not replace the last-used session")
+	warmProcess.Unlock()
+	borrowed, epoch, err := takeWarm(context.Background(), path)
+	require.NoError(t, err)
+	id, err := borrowed.startThread(key.model, key.instructions, key.effort)
+	require.NoError(t, err)
+	require.Equal(t, prepared.id, id)
+	returnWarm(borrowed, borrowed.cmd.Path, epoch)
+}
+
+func TestSessionRefillScopeReusesProcessForFreshRepairThenReplenishes(t *testing.T) {
+	path := fakeExecutable(t, "prepared-batch")
+	key := sessionKey{model: "test-model", instructions: "translate only", effort: "low"}
+	require.NoError(t, WarmSession(context.Background(), path, key.model, key.instructions, key.effort))
+	warmProcess.Lock()
+	first := warmProcess.idle
+	warmProcess.Unlock()
+	ctx, finish := DeferSessionRefill(context.Background())
+	defer finish()
+	for _, instructions := range []string{key.instructions, "repair only"} {
+		output, err := StreamFast(ctx, path, key.model, instructions, "source", key.effort, func(string) {})
+		require.NoError(t, err)
+		require.Equal(t, "[1] 你好", output)
+		// A coverage check can take time between passes. Neither automatic
+		// refill nor opportunistic capture warmup may steal the idle process.
+		require.NoError(t, WarmSession(context.Background(), path, key.model, key.instructions, key.effort))
+		require.Never(t, func() bool {
+			warmProcess.Lock()
+			defer warmProcess.Unlock()
+			return warmProcess.warming || warmProcess.idle != first || first.prepared != nil
+		}, 100*time.Millisecond, 5*time.Millisecond)
+	}
+	borrowed, epoch, err := takeWarm(ctx, path)
+	require.NoError(t, err)
+	require.Same(t, first, borrowed, "repair must reuse the authenticated runtime")
+	stats := preparedSessionStats(t, borrowed)
+	require.Equal(t, float64(2), stats["threadStarts"])
+	require.Equal(t, float64(2), stats["turnStarts"])
+	require.Equal(t, float64(2), stats["unsubscribes"])
+	require.Equal(t, []any{"thread-1", "thread-2"}, stats["turnThreads"], "each physical call must use a fresh ephemeral conversation")
+	returnWarm(borrowed, borrowed.cmd.Path, epoch)
+	finish()
+	finish()
+	require.Eventually(t, func() bool {
+		warmProcess.Lock()
+		defer warmProcess.Unlock()
+		return !warmProcess.warming && warmProcess.idle == first && first.hasPreparedSession(key)
+	}, 5*time.Second, 10*time.Millisecond)
+	borrowed, epoch, err = takeWarm(context.Background(), path)
+	require.NoError(t, err)
+	require.Same(t, first, borrowed)
+	stats = preparedSessionStats(t, borrowed)
+	require.Equal(t, float64(3), stats["threadStarts"], "finish must prepare exactly one next conversation")
+	require.Equal(t, float64(2), stats["turnStarts"], "preparation must not send old input")
+	require.Equal(t, []any{key.instructions, "repair only", key.instructions}, stats["threadInstructions"], "the next capture must use normal translation instructions")
+	returnWarm(borrowed, borrowed.cmd.Path, epoch)
+}
+
+func TestSessionRefillScopeCannotReviveOldGeneration(t *testing.T) {
+	path := fakeExecutable(t, "prepared-batch")
+	key := sessionKey{model: "test-model", instructions: "translate only", effort: "low"}
+	require.NoError(t, WarmSession(context.Background(), path, key.model, key.instructions, key.effort))
+	ctx, finish := DeferSessionRefill(context.Background())
+	defer finish()
+	_, err := StreamFast(ctx, path, key.model, key.instructions, "source", key.effort, func(string) {})
+	require.NoError(t, err)
+	CloseIdle()
+	current, epoch, err := takeWarm(context.Background(), path)
+	require.NoError(t, err)
+	returnWarm(current, current.cmd.Path, epoch)
+	finish()
+	require.Never(t, func() bool {
+		warmProcess.Lock()
+		defer warmProcess.Unlock()
+		return warmProcess.warming || warmProcess.idle != current
+	}, 100*time.Millisecond, 5*time.Millisecond)
+	borrowed, epoch, err := takeWarm(context.Background(), path)
+	require.NoError(t, err)
+	require.Same(t, current, borrowed)
+	require.Equal(t, float64(0), preparedSessionStats(t, borrowed)["threadStarts"], "an old batch must not prepare on a new generation")
+	returnWarm(borrowed, borrowed.cmd.Path, epoch)
+}
+
+func TestSessionRefillScopeSkipsCanceledOrFailedRepair(t *testing.T) {
+	for _, outcome := range []string{"canceled", "failed"} {
+		t.Run(outcome, func(t *testing.T) {
+			path := fakeExecutable(t, "prepared-batch-error")
+			require.NoError(t, WarmSession(context.Background(), path, "test-model", "translate only", "low"))
+			parent, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			ctx, finish := DeferSessionRefill(parent)
+			defer finish()
+			_, err := StreamFast(ctx, path, "test-model", "translate only", "source", "low", func(string) {})
+			require.NoError(t, err)
+			if outcome == "canceled" {
+				cancel()
+			} else {
+				_, err = StreamFast(ctx, path, "test-model", "repair only", "source", "low", func(string) {})
+				require.ErrorContains(t, err, "repair was rejected")
+			}
+			finish()
+			require.Never(t, func() bool {
+				warmProcess.Lock()
+				defer warmProcess.Unlock()
+				return warmProcess.warming || (warmProcess.idle != nil && warmProcess.idle.prepared != nil)
+			}, 100*time.Millisecond, 5*time.Millisecond)
+			warmProcess.Lock()
+			active := warmProcess.active
+			warmProcess.Unlock()
+			require.Zero(t, active, "finish must release the foreground guard even on cancellation or error")
 		})
 	}
 }

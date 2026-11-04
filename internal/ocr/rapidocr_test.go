@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -17,6 +18,23 @@ func TestDecodeImageDataURL(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, []byte("image"), actual)
+}
+
+func TestOneShotCancellationWinsBeforeImageOrExecutablePreparation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := NewRapidOCR("", time.Second).ExtractResult(ctx, "invalid image")
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestOCRReadingOrderIsStableAcrossStaggeredRows(t *testing.T) {
+	a := Block{Text: "A", X: 0.2, Y: 0, Width: 0.08, Height: 0.2}
+	b := Block{Text: "B", X: 0.1, Y: 0.1, Width: 0.08, Height: 0.2}
+	c := Block{Text: "C", X: 0, Y: 0.2, Width: 0.08, Height: 0.2}
+	for _, blocks := range [][]Block{{a, b, c}, {c, b, a}, {b, c, a}, {c, a, b}} {
+		sortBlocks(blocks)
+		require.Equal(t, []Block{b, a, c}, blocks, "reading order must not depend on detector traversal order")
+	}
 }
 
 func TestExtractTextFromJSONReadsCommonRapidOCRShapes(t *testing.T) {
@@ -44,6 +62,23 @@ func TestExtractTextFromJSONSkipsRapidOCRBannerLines(t *testing.T) {
 	require.Equal(t, "Hello", text)
 }
 
+func TestExtractResultHonorsEngineStatusWithoutLeakingDiagnosticText(t *testing.T) {
+	for _, raw := range []string{
+		`{"code":200,"data":"Image path does not exist: C:/private/screen.png"}`,
+		`{"code":299,"data":{"text":"PRIVATE_OCR_DIAGNOSTIC"}}`,
+	} {
+		result, err := ExtractResultFromJSON([]byte(raw), 100, 100)
+		require.Error(t, err)
+		require.Empty(t, result)
+		require.NotContains(t, err.Error(), "private")
+		require.NotContains(t, err.Error(), "PRIVATE_OCR_DIAGNOSTIC")
+	}
+	result, err := ExtractResultFromJSON([]byte(`{"code":101,"data":"No text found in image. Path: C:/private/screen.png"}`), 100, 100)
+	require.NoError(t, err)
+	require.Empty(t, result.Text)
+	require.Empty(t, result.Blocks)
+}
+
 func TestExtractResultFromJSONReturnsNormalizedBlocks(t *testing.T) {
 	raw := []byte(`{"code":100,"data":[
 		{"box":[[20,10],[80,10],[80,30],[20,30]],"score":0.99,"text":"Neutral"},
@@ -62,6 +97,25 @@ func TestExtractResultFromJSONReturnsNormalizedBlocks(t *testing.T) {
 	require.InDelta(t, 0.20, result.Blocks[0].Height, 0.001)
 	require.Equal(t, "Positive", result.Blocks[1].Text)
 	require.InDelta(t, 0.60, result.Blocks[1].X, 0.001)
+}
+
+func TestExtractResultClipsEdgesBeforeNormalizingBoxes(t *testing.T) {
+	raw := []byte(`{"code":100,"data":[
+		{"text":"left","box":[[-10,-5],[20,-5],[20,20],[-10,20]]},
+		{"text":"right","box":[[90,80],[120,80],[120,110],[90,110]]},
+		{"text":"outside","box":[[120,10],[140,10],[140,20],[120,20]]}
+	]}`)
+	result, err := ExtractResultFromJSON(raw, 100, 100)
+	require.NoError(t, err)
+	require.Equal(t, "left\nright", result.Text)
+	require.Equal(t, []Block{
+		{Text: "left", X: 0, Y: 0, Width: 0.2, Height: 0.2},
+		{Text: "right", X: 0.9, Y: 0.8, Width: 0.1, Height: 0.2},
+	}, result.Blocks)
+	outside, err := ExtractResultFromJSON([]byte(`{"code":100,"data":[{"text":"outside","box":[120,10,140,20]}]}`), 100, 100)
+	require.NoError(t, err)
+	require.Empty(t, outside.Text, "padding detections entirely outside the selected image are not source text")
+	require.Empty(t, outside.Blocks)
 }
 
 func TestExtractResultFromJSONPrefersLeafBlocksOverAggregateContainerText(t *testing.T) {

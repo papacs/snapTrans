@@ -35,6 +35,8 @@ type Status struct {
 // Forcing a custom HTTP-only provider can stall behind local proxies.
 const subscriptionProvider = "openai"
 
+var errConnectionClosed = errors.New("Codex App Server closed unexpectedly; check the CLI path and local Codex configuration")
+
 type message struct {
 	ID     json.RawMessage `json:"id,omitempty"`
 	Method string          `json:"method,omitempty"`
@@ -45,18 +47,43 @@ type message struct {
 	} `json:"error,omitempty"`
 }
 
+type sessionKey struct {
+	model, instructions, effort string
+}
+
+func (key sessionKey) normalized() sessionKey {
+	key.model = strings.TrimSpace(key.model)
+	key.effort = strings.TrimSpace(key.effort)
+	if key.effort == "default" {
+		key.effort = ""
+	}
+	return key
+}
+
+type preparedThread struct {
+	key             sessionKey
+	id              string
+	accountRevision uint64
+}
+
 // Connections are exclusively borrowed: auth operations use private processes,
 // while inference can reuse a warm process without sharing conversations.
 type connection struct {
-	ctx           context.Context
-	cmd           *exec.Cmd
-	in            io.WriteCloser
-	out           *bufio.Scanner
-	seq           int
-	pending       []message
-	dir           string
-	closeOnce     sync.Once
-	processCancel context.CancelFunc
+	ctx                   context.Context
+	cmd                   *exec.Cmd
+	in                    io.WriteCloser
+	out                   *bufio.Scanner
+	seq                   int
+	pending               []message
+	pendingBytes          int
+	dir                   string
+	closeOnce             sync.Once
+	processCancel         context.CancelFunc
+	subscriptionCheckedAt time.Time
+	accountRevision       uint64
+	defaultModel          string
+	prepared              *preparedThread
+	prepareEnabled        bool
 }
 
 func start(ctx context.Context, path string) (*connection, error) {
@@ -68,7 +95,12 @@ func start(ctx context.Context, path string) (*connection, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, path, "app-server", "-c", `model_provider="`+subscriptionProvider+`"`)
+	// This process only converts screen content to text. Inherited coding
+	// plugins and synchronous lifecycle hooks add work before any model output.
+	cmd := exec.CommandContext(ctx, path, "app-server", "-c", `model_provider="`+subscriptionProvider+`"`,
+		"-c", "features.hooks=false", "-c", "features.plugins=false",
+		"-c", "features.plugin_discovery_prefetch=false", "-c", "features.skill_search=false",
+		"-c", "features.apps=false")
 	cmd.Dir = dir
 	cmd.WaitDelay = 2 * time.Second
 	configureCommand(cmd)
@@ -122,14 +154,20 @@ func (c *connection) send(value any) error {
 		return err
 	}
 	err := json.NewEncoder(c.in).Encode(value)
-	if err != nil && c.ctx.Err() != nil {
-		return c.ctx.Err()
+	if err != nil {
+		if c.ctx.Err() != nil {
+			return c.ctx.Err()
+		}
+		return fmt.Errorf("%w: %w", errConnectionClosed, err)
 	}
-	return err
+	return nil
 }
 
 func (c *connection) read() (message, error) {
 	var msg message
+	if err := c.ctx.Err(); err != nil {
+		return msg, err
+	}
 	if !c.out.Scan() {
 		if c.ctx.Err() != nil {
 			return msg, c.ctx.Err()
@@ -137,7 +175,10 @@ func (c *connection) read() (message, error) {
 		if err := c.out.Err(); err != nil {
 			return msg, err
 		}
-		return msg, errors.New("Codex App Server closed unexpectedly; check the CLI path and local Codex configuration")
+		return msg, errConnectionClosed
+	}
+	if err := c.ctx.Err(); err != nil {
+		return msg, err
 	}
 	if err := json.Unmarshal(c.out.Bytes(), &msg); err != nil {
 		return msg, fmt.Errorf("invalid Codex response: %w", err)
@@ -148,7 +189,43 @@ func (c *connection) read() (message, error) {
 			return msg, err
 		}
 	}
+	if msg.Method == "account/updated" && len(msg.ID) == 0 {
+		c.accountRevision++
+		c.subscriptionCheckedAt = time.Time{}
+		c.defaultModel = ""
+	}
 	return msg, nil
+}
+
+func streamNotification(method string) bool {
+	switch method {
+	case "turn/started", "item/started", "item/reasoning/textDelta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "error", "item/agentMessage/delta", "turn/completed":
+		return true
+	}
+	return false
+}
+
+func notificationSize(msg message) int {
+	size := len(msg.ID) + len(msg.Method) + len(msg.Params) + len(msg.Result)
+	if msg.Error != nil {
+		size += len(msg.Error.Message)
+	}
+	return size
+}
+
+func (c *connection) deferNotification(msg message) error {
+	// Retain only notifications consumed by stream or login. Metadata updates
+	// can arrive throughout the lifetime of a reused process.
+	if !streamNotification(msg.Method) && msg.Method != "account/login/completed" {
+		return nil
+	}
+	size := notificationSize(msg)
+	if len(c.pending) >= 256 || size > (4<<20)-c.pendingBytes {
+		return errors.New("Codex notification buffer limit exceeded")
+	}
+	c.pending = append(c.pending, msg)
+	c.pendingBytes += size
+	return nil
 }
 
 func (c *connection) call(method string, params any, result any) error {
@@ -166,7 +243,9 @@ func (c *connection) call(method string, params any, result any) error {
 		}
 		if string(msg.ID) != fmt.Sprint(id) || msg.Method != "" {
 			if len(msg.ID) == 0 {
-				c.pending = append(c.pending, msg)
+				if err := c.deferNotification(msg); err != nil {
+					return err
+				}
 			}
 			continue
 		}
@@ -181,9 +260,18 @@ func (c *connection) call(method string, params any, result any) error {
 }
 
 func (c *connection) next() (message, error) {
+	if err := c.ctx.Err(); err != nil {
+		return message{}, err
+	}
 	if len(c.pending) > 0 {
 		msg := c.pending[0]
+		c.pending[0] = message{}
 		c.pending = c.pending[1:]
+		c.pendingBytes -= notificationSize(msg)
+		if len(c.pending) == 0 {
+			c.pending = nil
+			c.pendingBytes = 0
+		}
 		return msg, nil
 	}
 	return c.read()
@@ -213,6 +301,7 @@ func (c *connection) account() (Status, error) {
 func (c *connection) models() ([]Model, error) {
 	models := []Model{}
 	var cursor *string
+	seen := make(map[string]bool)
 	for {
 		var page struct {
 			Data []struct {
@@ -237,9 +326,10 @@ func (c *connection) models() ([]Model, error) {
 		if page.NextCursor == nil || *page.NextCursor == "" {
 			return models, nil
 		}
-		if cursor != nil && *cursor == *page.NextCursor {
+		if seen[*page.NextCursor] {
 			return nil, errors.New("Codex model list repeated its cursor")
 		}
+		seen[*page.NextCursor] = true
 		cursor = page.NextCursor
 	}
 }
@@ -314,6 +404,10 @@ func Stream(ctx context.Context, path, model, instructions, input string, onToke
 }
 
 func (c *connection) requireSubscription() error {
+	if !c.subscriptionCheckedAt.IsZero() && time.Since(c.subscriptionCheckedAt) < time.Minute {
+		return nil
+	}
+	revision := c.accountRevision
 	status, err := c.account()
 	if err != nil {
 		return err
@@ -321,25 +415,86 @@ func (c *connection) requireSubscription() error {
 	if !status.Authenticated {
 		return errors.New("sign in to Codex with ChatGPT in model settings first; API-key login cannot use subscription access")
 	}
+	if revision == c.accountRevision {
+		c.subscriptionCheckedAt = time.Now()
+	}
 	return nil
 }
 
-func (c *connection) startThread(model, instructions string) (string, error) {
-	if model == "" {
+func (c *connection) resolveModel(model string) (string, error) {
+	if model = strings.TrimSpace(model); model != "" {
+		return model, nil
+	}
+	if c.defaultModel == "" {
+		revision := c.accountRevision
 		models, err := c.models()
 		if err != nil {
 			return "", err
 		}
 		for _, candidate := range models {
 			if candidate.IsDefault {
-				model = candidate.ID
+				model = strings.TrimSpace(candidate.ID)
 				break
 			}
 		}
 		if model == "" {
 			return "", errors.New("Codex did not return a default model; choose a model in settings")
 		}
+		if revision == c.accountRevision {
+			c.defaultModel = model
+		}
+		return model, nil
 	}
+	return c.defaultModel, nil
+}
+
+func (c *connection) hasPreparedSession(key sessionKey) bool {
+	key = key.normalized()
+	if key.model == "" {
+		key.model = c.defaultModel
+	}
+	return c.prepared != nil && c.prepared.key == key && c.prepared.accountRevision == c.accountRevision
+}
+
+// Preparing a fresh ephemeral thread starts Codex's native transport warm-up
+// without sending screen content or starting a model turn.
+func (c *connection) prepareSession(key sessionKey) error {
+	if c.hasPreparedSession(key) {
+		return nil
+	}
+	revision := c.accountRevision
+	key = key.normalized()
+	model, err := c.resolveModel(key.model)
+	if err != nil {
+		return err
+	}
+	key.model = model
+	id, err := c.startThread(key.model, key.instructions, key.effort)
+	if err != nil {
+		return err
+	}
+	c.prepared = &preparedThread{key: key, id: id, accountRevision: revision}
+	c.prepareEnabled = true
+	return nil
+}
+
+func (c *connection) startThread(model, instructions, effort string) (string, error) {
+	key := (sessionKey{model: model, instructions: instructions, effort: effort}).normalized()
+	resolved, err := c.resolveModel(key.model)
+	if err != nil {
+		return "", err
+	}
+	key.model = resolved
+	if prepared := c.prepared; prepared != nil {
+		c.prepared = nil
+		if prepared.key == key && prepared.accountRevision == c.accountRevision {
+			return prepared.id, nil
+		}
+		if err := c.unsubscribeThread(prepared.id); err != nil {
+			return "", fmt.Errorf("discard unused Codex session: %w", err)
+		}
+	}
+	model, effort = key.model, key.effort
 	// Override inherited agent capabilities. Screen content is untrusted data;
 	// it must not trigger local commands, plugins, or external tools.
 	var inherited struct {
@@ -356,9 +511,12 @@ func (c *connection) startThread(model, instructions string) (string, error) {
 	}
 	options := map[string]any{
 		"mcp_servers": servers, "web_search": "disabled", "project_doc_max_bytes": 0,
-		"features": map[string]any{"shell_tool": false, "unified_exec": false, "apps": false,
-			"apply_patch_freeform": false, "include_apply_patch_tool": false, "collab": false, "multi_agent": false, "code_mode": false},
-		"tools": map[string]any{"view_image": false},
+		"features": map[string]any{"shell_tool": false, "unified_exec": false, "apps": false, "view_image": false,
+			"hooks": false, "plugins": false, "plugin_discovery_prefetch": false, "skill_search": false,
+			"apply_patch_freeform": false, "collab": false, "multi_agent": false, "code_mode": false},
+	}
+	if effort != "" && effort != "default" {
+		options["model_reasoning_effort"] = effort
 	}
 	var thread struct{ Thread struct{ ID string } }
 	if err := c.call("thread/start", map[string]any{
@@ -379,7 +537,12 @@ func (c *connection) stream(model, instructions, input, effort string, onToken f
 }
 
 func (c *connection) streamWithProgress(model, instructions, input, effort string, onToken, onProgress func(string), images ...string) (string, error) {
-	threadID, err := c.startThread(model, instructions)
+	effort = (sessionKey{effort: effort}).normalized().effort
+	model, err := c.resolveModel(model)
+	if err != nil {
+		return "", err
+	}
+	threadID, err := c.startThread(model, instructions, effort)
 	if err != nil {
 		return "", err
 	}
@@ -387,33 +550,64 @@ func (c *connection) streamWithProgress(model, instructions, input, effort strin
 	for _, image := range images {
 		inputs = append(inputs, map[string]any{"type": "image", "url": image})
 	}
-	turn := map[string]any{"threadId": threadID, "input": inputs}
+	turn := map[string]any{"threadId": threadID, "model": model, "input": inputs}
 	if effort != "" && effort != "default" {
 		turn["effort"] = effort
 	}
-	if err := c.call("turn/start", turn, nil); err != nil {
+	// Notifications can arrive before the turn/start acknowledgement. Consume
+	// both on the same loop so a delayed RPC response never hides streamed text.
+	c.seq++
+	requestID := c.seq
+	turnStarted := time.Now()
+	if err := c.send(map[string]any{"id": requestID, "method": "turn/start", "params": turn}); err != nil {
 		return "", err
-	}
-	if onProgress != nil {
-		onProgress("turn/start")
 	}
 	var output strings.Builder
 	var lastUpstreamError string
+	var acknowledged, completed bool
+	var acknowledgementTimer *time.Timer
+	defer func() {
+		if acknowledgementTimer != nil {
+			acknowledgementTimer.Stop()
+		}
+	}()
+streamLoop:
 	for {
 		msg, err := c.next()
 		if err != nil {
+			if completed && !acknowledged {
+				return output.String(), fmt.Errorf("Codex turn/start acknowledgement missing after completed output: %w", err)
+			}
 			if lastUpstreamError != "" {
 				return output.String(), fmt.Errorf("Codex stream (last upstream error: %s): %w", lastUpstreamError, err)
 			}
 			return output.String(), err
 		}
-		if msg.Method == "error" || msg.Method == "item/started" || msg.Method == "turn/started" {
-			slog.Debug("Codex stream event", "method", msg.Method)
+		if string(msg.ID) == fmt.Sprint(requestID) && msg.Method == "" {
+			slog.Info("Codex RPC", "method", "turn/start", "elapsed_ms", time.Since(turnStarted).Milliseconds())
+			if acknowledgementTimer != nil && !acknowledgementTimer.Stop() {
+				return output.String(), errors.New("Codex turn/start acknowledgement timed out after completed output")
+			}
+			if msg.Error != nil {
+				return output.String(), fmt.Errorf("Codex turn/start: %s", msg.Error.Message)
+			}
+			if onProgress != nil {
+				onProgress("turn/start")
+			}
+			acknowledged = true
+			if completed {
+				break streamLoop
+			}
+			continue
+		}
+		if completed || len(msg.ID) > 0 || !streamNotification(msg.Method) {
+			continue
 		}
 		var event struct {
 			ThreadID, Delta string
 			WillRetry       bool
 			Error           *struct{ Message string }
+			Item            struct{ Type string }
 			Turn            struct {
 				Status string
 				Error  *struct{ Message string }
@@ -425,8 +619,15 @@ func (c *connection) streamWithProgress(model, instructions, input, effort strin
 		if event.ThreadID != threadID {
 			continue
 		}
+		// Log protocol stages only, never screen text or reasoning contents.
+		if msg.Method != "item/agentMessage/delta" {
+			slog.Debug("Codex stream event", "method", msg.Method, "item_type", event.Item.Type)
+		}
 		switch msg.Method {
 		case "turn/started", "item/started", "item/reasoning/textDelta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded":
+			if msg.Method == "item/started" && event.Item.Type != "reasoning" && event.Item.Type != "agentMessage" {
+				continue
+			}
 			if onProgress != nil {
 				onProgress(msg.Method)
 			}
@@ -451,12 +652,33 @@ func (c *connection) streamWithProgress(model, instructions, input, effort strin
 			if strings.TrimSpace(output.String()) == "" {
 				return "", errors.New("Codex returned no text")
 			}
-			// Release the ephemeral conversation before returning this process to
-			// the warm pool. A failed cleanup discards it without losing output.
-			if err := c.call("thread/unsubscribe", map[string]any{"threadId": threadID}, nil); err != nil {
-				c.close()
+			// Even a completed notification can precede the RPC response. A
+			// rejected turn must never become a successful cached translation.
+			completed = true
+			if acknowledged {
+				break streamLoop
 			}
-			return output.String(), nil
+			// Native RPC replies normally precede completion. Bound this unusual
+			// confirmation wait so a missing reply cannot hold already shown text.
+			acknowledgementTimer = time.AfterFunc(250*time.Millisecond, c.close)
 		}
 	}
+	// Release the ephemeral conversation before returning this process to
+	// the warm pool. A failed cleanup discards it without losing output.
+	_ = c.unsubscribeThread(threadID)
+	return output.String(), nil
+}
+
+func (c *connection) unsubscribeThread(threadID string) error {
+	timer := time.AfterFunc(250*time.Millisecond, c.close)
+	err := c.call("thread/unsubscribe", map[string]any{"threadId": threadID}, nil)
+	if !timer.Stop() || err != nil {
+		c.close()
+		if err == nil {
+			err = errConnectionClosed
+		} else {
+			err = fmt.Errorf("%w: %w", errConnectionClosed, err)
+		}
+	}
+	return err
 }

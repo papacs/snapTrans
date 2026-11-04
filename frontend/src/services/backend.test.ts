@@ -1,8 +1,51 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { copyImageDataUrl, copyText, defaultConfig, saveConfig, testConnection, loadConfig, clearHistory, getHistory, getCodexStatus, loginCodex, translateRegion } from "./backend";
+import { beginScrollingScreenshot, cancelScrollingScreenshot, stepScrollingScreenshot, finishScrollingScreenshot, copyImageDataUrl, copyText, defaultConfig, saveConfig, testConnection, loadConfig, clearHistory, getHistory, getCodexStatus, loginCodex, translateRegion } from "./backend";
 
 afterEach(() => { delete window.go; delete window.runtime; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe("native boundary", () => {
+ it("waits for a previous scrolling cancellation before beginning the next session without blocking step or finish", async () => {
+  let finishCancel!: () => void;
+  const cancel = vi.fn(() => new Promise<void>(resolve => { finishCancel = resolve; }));
+  const begin = vi.fn(async () => ({frames:1,width:320,height:200}));
+  const step = vi.fn(async () => ({}));
+  const finish = vi.fn(async () => ({}));
+  window.go = {desktop:{App:{CancelScrollingScreenshot:cancel,BeginScrollingScreenshot:begin,StepScrollingScreenshot:step,FinishScrollingScreenshot:finish}}} as unknown as Window["go"];
+  const cancelled = cancelScrollingScreenshot();
+  await Promise.resolve();
+  expect(cancel).toHaveBeenCalledTimes(1);
+  const started = beginScrollingScreenshot({x:10,y:20,width:320,height:200});
+  await Promise.resolve();
+  const stepped = stepScrollingScreenshot(), finished = finishScrollingScreenshot();
+  await Promise.all([stepped,finished]);
+  expect(step).toHaveBeenCalledTimes(1);
+  expect(finish).toHaveBeenCalledTimes(1);
+  const startedBeforeCancellation = begin.mock.calls.length;
+  finishCancel();
+  await Promise.all([cancelled,started]);
+  expect(startedBeforeCancellation).toBe(0);
+  expect(begin).toHaveBeenCalledExactlyOnceWith({x:10,y:20,width:320,height:200});
+ });
+ it.each(["begin", "cancel"] as const)("continues scrolling session operations after a failed %s", async operation => {
+  let fail!: (error: Error) => void;
+  const pending = new Promise<never>((_resolve,reject) => { fail = reject; });
+  const begin = vi.fn(async () => ({frames:1,width:320,height:200}));
+  const cancel = vi.fn(async () => {});
+  window.go = {desktop:{App:{CancelScrollingScreenshot:cancel,BeginScrollingScreenshot:begin}}} as unknown as Window["go"];
+  if(operation === "begin") begin.mockImplementationOnce(() => pending);
+  else cancel.mockImplementationOnce(() => pending);
+  const first = operation === "begin" ? beginScrollingScreenshot({x:0,y:0,width:320,height:200}) : cancelScrollingScreenshot();
+  const rejected = expect(first).rejects.toThrow("session unavailable");
+  await Promise.resolve();
+  const second = operation === "begin" ? cancelScrollingScreenshot() : beginScrollingScreenshot({x:1,y:2,width:320,height:200});
+  await Promise.resolve();
+  const calledBeforeFailure = operation === "begin" ? cancel.mock.calls.length : begin.mock.calls.length;
+  fail(new Error("session unavailable"));
+  await rejected;
+  await second;
+  expect(calledBeforeFailure).toBe(0);
+  expect(begin).toHaveBeenCalledTimes(1);
+  expect(cancel).toHaveBeenCalledTimes(1);
+ });
  it("sends an OCR retry as a request override without changing saved settings", async () => {
   const translate = vi.fn(async () => {});
   window.go = {desktop:{App:{TranslateRegion:translate}}} as unknown as Window["go"];

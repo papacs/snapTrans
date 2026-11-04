@@ -7,9 +7,81 @@ import (
 	"image/color"
 	"image/png"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestManualScrollCancellationStopsFurtherCaptureAndEncoding(t *testing.T) {
+	for _, cancelParent := range []bool{false, true} {
+		ctx, cancel := context.WithCancel(context.Background())
+		calls := 0
+		session, err := startManualScrollCapture(ctx, image.Rect(0, 0, 40, 100), ManualScrollOptions{}, func(image.Rectangle) (image.Image, error) {
+			calls++
+			return patternedScrollContent(40, 100), nil
+		})
+		require.NoError(t, err)
+		if cancelParent {
+			cancel()
+		} else {
+			session.Cancel()
+		}
+		snapshot, err := session.CaptureNext()
+		require.ErrorIs(t, err, context.Canceled)
+		require.Empty(t, snapshot)
+		result, err := session.Finish()
+		require.ErrorIs(t, err, context.Canceled)
+		require.Empty(t, result)
+		require.Equal(t, 1, calls, "canceled sessions must not capture again")
+		cancel()
+	}
+}
+
+func TestManualScrollCancelDoesNotWaitForAnInFlightFrame(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	calls := 0
+	session, err := startManualScrollCapture(context.Background(), image.Rect(0, 0, 40, 100), ManualScrollOptions{}, func(image.Rectangle) (image.Image, error) {
+		calls++
+		if calls == 2 {
+			close(entered)
+			<-release
+		}
+		return patternedScrollContent(40, 100), nil
+	})
+	require.NoError(t, err)
+	result := make(chan error, 1)
+	go func() { _, err := session.CaptureNext(); result <- err }()
+	<-entered
+	canceled := make(chan struct{})
+	go func() { session.Cancel(); close(canceled) }()
+	select {
+	case <-canceled:
+	case <-time.After(3 * time.Second):
+		t.Fatal("cancel blocked on native capture")
+	}
+	close(release)
+	require.ErrorIs(t, <-result, context.Canceled)
+	_, err = session.Finish()
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestManualScrollStartupHonorsCancellationDuringFirstFrame(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	session, err := startManualScrollCapture(ctx, image.Rect(0, 0, 40, 100), ManualScrollOptions{}, func(image.Rectangle) (image.Image, error) {
+		cancel()
+		return patternedScrollContent(40, 100), nil
+	})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, session)
+}
 
 func TestVerticalStitcherUsesMeasuredOverlap(t *testing.T) {
 	content := patternedScrollContent(48, 300)

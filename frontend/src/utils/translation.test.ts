@@ -29,6 +29,53 @@ describe("detectDirectionForText", () => {
 });
 
 describe("parseTranslationOutput", () => {
+  it("preserves legitimate Begin and End labels while filtering explicit delimiters", () => {
+    const parsed = parseTranslationOutput("[1] Begin\n[2] End\n[3] ---END---\n[4] OCR_TEXT_END", 4);
+    expect(parsed.indexed).toEqual({ 1: "Begin", 2: "End" });
+    expect(translationForOCRBlock(1, block("结束"), parsed, 4, "to-en")).toBe("End");
+  });
+
+  it("cleans quoted wire lines and empty bodies without removing a single-colon label", () => {
+    const parsed = parseTranslationOutput('"[1] 译文"\n[2] ""\n[3] ```\n[4] "OCR_TEXT_BEGIN"\n[5] "---END---"\n[6] Begin:', 6);
+    expect(parsed.indexed).toEqual({ 1: "译文", 6: "Begin:" });
+  });
+
+  it("does not map incomplete or out-of-range region IDs to positional source rows", () => {
+    const partial = parseTranslationOutput("[1]\n第二行", 2);
+    expect(partial.hasIndexedEntries).toBe(true);
+    expect(translationForOCRBlock(1, block("Second"), partial, 2)).toBe("");
+    const ranged = parseTranslationOutput("[99] 额外内容\n[1] 第一行\n[4] 额外内容\n[2", 3);
+    expect(ranged.indexed).toEqual({ 1: "第一行" });
+    expect(ranged.lines).toEqual(["第一行"]);
+  });
+
+  it("keeps adjacent indexed rows separate across CR-only line endings", () => {
+    const parsed = parseTranslationOutput("[1]\n[2] 第二行\r[3] 第三行", 3);
+    expect(parsed.indexed).toEqual({ 2: "第二行", 3: "第三行" });
+    expect(parsed.lines).toEqual(["第二行", "第三行"]);
+  });
+
+  it("preserves plain-image continuation lines without a region limit", () => {
+    const parsed = parseTranslationOutput("1. First step\nKeep this continuation.\n2. Second step");
+    expect(parsed.lines).toEqual(["First step", "Keep this continuation.", "Second step"]);
+  });
+
+  it.each([
+    ["张三，你好", "Hi 张三,"],
+    ["王小明先生", "Mr 王小明"],
+    ["请联系李明，确认明天的会议", "Contact 李明 about tomorrow's meeting."],
+  ])("preserves source names in English translations of %s", (source, translated) => {
+    const parsed = parseTranslationOutput("[1] " + translated);
+    expect(translationForOCRBlock(0, block(source), parsed, 1, "to-en")).toBe(translated);
+  });
+
+  it.each([
+    ["打开 API 设置", "打开 API 设置"],
+    ["你好 OpenAI", "你好 OpenAI"],
+    ["聪，你好", "Hello 张三"],
+  ])("rejects untranslated Chinese or invented names in %s", (source, translated) => {
+    expect(translationForOCRBlock(0, block(source), parseTranslationOutput("[1] " + translated), 1, "to-en")).toBe("");
+  });
   it("strips leaked OCR delimiters and preserves numbered translation mapping", () => {
     const parsed = parseTranslationOutput("OCR_TEXT_BEGIN\n[1] \u5341\u5927\u70ed\u95e8\u6a21\u578b\n[3] \u4e2d\u6027\nOCR_TEXT_END");
 

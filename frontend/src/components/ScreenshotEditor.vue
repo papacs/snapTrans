@@ -109,6 +109,7 @@ let pixelatedCanvas: HTMLCanvasElement | null = null;
 let drawing = false;
 let redrawFrame: number | null = null;
 let disposed = false;
+let scrollSequence = 0;
 let scrollPollTimer: number | null = null;
 let toolbarResizeObserver: ResizeObserver | null = null;
 
@@ -241,6 +242,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   disposed = true;
+  scrollSequence += 1;
   if (redrawFrame !== null) window.cancelAnimationFrame(redrawFrame);
   extractionSequence += 1;
   tableExtractionSequence += 1;
@@ -392,6 +394,7 @@ async function captureDownwardScroll(): Promise<void> {
   if (!editor || startingScroll.value || manualScrolling.value || annotations.value.length > 0) {
     return;
   }
+  const sequence = ++scrollSequence;
   const sourceBounds = props.sourceCanvas.getBoundingClientRect();
   const imageRect = mapCssRectToImageRect(
     props.rect,
@@ -414,23 +417,25 @@ async function captureDownwardScroll(): Promise<void> {
   scrollProgress.value = { frames: 1, width: imageRect.width, height: imageRect.height };
   stitchedPreviewImage.value = baseCanvas?.toDataURL("image/png") ?? "";
   await nextTick();
+  if (disposed || sequence !== scrollSequence || !manualScrolling.value) return;
 
   try {
-    scrollProgress.value = await beginScrollingScreenshot(captureRegion);
+    const result = await beginScrollingScreenshot(captureRegion);
+    // Cancellation/unmount already requested cleanup. A late global cancel here
+    // could otherwise cancel the user's next scrolling capture.
+    if (disposed || sequence !== scrollSequence || !manualScrolling.value) return;
+    scrollProgress.value = result;
     scheduleScrollPoll(120);
-    if (disposed || !manualScrolling.value) {
-      await cancelScrollingScreenshot();
-      return;
-    }
   } catch (error) {
+    if (disposed || sequence !== scrollSequence || !manualScrolling.value) return;
     manualScrolling.value = false;
     scrollNotice.value = error instanceof Error ? error.message : "滚动截图失败";
     if (!disposed) {
       await nextTick();
-      await showCaptureWindow();
+      if (!disposed && sequence === scrollSequence) await showCaptureWindow();
     }
   } finally {
-    startingScroll.value = false;
+    if (sequence === scrollSequence) startingScroll.value = false;
   }
 }
 
@@ -459,12 +464,15 @@ async function pollScrollingCapture(): Promise<void> {
   }
 
   scrollStepPending.value = true;
+  const sequence = scrollSequence;
   let pollingFailed = false;
   try {
     const result = await stepScrollingScreenshot();
+    if (disposed || sequence !== scrollSequence || !manualScrolling.value) return;
     scrollProgress.value = { frames: result.frames, width: result.width, height: result.height };
     if (result.appended && result.previewImage) {
       await preloadImage(result.previewImage);
+      if (disposed || sequence !== scrollSequence || !manualScrolling.value) return;
       stitchedPreviewImage.value = result.previewImage;
       scrollNotice.value = "";
     }
@@ -473,12 +481,13 @@ async function pollScrollingCapture(): Promise<void> {
       scrollNotice.value = "已达到长截图大小或帧数上限，请点击完成以保留当前结果。";
     }
   } catch (error) {
+    if (disposed || sequence !== scrollSequence || !manualScrolling.value) return;
     pollingFailed = true;
     scrollNotice.value = error instanceof Error ? error.message : "滚动画面采集失败";
   } finally {
-    scrollStepPending.value = false;
-    if (!pollingFailed) {
-      scheduleScrollPoll();
+    if (sequence === scrollSequence) {
+      scrollStepPending.value = false;
+      if (!pollingFailed) scheduleScrollPoll();
     }
   }
 }
@@ -497,20 +506,23 @@ async function finishManualScrollingCapture(): Promise<void> {
     return;
   }
   finishingScroll.value = true;
+  const sequence = scrollSequence;
   stopScrollPolling();
   try {
     const result = await finishScrollingScreenshot();
+    if (disposed || sequence !== scrollSequence || !manualScrolling.value) return;
     manualScrolling.value = false;
     emit("complete", result.image);
   } catch (error) {
+    if (disposed || sequence !== scrollSequence || !manualScrolling.value) return;
     manualScrolling.value = false;
     scrollNotice.value = error instanceof Error ? error.message : "滚动截图失败";
     if (!disposed) {
       await nextTick();
-      await showCaptureWindow();
+      if (!disposed && sequence === scrollSequence) await showCaptureWindow();
     }
   } finally {
-    finishingScroll.value = false;
+    if (sequence === scrollSequence) finishingScroll.value = false;
   }
 }
 
@@ -519,10 +531,13 @@ async function cancelManualScrollingCapture(): Promise<void> {
     return;
   }
   manualScrolling.value = false;
+  const sequence = ++scrollSequence;
   stopScrollPolling();
   startingScroll.value = false;
+  finishingScroll.value = false;
+  scrollStepPending.value = false;
   await cancelScrollingScreenshot();
-  emit("cancel");
+  if (!disposed && sequence === scrollSequence) emit("cancel");
 }
 
 function onMouseMove(event: MouseEvent): void {

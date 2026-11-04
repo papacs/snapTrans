@@ -42,17 +42,24 @@ export function detectDirectionForText(text: string): TranslationDirection {
   return "to-zh";
 }
 
-export function parseTranslationOutput(rawText: string): ParsedTranslationOutput {
+export function parseTranslationOutput(rawText: string, regionCount?: number): ParsedTranslationOutput {
   const indexed: Record<number, string> = {};
   const lines: string[] = [];
+  let hasRegionIndices = false;
 
-  for (const rawLine of rawText.replace(/\r/g, "").split("\n")) {
+  for (const rawLine of rawText.split(/\r\n?|\n/)) {
     const cleaned = cleanTranslationLine(rawLine);
     if (!cleaned) {
       continue;
     }
 
     const indexedLine = parseIndexedLine(cleaned);
+    if (regionCount !== undefined && /^(?:\[\d*(?:\]|$)|\d+[.)、:：-])/.test(cleaned)) {
+      // A partial/empty wire ID must not turn the following row into a
+      // positional replacement; unknown IDs cannot enter copy/full text.
+      hasRegionIndices = true;
+      if (!indexedLine || indexedLine.index > regionCount) continue;
+    }
     if (indexedLine) {
       indexed[indexedLine.index] = indexedLine.text;
       lines.push(indexedLine.text);
@@ -63,7 +70,7 @@ export function parseTranslationOutput(rawText: string): ParsedTranslationOutput
   }
 
   return {
-    hasIndexedEntries: Object.keys(indexed).length > 0,
+    hasIndexedEntries: hasRegionIndices || Object.keys(indexed).length > 0,
     indexed,
     lines
   };
@@ -129,13 +136,13 @@ function candidateForBlock(blockIndex: number, parsed: ParsedTranslationOutput, 
 }
 
 function cleanTranslationLine(line: string): string {
-  let cleaned = line.trim();
+  let cleaned = line.trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g, "").trim();
   if (!cleaned || cleaned === "```") {
     return "";
   }
 
   cleaned = cleaned.replace(/\bOCR_TEXT_(BEGIN|END)\b[:：]?\s*/gi, "").trim();
-  if (!cleaned || /^[-_*`:\s]*(BEGIN|END)[-_*`:\s]*$/i.test(cleaned)) {
+  if (!cleaned || /^(?:[-_*`:]{2,}\s*(?:BEGIN|END)[-_*`:\s]*|(?:BEGIN|END)\s*[-_*`:]{2,})$/i.test(cleaned)) {
     return "";
   }
 
@@ -176,7 +183,7 @@ function isTrustedReplacement(sourceText: string, translatedText: string, direct
     return false;
   }
 
-  if (!isTargetLanguageText(translatedText, direction)) {
+  if (!isTargetLanguageText(translatedText, direction, sourceText)) {
     return false;
   }
 
@@ -199,13 +206,22 @@ function hasNaturalLanguage(text: string): boolean {
   return /[\p{Script=Han}A-Za-z]/u.test(text);
 }
 
-function isTargetLanguageText(text: string, direction: TranslationDirection): boolean {
+function isTargetLanguageText(text: string, direction: TranslationDirection, sourceText: string): boolean {
   const hasHan = /[\p{Script=Han}]/u.test(text);
   const hasLatin = /[A-Za-z]/.test(text);
   if (direction === "to-zh") {
     return hasHan;
   }
-  return hasLatin && !hasHan;
+  if (!hasLatin || !hasHan) return hasLatin;
+  const names = text.match(/[\p{Script=Han}]+/gu) ?? [];
+  if (!names.every(name => sourceText.includes(name))) return false;
+  // Names may stay in Chinese in an otherwise English sentence. Short
+  // greetings/titles need a separate check because "Mr 王小明" has few Latin letters.
+  const namePhrase = /^(?:hi|hello|dear|mr\.?|mrs\.?|ms\.?|miss|dr\.?|prof\.?)\s*[,，]?\s*[\p{Script=Han}]{1,6}[\s,，.!！?？:：]*$/iu.test(text.trim());
+  const hanCount = Array.from(names.join("")).length;
+  const sourceHanCount = sourceText.match(/[\p{Script=Han}]/gu)?.length ?? 0;
+  const latinCount = text.match(/[A-Za-z]/g)?.length ?? 0;
+  return namePhrase || (latinCount >= hanCount * 2 && sourceHanCount >= hanCount * 2);
 }
 
 function normalizeDuplicateText(text: string): string {

@@ -10,11 +10,18 @@ import (
 )
 
 func TestRetryStreamStartErrorOnlyRetriesEOFBeforeFirstToken(t *testing.T) {
-	require.True(t, shouldRetryStreamStartError("", errors.New(`Post "https://example.test/chat/completions": EOF`)))
-	require.True(t, shouldRetryStreamStartError("", errors.New("unexpected EOF")))
-	require.False(t, shouldRetryStreamStartError("partial", errors.New("unexpected EOF")))
-	require.False(t, shouldRetryStreamStartError("", context.Canceled))
-	require.False(t, shouldRetryStreamStartError("", errors.New("401 unauthorized")))
+	require.True(t, shouldRetryStreamStartError("openai-compatible", "", errors.New(`Post "https://example.test/chat/completions": EOF`)))
+	require.True(t, shouldRetryStreamStartError("openai-compatible", "", errors.New("unexpected EOF")))
+	require.False(t, shouldRetryStreamStartError("openai-compatible", "partial", errors.New("unexpected EOF")))
+	require.False(t, shouldRetryStreamStartError("openai-compatible", "", context.Canceled))
+	require.False(t, shouldRetryStreamStartError("openai-compatible", "", errors.New("401 unauthorized")))
+}
+
+func TestCodexTerminalEOFDoesNotEnterHTTPStreamRetry(t *testing.T) {
+	err := errors.New("Codex stream: unexpected EOF")
+	require.False(t, shouldRetryStreamStartError("codex", "", err), "Codex owns its reconnect and upstream retry decisions")
+	require.True(t, shouldRetryStreamStartError("openai-compatible", "", err))
+	require.True(t, shouldRetryStreamStartError("", "", err), "the default provider is OpenAI compatible")
 }
 
 func TestBuildTranslationRequestNumbersOCRLinesAndForbidsReadinessReplies(t *testing.T) {
@@ -53,7 +60,7 @@ func TestBuildTranslationRequestRequiresShortEnglishWordsToTranslate(t *testing.
 func TestBuildTranslationRequestPreservesLineOrderForOCRBlocks(t *testing.T) {
 	request := buildTranslationRequest("deepseek-chat", "Neutral\nNegative\nPositive", DirectionToChinese, "", "")
 
-	require.Contains(t, request.Messages[0].Content, "return exactly one output line for every input line")
+	require.Contains(t, request.Messages[0].Content, "return exactly one output line for every numbered input line")
 	require.Contains(t, request.Messages[1].Content, "[1] Neutral\n[2] Negative\n[3] Positive")
 }
 
@@ -94,11 +101,29 @@ func TestMissingNumberedOCRLinesReturnsOriginalMissingLines(t *testing.T) {
 	require.Equal(t, []numberedOCRLine{{Index: 2, Text: "Negative"}}, missing)
 }
 
+func TestNumberedCoverageAcceptsCompactIDsWithoutReadingAcrossLines(t *testing.T) {
+	source := "Hi Alex,\nA complete sentence.\nNEXT"
+	for _, test := range []struct {
+		name, output string
+		missing      []numberedOCRLine
+	}{
+		{name: "compact", output: "[1]你好，Alex！\n[2]完整的句子。\n[3]下一步", missing: []numberedOCRLine{}},
+		{name: "empty first region", output: "[1]\n[2] 完整的句子。\n[3] 下一步", missing: []numberedOCRLine{{Index: 1, Text: "Hi Alex,"}}},
+		{name: "whitespace body", output: "[1] \t\r\n[2]完整的句子。\r\n[3]", missing: []numberedOCRLine{{Index: 1, Text: "Hi Alex,"}, {Index: 3, Text: "NEXT"}}},
+		{name: "duplicate ID", output: "[1] 你好\n[1] Alex\n[3]下一步", missing: []numberedOCRLine{{Index: 2, Text: "A complete sentence."}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.missing, missingNumberedOCRLines(source, test.output))
+		})
+	}
+}
+
 func TestBuildMissingTranslationRequestPreservesOriginalLineNumbers(t *testing.T) {
-	request := buildMissingTranslationRequest("deepseek-chat", []numberedOCRLine{{Index: 2, Text: "Negative"}}, DirectionToChinese, "", "")
+	client := NewOpenAICompatible(Options{Model: "deepseek-chat"})
+	request := client.missingTranslationRequest("Neutral\nNegative\nPositive", []numberedOCRLine{{Index: 2, Text: "Negative"}}, DirectionToChinese)
 
 	require.True(t, request.Stream)
-	require.Contains(t, request.Messages[1].Content, "Translate only these missing numbered OCR lines")
+	require.Contains(t, request.Messages[1].Content, "Translate only these missing numbered lines")
 	require.Contains(t, request.Messages[1].Content, "[2] Negative")
 	require.NotContains(t, request.Messages[1].Content, "[1] Neutral")
 }
@@ -147,10 +172,10 @@ func TestTryFastTranslationCoversCommonUiWords(t *testing.T) {
 }
 
 func TestTryFastTranslationChineseToEnglish(t *testing.T) {
-	translated, ok := TryFastTranslation("\u8bbe\u7f6e\n\u4fdd\u5b58", DirectionToEnglish)
+	translated, ok := TryFastTranslation("\u8bbe\u7f6e\n\u4fdd\u5b58\n\u5173\u4e8e", DirectionToEnglish)
 
 	require.True(t, ok)
-	require.Equal(t, "Settings\nSave", translated)
+	require.Equal(t, "Settings\nSave\nAbout", translated)
 }
 
 func TestTryFastTranslationDeclinesSentenceText(t *testing.T) {

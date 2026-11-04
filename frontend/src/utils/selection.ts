@@ -126,12 +126,11 @@ export function mapCssRectToImageRect(
   const maxX = Math.max(...mapped.map((point) => point.x));
   const maxY = Math.max(...mapped.map((point) => point.y));
 
-  return {
-    x: clamp(Math.round(minX), 0, imageSize.width),
-    y: clamp(Math.round(minY), 0, imageSize.height),
-    width: clamp(Math.round(maxX - minX), 0, imageSize.width),
-    height: clamp(Math.round(maxY - minY), 0, imageSize.height)
-  };
+  const x = clamp(Math.round(minX), 0, imageSize.width);
+  const y = clamp(Math.round(minY), 0, imageSize.height);
+  const right = clamp(Math.round(maxX), 0, imageSize.width);
+  const bottom = clamp(Math.round(maxY), 0, imageSize.height);
+  return { x, y, width: Math.max(0, right - x), height: Math.max(0, bottom - y) };
 }
 
 function ratioMapCssRectToImageRect(rect: Rect, cssSize: Size, imageSize: Size): Rect {

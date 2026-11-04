@@ -20,14 +20,22 @@ var warmProcess struct {
 	ready       chan struct{}
 	warmingPath string
 	cancelWarm  context.CancelFunc
+	active      int
 }
 
-func takeWarm(ctx context.Context, path string) (*connection, uint64, error) {
+func takeWarm(ctx context.Context, path string, expectedEpoch ...uint64) (*connection, uint64, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
 	resolved, err := resolveExecutable(path)
 	if err != nil {
 		return nil, 0, err
 	}
 	warmProcess.Lock()
+	if len(expectedEpoch) > 0 && warmProcess.epoch != expectedEpoch[0] {
+		warmProcess.Unlock()
+		return nil, expectedEpoch[0], context.Canceled
+	}
 	c, previous, epoch := warmProcess.idle, warmProcess.path, warmProcess.epoch
 	warmProcess.idle = nil
 	if warmProcess.timer != nil {
@@ -103,6 +111,9 @@ func CloseIdle() {
 	warmProcess.idle = nil
 	warmProcess.epoch++
 	cancel := warmProcess.cancelWarm
+	warmProcess.warming = false
+	warmProcess.cancelWarm = nil
+	warmProcess.ready = nil
 	if warmProcess.timer != nil {
 		warmProcess.timer.Stop()
 	}
@@ -118,30 +129,124 @@ func CloseIdle() {
 // Warm prepares only the local process. Network setup must not be discarded
 // when a foreground request takes over shortly after selection starts.
 func Warm(ctx context.Context, path string, _ ...string) error {
+	return warm(ctx, path, nil, nil)
+}
+
+// WarmSession opportunistically prepares one unused ephemeral conversation.
+// An existing unused conversation is preserved until a real request can match
+// it. Codex can preconnect without receiving any screen input.
+func WarmSession(ctx context.Context, path, model, instructions, effort string) error {
+	return warm(ctx, path, &sessionKey{model: model, instructions: instructions, effort: effort}, nil)
+}
+
+type sessionRefillContextKey struct{}
+
+type sessionRefill struct {
+	path  string
+	key   sessionKey
+	epoch uint64
+}
+
+type sessionRefillScope struct {
+	sync.Mutex
+	finished  bool
+	succeeded bool
+	next      *sessionRefill
+}
+
+// DeferSessionRefill keeps consecutive model calls in one logical request from
+// racing background session preparation. Call finish after the last call, before
+// canceling ctx. The first successful session key prepares the next request;
+// repair instructions and input never become conversation history.
+func DeferSessionRefill(ctx context.Context) (context.Context, func()) {
+	if ctx.Value(sessionRefillContextKey{}) != nil {
+		return ctx, func() {}
+	}
+	scope := &sessionRefillScope{}
+	warmProcess.Lock()
+	warmProcess.active++
+	warmProcess.Unlock()
+	return context.WithValue(ctx, sessionRefillContextKey{}, scope), func() {
+		scope.Lock()
+		if scope.finished {
+			scope.Unlock()
+			return
+		}
+		scope.finished = true
+		next, succeeded := scope.next, scope.succeeded
+		scope.Unlock()
+		warmProcess.Lock()
+		warmProcess.active--
+		warmProcess.Unlock()
+		if succeeded && next != nil && ctx.Err() == nil {
+			refillSession(*next)
+		}
+	}
+}
+
+func (s *sessionRefillScope) record(next sessionRefill) {
+	s.Lock()
+	defer s.Unlock()
+	if s.finished {
+		return
+	}
+	if s.next == nil || s.next.path != next.path || s.next.epoch != next.epoch {
+		s.next = &next
+	}
+	s.succeeded = true
+}
+
+func refillSession(next sessionRefill) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := warm(ctx, next.path, &next.key, &next.epoch); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Warn("Codex next session preparation failed", "error", err)
+		}
+	}()
+}
+
+func warm(ctx context.Context, path string, key *sessionKey, expectedEpoch *uint64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	warmProcess.Lock()
-	if warmProcess.idle != nil || warmProcess.warming {
+	if warmProcess.warming || warmProcess.active > 0 || (expectedEpoch != nil && (warmProcess.epoch != *expectedEpoch || warmProcess.idle == nil)) {
+		warmProcess.Unlock()
+		return nil
+	}
+	if warmProcess.idle != nil && (key == nil || warmProcess.idle.prepared != nil) {
 		warmProcess.Unlock()
 		return nil
 	}
 	warmProcess.warming = true
 	warmProcess.cancelWarm = cancel
 	warmProcess.warmingPath = path
-	warmProcess.ready = make(chan struct{})
+	admittedEpoch := warmProcess.epoch
+	ready := make(chan struct{})
+	warmProcess.ready = ready
 	warmProcess.Unlock()
 	defer func() {
 		warmProcess.Lock()
-		warmProcess.warming = false
-		warmProcess.cancelWarm = nil
-		close(warmProcess.ready)
+		if warmProcess.ready == ready {
+			warmProcess.warming = false
+			warmProcess.cancelWarm = nil
+		}
+		close(ready)
 		warmProcess.Unlock()
 	}()
-	c, epoch, err := takeWarm(ctx, path)
+	c, epoch, err := takeWarm(ctx, path, admittedEpoch)
 	if err != nil {
 		return err
 	}
 	stop := context.AfterFunc(ctx, c.close)
+	if key != nil {
+		if err = c.requireSubscription(); err == nil {
+			err = c.prepareSession(*key)
+		}
+	}
 	if !stop() || ctx.Err() != nil || err != nil {
 		c.close()
 		if ctx.Err() != nil {
@@ -160,6 +265,12 @@ func StreamFast(ctx context.Context, path, model, instructions, input, effort st
 var errFirstOutputTimeout = errors.New("Codex model connection was inactive before returning text")
 
 func streamFast(ctx context.Context, path, model, instructions, input, effort string, firstOutputTimeout time.Duration, onToken func(string), images ...string) (string, error) {
+	if scope, ok := ctx.Value(sessionRefillContextKey{}).(*sessionRefillScope); ok {
+		// A later failed or canceled pass must not refill from an earlier success.
+		scope.Lock()
+		scope.succeeded = false
+		scope.Unlock()
+	}
 	for attempt := 0; ; attempt++ {
 		attemptCtx, cancel := context.WithCancelCause(ctx)
 		output, err := streamFastAttempt(attemptCtx, cancel, path, model, instructions, input, effort, firstOutputTimeout, onToken, images...)
@@ -167,12 +278,13 @@ func streamFast(ctx context.Context, path, model, instructions, input, effort st
 		cancel(nil)
 		if errors.Is(cause, errFirstOutputTimeout) {
 			err = errFirstOutputTimeout
-			// Reconnect only before any text was emitted. Retrying partial output
-			// would duplicate text; user cancellation and the overall deadline win.
-			if attempt == 0 && output == "" && ctx.Err() == nil {
-				slog.Warn("Reconnecting inactive Codex model connection", "idle_timeout_ms", firstOutputTimeout.Milliseconds())
-				continue
-			}
+		}
+		// An idle child may have exited since its last successful request. Only
+		// transport failures before any text are safe to resend; auth/config
+		// errors, partial output, cancellation and the overall deadline win.
+		if attempt == 0 && output == "" && ctx.Err() == nil && (errors.Is(err, errFirstOutputTimeout) || errors.Is(err, errConnectionClosed)) {
+			slog.Warn("Reconnecting Codex model connection", "idle_timeout_ms", firstOutputTimeout.Milliseconds(), "reason", err)
+			continue
 		}
 		if ctx.Err() != nil && !errors.Is(err, ctx.Err()) {
 			err = ctx.Err()
@@ -183,10 +295,26 @@ func streamFast(ctx context.Context, path, model, instructions, input, effort st
 
 func streamFastAttempt(ctx context.Context, cancel context.CancelCauseFunc, path, model, instructions, input, effort string, firstOutputTimeout time.Duration, onToken func(string), images ...string) (string, error) {
 	warmProcess.Lock()
+	warmProcess.active++
 	ready := warmProcess.ready
 	cancelWarm := warmProcess.cancelWarm
-	waiting := warmProcess.warming && warmProcess.idle == nil && warmProcess.warmingPath == path
+	waiting := warmProcess.warming && warmProcess.warmingPath == path
 	warmProcess.Unlock()
+	var refillEpoch uint64
+	refill := false
+	defer func() {
+		warmProcess.Lock()
+		warmProcess.active--
+		warmProcess.Unlock()
+		if refill {
+			next := sessionRefill{path: path, key: sessionKey{model: model, instructions: instructions, effort: effort}, epoch: refillEpoch}
+			if scope, ok := ctx.Value(sessionRefillContextKey{}).(*sessionRefillScope); ok {
+				scope.record(next)
+			} else {
+				refillSession(next)
+			}
+		}
+	}()
 	if waiting {
 		started := time.Now()
 		// Prewarming is optional. Never spend the translation's timeout waiting
@@ -249,6 +377,7 @@ func streamFastAttempt(ctx context.Context, cancel context.CancelCauseFunc, path
 		}
 		return output, err
 	}
+	refill, refillEpoch = c.prepareEnabled, epoch
 	returnWarm(c, c.cmd.Path, epoch)
 	return output, nil
 }

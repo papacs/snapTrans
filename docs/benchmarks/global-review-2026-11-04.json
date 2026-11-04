@@ -1,0 +1,53 @@
+{
+  "date": "2026-11-04",
+  "scope": "Offline stability and correctness review; no additional live model requests",
+  "ocrRegressions": {
+    "bannerLikeRecognizedText": "Old readOneResult discarded a complete valid JSON response if its recognized text contained init completed; regression now preserves both single-line and pretty-printed results.",
+    "engineStatuses": "100 parses data only, 101 is a successful empty image, 200+ returns a status-only error instead of treating diagnostics as text.",
+    "deadline": "Worker timeout preserves context.DeadlineExceeded so desktop does not launch another fallback after the deadline; pre-write cancellation retains a healthy worker.",
+    "readingOrder": "A fixed row anchor replaces a non-transitive pairwise sort; staggered row permutations produce the same reading order."
+  },
+  "oneShotUnicodeTemp": {
+    "method": "Production NewRapidOCR.ExtractResult, bundled engine, synthetic narrow PNG, TEMP/TMP containing Chinese, spaces and emoji",
+    "before": {"success": false, "engineStatus": 300, "testElapsedMs": 3070},
+    "after": {"success": true, "testElapsedMs": 3480, "requestMs": 3215, "startupMs": 2581, "recognizeMs": 632, "temporaryImageFilesRemaining": 0},
+    "interpretation": "Correctness fix, not a speed comparison: original run failed; successful cold-start time includes initialization. Pinned bundled engine now uses one single-use pipe worker, custom executable CLI behavior is preserved."
+  },
+  "persistentQualityRecheck": {
+    "method": "Same six synthetic fixtures and stock reference JSON, two passes through production Worker, complete normalized text and boxes must match; background unit-test load was present",
+    "startupMs": 2815,
+    "samplesMs": {
+      "light": [3033, 2468],
+      "dark": [4419, 2439],
+      "tiny": [1720, 1323],
+      "long": [2012, 2067],
+      "narrow": [891, 835],
+      "rotated": [2530, 2636]
+    },
+    "allTwelveResultsMatched": true,
+    "unicodeModelCachePathMatched": true,
+    "unicodeOneShotPathMatched": true,
+    "interpretation": "Quality and compatibility regression only; this is not a controlled latency comparison with previous builds."
+  },
+  "verification": {
+    "frontendFilesPassed": 19,
+    "frontendTestsPassed": 265,
+    "frontendTypecheck": true,
+    "frontendBuild": true,
+    "goFullSuiteAfterFinalChange": true,
+    "ocrSetupScriptTests": true,
+    "buildScriptTests": true,
+    "buildIdentityScriptTests": true,
+    "build": "20261104T064246Z-fab332d9ea861e60",
+    "frontendBundle": "index-BXXUo7Uv.js",
+    "executableSha256": "5de24550892516837e0526c3f3add4d5a4e593299a632a85ed9d33dc2fa87560"
+  },
+  "httpCompletedTail": {
+    "method": "Local httptest returns a valid finish_reason=stop and leaves its body open; no model involved",
+    "before": "Waited until the two-second parent deadline and failed",
+    "afterTestElapsedMs": 270,
+    "cleanupLimitMs": 250,
+    "normalTerminatorAndConnectionReuseRegression": true,
+    "interpretation": "Applies to OpenAI-compatible HTTP streaming; not a Codex model generation speed claim."
+  }
+}
