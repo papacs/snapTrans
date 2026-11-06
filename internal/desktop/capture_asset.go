@@ -30,7 +30,9 @@ func (assets *captureAssets) Store(image []byte) string {
 	assets.nextID++
 	id := assets.nextID
 	assets.images[id] = image
-	assets.bytes += len(image)
+	// A short encoded image may retain a much larger bytes.Buffer allocation.
+	// Budget the backing capacity, which is what remains live in the heap.
+	assets.bytes += cap(image)
 	// Manual scrolling capture stores a current frame and a stitched preview
 	// per wheel gesture. Keep enough versions for the WebView to finish decoding
 	// a preceding gesture while the next one is already being processed.
@@ -43,7 +45,7 @@ func (assets *captureAssets) Store(image []byte) string {
 				oldest = candidate
 			}
 		}
-		assets.bytes -= len(assets.images[oldest])
+		assets.bytes -= cap(assets.images[oldest])
 		delete(assets.images, oldest)
 	}
 	return fmt.Sprintf("%s?v=%d", captureAssetPath, id)

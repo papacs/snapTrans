@@ -1,0 +1,66 @@
+{
+  "date": "2026-11-06",
+  "machine": "Windows amd64, Intel Core i7-9750H, loaded development host",
+  "actual_desktop_phase": {
+    "status": "BLOCKED",
+    "iterations_executed": 0,
+    "reason": "Automatic approval review rejected Chrome activation because it could not determine the current browser URL. The parent prohibited actual ScreenRegion capture afterward to avoid bypassing that review.",
+    "staged_test": "TestDesktopCaptureEncodingRuntimeSoak",
+    "private_desktop_images_saved_or_uploaded": false
+  },
+  "initial_synthetic_scroll_attempt": {
+    "status": "TIMED_OUT",
+    "timeout_seconds": 180,
+    "observed_stack": "CaptureNext -> verticalAdvance -> sampledDifferenceKeepingRows -> scrollRGBAAt",
+    "interpretation": "The sampled-pixel matcher was active when the bound expired. Host compilation/startup also stalled during this period, so this timeout is not an isolated CPU benchmark. A separate baseline benchmark build was stopped without reporting timing results. A later soak dispatch was also stopped for a quiet API-trace window and produced no result."
+  },
+  "paired_matcher_benchmark": {
+    "command": "capture-soak.test.exe -test.run=^$ -test.bench=^BenchmarkScrollMatcherSparse720$ -test.benchtime=3x -test.count=1",
+    "fixture": "Same deterministic sparse-text 720x600 RGBA viewport pair, shifted down 13 physical pixels, with the original generic scoring path retained as the reference",
+    "reference": {"iterations": 3, "ns_per_op": 117636567, "bytes_per_op": 0, "allocations_per_op": 0},
+    "direct_rgba": {"iterations": 3, "ns_per_op": 33701800, "bytes_per_op": 0, "allocations_per_op": 0},
+    "interpretation": "About 71% less matcher time in this short paired benchmark. Sample positions, RGB distances, blank-row treatment, trimming and direction selection are unchanged. Regression tests require exact equality against the reference, including subimages, nonzero origins and alpha. This does not establish end-to-end screenshot latency."
+  },
+  "synthetic_scroll_soak": {
+    "status": "PASSED",
+    "command": "SNAPTRANS_CAPTURE_SOAK=scroll capture-soak.test.exe -test.run=^TestManualScrollProductionRuntimeSoak$ -test.v -test.timeout=180s",
+    "duration_seconds": 70.69,
+    "sessions": 3,
+    "observations": 540,
+    "captured_frames": 384,
+    "accepted_movements": 381,
+    "viewport": {"width": 720, "height": 600},
+    "default_frame_cap": 128,
+    "default_pixel_cap": 40000000,
+    "step_timing_ms": {"count": 381, "mean": 179.97373464566928, "p50": 129.7576, "p95": 472.6113, "max": 2521.6813},
+    "memory_after_gc": [
+      {"observation": 0, "heap_bytes": 8858168, "heap_sys_bytes": 16547840},
+      {"observation": 180, "heap_bytes": 8874208, "heap_sys_bytes": 58458112},
+      {"observation": 360, "heap_bytes": 10126304, "heap_sys_bytes": 58458112},
+      {"observation": 540, "heap_bytes": 10134840, "heap_sys_bytes": 66879488}
+    ],
+    "verified": [
+      "Exact final PNG pixels and periodic preview pixels",
+      "Stored strips retain every output pixel once",
+      "Native source work stops at the production 128-frame cap",
+      "Finished sessions release their strips and output buffers",
+      "Live Go heap stays near 10.13 MB at the last two checkpoints"
+    ],
+    "limitations": "Synthetic source only; no browser was scrolled. The timing includes matching, thumbnail generation and preview PNG encoding but excludes native capture and frontend decoding. The loaded-host p95/max tail remains significant, so actual scrolling smoothness is not claimed. Reserved Go heap rose to about 66.9 MB; that is distinct from live heap and from the app's full process tree."
+  },
+  "encoding_cancellation_soak": {
+    "status": "PASSED",
+    "command": "SNAPTRANS_CAPTURE_SOAK=cancel capture-soak.test.exe -test.run=^TestCanceledCaptureEncodingRuntimeSoak$ -test.v -test.timeout=45s",
+    "iterations": 24,
+    "duration_seconds": 0.55,
+    "cancel_to_return_ms": {"mean": 2.0875416666666666, "p50": 1.9994, "p95": 2.9976, "max": 6.0019},
+    "partial_images_published": 0,
+    "scope": "Real context cancellation after raster encoding has started on a generated 1920x1080 image; this is component cancellation latency, not hotkey-to-visible UI latency."
+  },
+  "cancellation_regressions": [
+    "Cancel propagates to the manual session context",
+    "Candidate search checks that context at most every 16 candidates",
+    "Canceled matching neither appends strips nor moves the observed frame/top",
+    "Long screenshot PNG export observes the same session context"
+  ]
+}

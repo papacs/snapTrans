@@ -18,6 +18,48 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func TestLocalCompatibleModelForwardsBodyWithoutBufferingOrCloning(t *testing.T) {
+	request, err := http.NewRequest(http.MethodPost, "http://127.0.0.1:1234/v1/chat/completions",
+		strings.NewReader(`{"model":"local-model","messages":[{"content":"large screenshot or source text"}]}`))
+	require.NoError(t, err)
+	originalBody := request.Body
+	previous := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(forwarded *http.Request) (*http.Response, error) {
+		require.Same(t, request, forwarded)
+		require.True(t, originalBody == forwarded.Body, "models requiring no compatibility patch must stream the original body")
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}")), Header: make(http.Header)}, nil
+	})
+	defer func() { http.DefaultTransport = previous }()
+	response, err := translationHTTPClient("local-model").Do(request)
+	require.NoError(t, err)
+	require.NoError(t, response.Body.Close())
+}
+
+func BenchmarkCompatibleRequestTransport(b *testing.B) {
+	body := `{"model":"local-model","messages":[{"content":"` + strings.Repeat("image-base64", 128<<10) + `"}]}`
+	base := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		_, err := io.Copy(io.Discard, request.Body)
+		_ = request.Body.Close()
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, err
+	})
+	for _, benchmark := range []struct {
+		name      string
+		transport http.RoundTripper
+	}{{"json-patch", translationTransport{base: base}}, {"compatible-direct", base}} {
+		b.Run(benchmark.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(len(body)))
+			for i := 0; i < b.N; i++ {
+				request, err := http.NewRequest(http.MethodPost, "http://127.0.0.1/v1/chat/completions", strings.NewReader(body))
+				require.NoError(b, err)
+				response, err := benchmark.transport.RoundTrip(request)
+				require.NoError(b, err)
+				_ = response.Body.Close()
+			}
+		})
+	}
+}
+
 func TestThinkingDisabledForDeepSeekV4ModelsAcrossCompatibleEndpoints(t *testing.T) {
 	tests := []struct {
 		name     string

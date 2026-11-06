@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "evidence_collected_at": "2026-11-06T09:10:54+08:00",
+  "platform": "Android",
+  "toolchain": {
+    "java": "BellSoft OpenJDK 17.0.17",
+    "gradle": "8.9",
+    "android_gradle_plugin": "8.7.3",
+    "kotlin": "2.0.21",
+    "compile_sdk": 35,
+    "target_sdk": 35,
+    "min_sdk": 26
+  },
+  "validation": {
+    "full_regression": {
+      "working_directory": "android",
+      "command": "gradlew.bat --no-daemon --max-workers=2 --console=plain testDebugUnitTest assembleDebug lintDebug assembleRelease",
+      "exit_code": 0,
+      "duration_seconds": 1078,
+      "tasks_executed": 68,
+      "tasks_up_to_date": 34,
+      "jvm_tests": {
+        "suites": 7,
+        "tests": 46,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_directory": "android/app/build/test-results/testDebugUnitTest",
+        "results_written_at": "2026-11-06T00:45:49Z",
+        "suite_counts": {
+          "CaptureRequestSlotTest": 10,
+          "RgbaPlanePackerTest": 6,
+          "EnglishTextSelectorTest": 3,
+          "ResourceLeaseTest": 4,
+          "TranslationProtocolTest": 6,
+          "OpenAITranslationClientTest": 11,
+          "OverlayPlacementTest": 6
+        }
+      }
+    },
+    "final_opacity_rebuild": {
+      "working_directory": "android",
+      "command": "gradlew.bat --no-daemon --max-workers=2 --console=plain assembleDebug lintDebug assembleRelease",
+      "exit_code": 0,
+      "duration_seconds": 662,
+      "tasks_executed": 21,
+      "tasks_up_to_date": 76,
+      "debug_kotlin_recompiled": true,
+      "release_kotlin_recompiled": true,
+      "release_r8_executed": true,
+      "note": "After the 46 passing JVM tests, the sole final production change set the API-31-guarded overlay window opacity. Both variants, lint and packaging were rerun; unrelated JVM tests were not repeated. Only APKs from this final rebuild are recorded below."
+    },
+    "lint_debug": {
+      "passed": true,
+      "errors": 0,
+      "warnings": 4,
+      "warnings_by_id": {
+        "GradleDependency": 4
+      },
+      "warning_dependencies": [
+        "androidx.compose:compose-bom",
+        "androidx.activity:activity-compose",
+        "androidx.core:core-ktx",
+        "androidx.lifecycle:lifecycle-runtime-ktx"
+      ],
+      "report": "android/app/build/reports/lint-results-debug.xml",
+      "note": "Dependency update notices were retained; no production dependencies were added."
+    },
+    "lint_vital_release": "passed",
+    "release_minification": true,
+    "release_resource_shrinking": true,
+    "git_diff_check": "passed"
+  },
+  "apk_artifacts": [
+    {
+      "variant": "debug",
+      "path": "android/app/build/outputs/apk/debug/app-debug.apk",
+      "bytes": 55266330,
+      "modified_at": "2026-11-06T01:01:29.8885827Z",
+      "sha256": "4010b35bd07ff18c4a160957dd5c674478722666d88be9002aa72fb4f26dde2b",
+      "signing": "debug",
+      "installed": false
+    },
+    {
+      "variant": "release",
+      "path": "android/app/build/outputs/apk/release/app-release-unsigned.apk",
+      "bytes": 44496160,
+      "modified_at": "2026-11-06T01:09:52.5340996Z",
+      "sha256": "dac49b9557d4a0d31a847722bcac56118c6b602f02d2814ac6cf34a26695ea14",
+      "signing": "unsigned",
+      "installed": false
+    }
+  ],
+  "regression_coverage": [
+    "Pending requests cannot consume frames until their handler-confined owner has detached, drained and armed capture.",
+    "Stale cancellation and resize callbacks preserve newer unprepared requests.",
+    "RGBA plane packing accepts absent final-row padding and preserves source buffer state.",
+    "Canceled delivery releases resource leases; asynchronous readers keep their own lease until settlement.",
+    "Overlay placement stays within viewport edges while source OCR coordinates remain unchanged.",
+    "SSE completion, errors, interrupted streams, numbered line coverage and successful-cache behavior."
+  ],
+  "device_validation": {
+    "connected_adb_devices": 0,
+    "device_or_emulator_ui_tests_run": false,
+    "device_settings_changed": false,
+    "apk_installations": 0,
+    "capture_latency_measured": false,
+    "memory_soak_measured": false,
+    "touch_passthrough": {
+      "implementation": "On API 31+, the full-screen non-touchable translation window uses InputManager.maximumObscuringOpacityForTouch as its LayoutParams.alpha. The interactive bubble is unchanged.",
+      "evidence": "Code inference from official Android overlay rules, plus compilation and lint; not verified on a device.",
+      "device_verified": false
+    },
+    "remaining_checks": [
+      "Grant and revoke capture/overlay permissions on a real Android device.",
+      "Repeat capture/cancel on static and moving screens and measure latency/memory.",
+      "Rotate during capture, OCR and streaming; verify alignment and edge placement.",
+      "Confirm Android 12+ touch and scroll passthrough while translations are visible."
+    ]
+  },
+  "environment_recovery": [
+    "The Gradle distribution download exceeded the previous 10-second timeout; the wrapper now allows 60 seconds.",
+    "Pre-existing Gradle 8.9 generated Kotlin DSL and transform cache metadata was missing. Only the affected generated caches were backed up and regenerated; downloaded modules were retained.",
+    "An earlier compilation snapshot preceded final helper edits and produced unresolved-reference test compilation errors. The frozen-source full regression and final isolated-property rebuild both subsequently passed."
+  ],
+  "references": {
+    "media_projection": "https://developer.android.com/media/grow/media-projection",
+    "image_plane_buffer": "https://developer.android.com/reference/android/media/Image.Plane#getBuffer()",
+    "mlkit_task_completion": "https://developers.google.com/ml-kit/vision/text-recognition/v2/android",
+    "timeout_resource_ownership": "https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/with-timeout.html",
+    "android_12_touch_rules": "https://developer.android.com/about/versions/12/behavior-changes-all#untrusted-touch-events",
+    "touch_opacity_api": "https://developer.android.com/reference/android/hardware/input/InputManager#getMaximumObscuringOpacityForTouch()"
+  }
+}

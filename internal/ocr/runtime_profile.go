@@ -80,7 +80,7 @@ func applyOCRRuntimeProfile(cmd *exec.Cmd, cacheRoot string, profile ocrRuntimeP
 			return false, nil
 		}
 	}
-	actual, err := hashOCRRuntimeAsset(cmd.Path, profile.executable.size, nil)
+	actual, _, err := hashOCRRuntimeAsset(cmd.Path, profile.executable.size, nil)
 	if err != nil || actual != profile.executable.digest {
 		return false, errOCRRuntimeUnsupported
 	}
@@ -88,15 +88,12 @@ func applyOCRRuntimeProfile(cmd *exec.Cmd, cacheRoot string, profile ocrRuntimeP
 	source := filepath.Join(filepath.Dir(cmd.Path), "models")
 	expected := make([]ocrRuntimeAsset, 0, len(profile.files))
 	for _, file := range profile.files {
-		original, err := hashOCRRuntimeAsset(filepath.Join(source, file.name), file.size, nil)
+		original, configured, err := hashOCRRuntimeAsset(filepath.Join(source, file.name), file.size, metadata)
 		if err != nil || original != file.digest {
 			return false, errOCRRuntimeUnsupported
 		}
 		if file.model {
-			file.digest, err = hashOCRRuntimeAsset(filepath.Join(source, file.name), file.size, metadata)
-			if err != nil {
-				return false, err
-			}
+			file.digest = configured
 			file.size += int64(len(metadata))
 		}
 		expected = append(expected, file)
@@ -134,22 +131,25 @@ func applyOCRRuntimeProfile(cmd *exec.Cmd, cacheRoot string, profile ocrRuntimeP
 	return true, nil
 }
 
-func hashOCRRuntimeAsset(path string, size int64, suffix []byte) (string, error) {
+// Sum the original and configured bytes in one pass. Reading each model again
+// only to append metadata delays OCR readiness on cold or busy disks.
+func hashOCRRuntimeAsset(path string, size int64, suffix []byte) (original, configured string, err error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Size() != size {
-		return "", errOCRRuntimeCache
+		return "", "", errOCRRuntimeCache
 	}
 	digest := sha256.New()
 	if _, err := io.Copy(digest, file); err != nil {
-		return "", err
+		return "", "", err
 	}
+	original = hex.EncodeToString(digest.Sum(nil))
 	_, _ = digest.Write(suffix)
-	return hex.EncodeToString(digest.Sum(nil)), nil
+	return original, hex.EncodeToString(digest.Sum(nil)), nil
 }
 
 func validateOCRRuntimeCache(directory string, expected []ocrRuntimeAsset) error {
@@ -163,7 +163,7 @@ func validateOCRRuntimeCache(directory string, expected []ocrRuntimeAsset) error
 		if err != nil || !info.Mode().IsRegular() {
 			return errOCRRuntimeCache
 		}
-		digest, err := hashOCRRuntimeAsset(path, file.size, nil)
+		digest, _, err := hashOCRRuntimeAsset(path, file.size, nil)
 		if err != nil || digest != file.digest {
 			return errOCRRuntimeCache
 		}

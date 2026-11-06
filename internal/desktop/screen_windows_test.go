@@ -3,12 +3,18 @@
 package desktop
 
 import (
+	"context"
 	"image"
-	"image/color"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestNativeWindowShowDoesNotQueueWorkAfterShutdown(t *testing.T) {
+	lifetime, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.False(t, showWindowSynchronously(context.Background(), lifetime))
+}
 
 func TestManualScrollHoleRectMapsScreenSelectionIntoOverlayWindow(t *testing.T) {
 	hole, err := manualScrollHoleRect(
@@ -17,20 +23,26 @@ func TestManualScrollHoleRectMapsScreenSelectionIntoOverlayWindow(t *testing.T) 
 	)
 
 	require.NoError(t, err)
-	require.Equal(t, image.Rect(82, 72, 518, 358), hole)
+	require.Equal(t, image.Rect(80, 70, 520, 360), hole)
 }
 
-func TestCropWindowBGRAUsesScreenCoordinatesAndConvertsChannels(t *testing.T) {
-	windowBounds := image.Rect(100, 200, 103, 202)
-	bgra := []byte{
-		1, 2, 3, 0, 4, 5, 6, 0, 7, 8, 9, 0,
-		10, 11, 12, 0, 13, 14, 15, 0, 16, 17, 18, 0,
+func TestManualScrollHoleIncludesEveryCapturedPixelAcrossNegativeMonitorCoordinates(t *testing.T) {
+	window := image.Rect(-1920, -200, 1920, 1080)
+	for _, selection := range []image.Rectangle{
+		image.Rect(-1500, -100, -700, 600),
+		window,
+		image.Rect(-20, 10, 30, 70),
+	} {
+		hole, err := manualScrollHoleRect(window, selection)
+		require.NoError(t, err)
+		require.Equal(t, selection, hole.Add(window.Min), "the overlay must not enter the captured rectangle")
 	}
+}
 
-	frame, err := cropWindowBGRA(bgra, 3, 2, windowBounds, image.Rect(101, 200, 103, 202))
-
-	require.NoError(t, err)
-	require.Equal(t, image.Rect(0, 0, 2, 2), frame.Bounds())
-	require.Equal(t, color.RGBA{R: 6, G: 5, B: 4, A: 255}, frame.RGBAAt(0, 0))
-	require.Equal(t, color.RGBA{R: 18, G: 17, B: 16, A: 255}, frame.RGBAAt(1, 1))
+func TestManualScrollHoleRejectsInvalidSelection(t *testing.T) {
+	window := image.Rect(100, 200, 900, 800)
+	for _, selection := range []image.Rectangle{image.Rectangle{}, image.Rect(90, 200, 300, 400)} {
+		_, err := manualScrollHoleRect(window, selection)
+		require.Error(t, err)
+	}
 }

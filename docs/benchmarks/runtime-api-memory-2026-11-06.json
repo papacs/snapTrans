@@ -1,0 +1,80 @@
+{
+  "method": "Read-only Windows counters for direct Codex children of the isolated translator benchmark executable; no command lines retained",
+  "snapshots": [
+    {
+      "timeUtc": "2026-11-05T23:55:41.2728029Z",
+      "benchmarkPids": [
+        16860
+      ],
+      "helpers": []
+    },
+    {
+      "timeUtc": "2026-11-05T23:55:54.5495887Z",
+      "benchmarkPids": [
+        16860
+      ],
+      "helpers": [
+        {
+          "pid": 9388,
+          "workingSetBytes": 117350400,
+          "privateBytes": 24244224,
+          "handles": 326,
+          "threads": 40
+        }
+      ]
+    },
+    {
+      "timeUtc": "2026-11-05T23:56:07.5866135Z",
+      "benchmarkPids": [
+        16860
+      ],
+      "helpers": [
+        {
+          "pid": 9388,
+          "workingSetBytes": 120803328,
+          "privateBytes": 26152960,
+          "handles": 377,
+          "threads": 47
+        }
+      ]
+    },
+    {
+      "timeUtc": "2026-11-05T23:56:19.620168Z",
+      "benchmarkPids": [
+        16860
+      ],
+      "helpers": [
+        {
+          "pid": 9388,
+          "workingSetBytes": 120774656,
+          "privateBytes": 26025984,
+          "handles": 367,
+          "threads": 40
+        }
+      ]
+    }
+  ],
+  "knownHelperPids": [
+    9388
+  ],
+  "postCloseIdle": {
+    "observedAtUtc": "2026-11-05T23:59:53.8964418Z",
+    "knownRuntimePids": [
+      9388,
+      12964,
+      16312,
+      29152,
+      29764,
+      30304,
+      30872,
+      31188,
+      32000,
+      32888,
+      33260,
+      33264,
+      33380,
+      35280
+    ],
+    "stillAlive": []
+  }
+}

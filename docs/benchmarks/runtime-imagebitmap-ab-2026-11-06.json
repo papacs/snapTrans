@@ -1,0 +1,1397 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-06",
+  "timezone": "Asia/Shanghai",
+  "purpose": "Observed ImageBitmap-preferred experiment versus frozen HTMLImage-based baseline,30 actual screenshot reentries and confirmed-hidden180seconds",
+  "runtime": {
+    "pid": 13656,
+    "executable": "build/bin/snapTrans-imagebitmap-ab.exe",
+    "build": "20261106T042645Z-f345183c164cc00b",
+    "executableSHA256": "0068CCC76AF7582DD6646E771512ED58246BE5FE43DB1ED8FB138223218BCE60",
+    "baselineReport": "docs/benchmarks/runtime-active-profile-2026-11-06.json",
+    "baselinePid": 39724,
+    "decoderBranchTelemetry": "Not instrumented. This evaluates the experiment binary; no direct proof that ImageBitmap rather than fallback handled each live frame."
+  },
+  "verifiedActions": {
+    "batchInputRecords": 30,
+    "warmupInputArtifactRecords": 2,
+    "warmupUiReady": 2,
+    "batchUiReady": 30,
+    "totalUiReady": 32,
+    "escapeHiddenConfirmedByRefreshedList": true,
+    "visibleAppWindows": 0,
+    "rootProcessAliveAtConfirmation": true,
+    "hiddenConfirmedUtc": "2026-11-06T13:11:46.292+08:00",
+    "checkpointUtc": "2026-11-06T05:14:46.627271Z",
+    "secondsAfterHidden": 180.335271,
+    "actualModelTranslationTurnsRequested": 0,
+    "actualAppScrollSessionsCompleted": 0,
+    "sourcePixelWidth": 1920,
+    "sourcePixelHeight": 1080,
+    "sourceWindowSwitching": "Same UIA activation/restore semantics as baseline; Notepad was a normal window rather than assuming maximized state."
+  },
+  "timingMilliseconds": {
+    "uiReadyMs": {
+      "count": 30,
+      "p50": 319.5,
+      "p95": 771,
+      "maximum": 834,
+      "minimum": 150
+    },
+    "captureTotalMs": {
+      "count": 30,
+      "p50": 116,
+      "p95": 356,
+      "maximum": 395,
+      "minimum": 52
+    },
+    "captureMs": {
+      "count": 30,
+      "p50": 47,
+      "p95": 116,
+      "maximum": 146,
+      "minimum": 26
+    },
+    "encodeMs": {
+      "count": 30,
+      "p50": 56.5,
+      "p95": 178,
+      "maximum": 233,
+      "minimum": 26
+    },
+    "nativeWindowMs": {
+      "count": 30,
+      "p50": 147,
+      "p95": 295,
+      "maximum": 324,
+      "minimum": 70
+    },
+    "nativeShowBarrierMs": {
+      "count": 30,
+      "p50": 134,
+      "p95": 251,
+      "maximum": 302,
+      "minimum": 65
+    },
+    "nativeTopmostMs": {
+      "count": 30,
+      "p50": 10.5,
+      "p95": 30,
+      "maximum": 44,
+      "minimum": 3
+    }
+  },
+  "baselineTimingMilliseconds": {
+    "uiReadyMs": {
+      "count": 30,
+      "p50": 358,
+      "p95": 693,
+      "maximum": 869,
+      "minimum": 173,
+      "percentileMethod": "nearest-rank p95; median p50"
+    },
+    "captureTotalMs": {
+      "count": 30,
+      "p50": 161.5,
+      "p95": 330,
+      "maximum": 345,
+      "minimum": 77,
+      "percentileMethod": "nearest-rank p95; median p50"
+    },
+    "captureMs": {
+      "count": 30,
+      "p50": 66.5,
+      "p95": 120,
+      "maximum": 133,
+      "minimum": 32,
+      "percentileMethod": "nearest-rank p95; median p50"
+    },
+    "encodeMs": {
+      "count": 30,
+      "p50": 74,
+      "p95": 192,
+      "maximum": 194,
+      "minimum": 31,
+      "percentileMethod": "nearest-rank p95; median p50"
+    },
+    "nativeWindowMs": {
+      "count": 30,
+      "p50": 172,
+      "p95": 275,
+      "maximum": 345,
+      "minimum": 81,
+      "percentileMethod": "nearest-rank p95; median p50"
+    },
+    "nativeShowBarrierMs": {
+      "count": 30,
+      "p50": 158,
+      "p95": 246,
+      "maximum": 303,
+      "minimum": 76,
+      "percentileMethod": "nearest-rank p95; median p50"
+    },
+    "nativeTopmostMs": {
+      "count": 30,
+      "p50": 15,
+      "p95": 29,
+      "maximum": 41,
+      "minimum": 4,
+      "percentileMethod": "nearest-rank p95; median p50"
+    }
+  },
+  "captures": [
+    {
+      "uiReadyUtc": "2026-11-06T12:42:10+08:00",
+      "inBatch": false,
+      "uiReadyMs": 200,
+      "frontendReadyMs": 40,
+      "nativeWindowMs": 61,
+      "nativePrepareNeeded": true,
+      "nativePrepareMs": 10,
+      "nativeMoveMs": 1,
+      "nativeFullscreenMs": 9,
+      "nativeTopmostMs": 4,
+      "nativeShowBarrierMs": 46,
+      "capture": {
+        "utc": "2026-11-06T12:42:10+08:00",
+        "totalMs": 98,
+        "captureMs": 44,
+        "encodeMs": 53,
+        "pngBytes": 530405
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:44:40+08:00",
+      "inBatch": false,
+      "uiReadyMs": 164,
+      "frontendReadyMs": 27,
+      "nativeWindowMs": 64,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 2,
+      "nativeShowBarrierMs": 62,
+      "capture": {
+        "utc": "2026-11-06T12:44:40+08:00",
+        "totalMs": 71,
+        "captureMs": 32,
+        "encodeMs": 30,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:54:31+08:00",
+      "inBatch": true,
+      "uiReadyMs": 150,
+      "frontendReadyMs": 27,
+      "nativeWindowMs": 70,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 4,
+      "nativeShowBarrierMs": 65,
+      "capture": {
+        "utc": "2026-11-06T12:54:31+08:00",
+        "totalMs": 52,
+        "captureMs": 26,
+        "encodeMs": 26,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:54:43+08:00",
+      "inBatch": true,
+      "uiReadyMs": 393,
+      "frontendReadyMs": 71,
+      "nativeWindowMs": 164,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 19,
+      "nativeShowBarrierMs": 145,
+      "capture": {
+        "utc": "2026-11-06T12:54:42+08:00",
+        "totalMs": 155,
+        "captureMs": 67,
+        "encodeMs": 69,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:54:55+08:00",
+      "inBatch": true,
+      "uiReadyMs": 348,
+      "frontendReadyMs": 54,
+      "nativeWindowMs": 163,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 13,
+      "nativeShowBarrierMs": 150,
+      "capture": {
+        "utc": "2026-11-06T12:54:55+08:00",
+        "totalMs": 130,
+        "captureMs": 55,
+        "encodeMs": 60,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:55:09+08:00",
+      "inBatch": true,
+      "uiReadyMs": 200,
+      "frontendReadyMs": 35,
+      "nativeWindowMs": 83,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 4,
+      "nativeShowBarrierMs": 78,
+      "capture": {
+        "utc": "2026-11-06T12:55:09+08:00",
+        "totalMs": 81,
+        "captureMs": 37,
+        "encodeMs": 36,
+        "pngBytes": 349077
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:55:26+08:00",
+      "inBatch": true,
+      "uiReadyMs": 471,
+      "frontendReadyMs": 76,
+      "nativeWindowMs": 187,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 15,
+      "nativeShowBarrierMs": 171,
+      "capture": {
+        "utc": "2026-11-06T12:55:25+08:00",
+        "totalMs": 206,
+        "captureMs": 97,
+        "encodeMs": 87,
+        "pngBytes": 349076
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:00:12+08:00",
+      "inBatch": true,
+      "uiReadyMs": 427,
+      "frontendReadyMs": 67,
+      "nativeWindowMs": 159,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 9,
+      "nativeShowBarrierMs": 150,
+      "capture": {
+        "utc": "2026-11-06T13:00:12+08:00",
+        "totalMs": 200,
+        "captureMs": 94,
+        "encodeMs": 87,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:00:24+08:00",
+      "inBatch": true,
+      "uiReadyMs": 269,
+      "frontendReadyMs": 48,
+      "nativeWindowMs": 107,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 8,
+      "nativeShowBarrierMs": 98,
+      "capture": {
+        "utc": "2026-11-06T13:00:24+08:00",
+        "totalMs": 112,
+        "captureMs": 46,
+        "encodeMs": 48,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:00:43+08:00",
+      "inBatch": true,
+      "uiReadyMs": 257,
+      "frontendReadyMs": 48,
+      "nativeWindowMs": 97,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 3,
+      "nativeShowBarrierMs": 94,
+      "capture": {
+        "utc": "2026-11-06T13:00:43+08:00",
+        "totalMs": 110,
+        "captureMs": 46,
+        "encodeMs": 51,
+        "pngBytes": 349071
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:00:59+08:00",
+      "inBatch": true,
+      "uiReadyMs": 697,
+      "frontendReadyMs": 126,
+      "nativeWindowMs": 211,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 14,
+      "nativeShowBarrierMs": 196,
+      "capture": {
+        "utc": "2026-11-06T13:00:58+08:00",
+        "totalMs": 356,
+        "captureMs": 146,
+        "encodeMs": 178,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:02:53+08:00",
+      "inBatch": true,
+      "uiReadyMs": 315,
+      "frontendReadyMs": 54,
+      "nativeWindowMs": 150,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 6,
+      "nativeShowBarrierMs": 144,
+      "capture": {
+        "utc": "2026-11-06T13:02:52+08:00",
+        "totalMs": 109,
+        "captureMs": 43,
+        "encodeMs": 51,
+        "pngBytes": 348773
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:03:05+08:00",
+      "inBatch": true,
+      "uiReadyMs": 242,
+      "frontendReadyMs": 47,
+      "nativeWindowMs": 96,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 12,
+      "nativeShowBarrierMs": 84,
+      "capture": {
+        "utc": "2026-11-06T13:03:05+08:00",
+        "totalMs": 96,
+        "captureMs": 40,
+        "encodeMs": 48,
+        "pngBytes": 348737
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:03:16+08:00",
+      "inBatch": true,
+      "uiReadyMs": 250,
+      "frontendReadyMs": 45,
+      "nativeWindowMs": 104,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 3,
+      "nativeShowBarrierMs": 100,
+      "capture": {
+        "utc": "2026-11-06T13:03:16+08:00",
+        "totalMs": 98,
+        "captureMs": 40,
+        "encodeMs": 44,
+        "pngBytes": 349071
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:03:28+08:00",
+      "inBatch": true,
+      "uiReadyMs": 366,
+      "frontendReadyMs": 63,
+      "nativeWindowMs": 171,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 16,
+      "nativeShowBarrierMs": 154,
+      "capture": {
+        "utc": "2026-11-06T13:03:27+08:00",
+        "totalMs": 130,
+        "captureMs": 50,
+        "encodeMs": 65,
+        "pngBytes": 349071
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:03:39+08:00",
+      "inBatch": true,
+      "uiReadyMs": 448,
+      "frontendReadyMs": 87,
+      "nativeWindowMs": 145,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 11,
+      "nativeShowBarrierMs": 133,
+      "capture": {
+        "utc": "2026-11-06T13:03:38+08:00",
+        "totalMs": 213,
+        "captureMs": 87,
+        "encodeMs": 105,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:03:56+08:00",
+      "inBatch": true,
+      "uiReadyMs": 341,
+      "frontendReadyMs": 58,
+      "nativeWindowMs": 159,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 5,
+      "nativeShowBarrierMs": 154,
+      "capture": {
+        "utc": "2026-11-06T13:03:56+08:00",
+        "totalMs": 121,
+        "captureMs": 46,
+        "encodeMs": 60,
+        "pngBytes": 349075
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:04:16+08:00",
+      "inBatch": true,
+      "uiReadyMs": 290,
+      "frontendReadyMs": 52,
+      "nativeWindowMs": 122,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 10,
+      "nativeShowBarrierMs": 111,
+      "capture": {
+        "utc": "2026-11-06T13:04:16+08:00",
+        "totalMs": 115,
+        "captureMs": 43,
+        "encodeMs": 56,
+        "pngBytes": 349071
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:04:27+08:00",
+      "inBatch": true,
+      "uiReadyMs": 324,
+      "frontendReadyMs": 49,
+      "nativeWindowMs": 155,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 5,
+      "nativeShowBarrierMs": 149,
+      "capture": {
+        "utc": "2026-11-06T13:04:27+08:00",
+        "totalMs": 117,
+        "captureMs": 49,
+        "encodeMs": 55,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:04:40+08:00",
+      "inBatch": true,
+      "uiReadyMs": 311,
+      "frontendReadyMs": 51,
+      "nativeWindowMs": 146,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 17,
+      "nativeShowBarrierMs": 128,
+      "capture": {
+        "utc": "2026-11-06T13:04:40+08:00",
+        "totalMs": 112,
+        "captureMs": 42,
+        "encodeMs": 57,
+        "pngBytes": 348773
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:04:52+08:00",
+      "inBatch": true,
+      "uiReadyMs": 348,
+      "frontendReadyMs": 53,
+      "nativeWindowMs": 163,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 11,
+      "nativeShowBarrierMs": 151,
+      "capture": {
+        "utc": "2026-11-06T13:04:52+08:00",
+        "totalMs": 130,
+        "captureMs": 55,
+        "encodeMs": 58,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:05:05+08:00",
+      "inBatch": true,
+      "uiReadyMs": 834,
+      "frontendReadyMs": 139,
+      "nativeWindowMs": 295,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 44,
+      "nativeShowBarrierMs": 251,
+      "capture": {
+        "utc": "2026-11-06T13:05:04+08:00",
+        "totalMs": 395,
+        "captureMs": 112,
+        "encodeMs": 233,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:05:20+08:00",
+      "inBatch": true,
+      "uiReadyMs": 697,
+      "frontendReadyMs": 134,
+      "nativeWindowMs": 260,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 30,
+      "nativeShowBarrierMs": 229,
+      "capture": {
+        "utc": "2026-11-06T13:05:20+08:00",
+        "totalMs": 300,
+        "captureMs": 116,
+        "encodeMs": 157,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:05:33+08:00",
+      "inBatch": true,
+      "uiReadyMs": 412,
+      "frontendReadyMs": 77,
+      "nativeWindowMs": 148,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 13,
+      "nativeShowBarrierMs": 135,
+      "capture": {
+        "utc": "2026-11-06T13:05:32+08:00",
+        "totalMs": 184,
+        "captureMs": 68,
+        "encodeMs": 94,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:07:01+08:00",
+      "inBatch": true,
+      "uiReadyMs": 360,
+      "frontendReadyMs": 56,
+      "nativeWindowMs": 174,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 14,
+      "nativeShowBarrierMs": 160,
+      "capture": {
+        "utc": "2026-11-06T13:07:01+08:00",
+        "totalMs": 128,
+        "captureMs": 51,
+        "encodeMs": 60,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:07:15+08:00",
+      "inBatch": true,
+      "uiReadyMs": 290,
+      "frontendReadyMs": 49,
+      "nativeWindowMs": 130,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 12,
+      "nativeShowBarrierMs": 117,
+      "capture": {
+        "utc": "2026-11-06T13:07:15+08:00",
+        "totalMs": 108,
+        "captureMs": 48,
+        "encodeMs": 48,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:07:36+08:00",
+      "inBatch": true,
+      "uiReadyMs": 229,
+      "frontendReadyMs": 43,
+      "nativeWindowMs": 87,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 6,
+      "nativeShowBarrierMs": 80,
+      "capture": {
+        "utc": "2026-11-06T13:07:36+08:00",
+        "totalMs": 98,
+        "captureMs": 42,
+        "encodeMs": 45,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:08:03+08:00",
+      "inBatch": true,
+      "uiReadyMs": 241,
+      "frontendReadyMs": 44,
+      "nativeWindowMs": 98,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 5,
+      "nativeShowBarrierMs": 92,
+      "capture": {
+        "utc": "2026-11-06T13:08:03+08:00",
+        "totalMs": 97,
+        "captureMs": 37,
+        "encodeMs": 50,
+        "pngBytes": 349059
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:08:14+08:00",
+      "inBatch": true,
+      "uiReadyMs": 260,
+      "frontendReadyMs": 42,
+      "nativeWindowMs": 110,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 6,
+      "nativeShowBarrierMs": 104,
+      "capture": {
+        "utc": "2026-11-06T13:08:14+08:00",
+        "totalMs": 106,
+        "captureMs": 46,
+        "encodeMs": 50,
+        "pngBytes": 349071
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:08:25+08:00",
+      "inBatch": true,
+      "uiReadyMs": 261,
+      "frontendReadyMs": 50,
+      "nativeWindowMs": 105,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 5,
+      "nativeShowBarrierMs": 99,
+      "capture": {
+        "utc": "2026-11-06T13:08:24+08:00",
+        "totalMs": 104,
+        "captureMs": 40,
+        "encodeMs": 55,
+        "pngBytes": 348765
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:08:44+08:00",
+      "inBatch": true,
+      "uiReadyMs": 254,
+      "frontendReadyMs": 50,
+      "nativeWindowMs": 101,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 10,
+      "nativeShowBarrierMs": 90,
+      "capture": {
+        "utc": "2026-11-06T13:08:44+08:00",
+        "totalMs": 102,
+        "captureMs": 41,
+        "encodeMs": 49,
+        "pngBytes": 349071
+      }
+    },
+    {
+      "uiReadyUtc": "2026-11-06T13:10:42+08:00",
+      "inBatch": true,
+      "uiReadyMs": 771,
+      "frontendReadyMs": 141,
+      "nativeWindowMs": 324,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeMoveMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 21,
+      "nativeShowBarrierMs": 302,
+      "capture": {
+        "utc": "2026-11-06T13:10:42+08:00",
+        "totalMs": 300,
+        "captureMs": 102,
+        "encodeMs": 171,
+        "pngBytes": 349071
+      }
+    }
+  ],
+  "sampling": {
+    "segments": [
+      {
+        "name": "imagebitmap-ab",
+        "metadata": {
+          "startedUtc": "2026-11-06T04:35:49.4640877Z",
+          "targetPid": 13656,
+          "targetStartedUtc": "2026-11-06T04:35:10.215131Z",
+          "executablePath": "F:\\newworkspace\\snapTrans\\build\\bin\\snapTrans-imagebitmap-ab.exe",
+          "executableSHA256": "0068CCC76AF7582DD6646E771512ED58246BE5FE43DB1ED8FB138223218BCE60",
+          "durationMinutes": 20,
+          "intervalSeconds": 2,
+          "treeRefreshSeconds": 5,
+          "phaseFile": "F:\\newworkspace\\snapTrans\\build\\runtime-tests\\20261106-live\\imagebitmap-ab\\phases.jsonl",
+          "note": "Read-only counters; no UI actions or forced GC. Ownership uses parent PID plus CIM creation time, retaining verified descendants until exit. Working-set sums can double-count shared pages."
+        },
+        "rawSamples": 600,
+        "overlapSamplesDropped": 0,
+        "keptSamples": 600,
+        "firstUtc": "2026-11-06T04:35:49.9655139Z",
+        "lastUtc": "2026-11-06T04:55:47.5983713Z",
+        "stopReason": "duration-complete",
+        "measuredSeconds": 1200.013
+      },
+      {
+        "name": "imagebitmap-ab-tail",
+        "metadata": {
+          "startedUtc": "2026-11-06T04:55:28.4617637Z",
+          "targetPid": 13656,
+          "targetStartedUtc": "2026-11-06T04:35:10.215131Z",
+          "executablePath": "F:\\newworkspace\\snapTrans\\build\\bin\\snapTrans-imagebitmap-ab.exe",
+          "executableSHA256": "0068CCC76AF7582DD6646E771512ED58246BE5FE43DB1ED8FB138223218BCE60",
+          "durationMinutes": 10,
+          "intervalSeconds": 2,
+          "treeRefreshSeconds": 5,
+          "phaseFile": "F:\\newworkspace\\snapTrans\\build\\runtime-tests\\20261106-live\\imagebitmap-ab-tail\\phases.jsonl",
+          "note": "Read-only counters; no UI actions or forced GC. Ownership uses parent PID plus CIM creation time, retaining verified descendants until exit. Working-set sums can double-count shared pages."
+        },
+        "rawSamples": 300,
+        "overlapSamplesDropped": 10,
+        "keptSamples": 290,
+        "firstUtc": "2026-11-06T04:55:29.1351538Z",
+        "lastUtc": "2026-11-06T05:05:26.549032Z",
+        "stopReason": "duration-complete",
+        "measuredSeconds": 600.018
+      },
+      {
+        "name": "ab-idle",
+        "metadata": {
+          "startedUtc": "2026-11-06T05:05:11.6234629Z",
+          "targetPid": 13656,
+          "targetStartedUtc": "2026-11-06T04:35:10.215131Z",
+          "executablePath": "F:\\newworkspace\\snapTrans\\build\\bin\\snapTrans-imagebitmap-ab.exe",
+          "executableSHA256": "0068CCC76AF7582DD6646E771512ED58246BE5FE43DB1ED8FB138223218BCE60",
+          "durationMinutes": 5,
+          "intervalSeconds": 2,
+          "treeRefreshSeconds": 5,
+          "phaseFile": "F:\\newworkspace\\snapTrans\\build\\runtime-tests\\20261106-live\\ab-idle\\phases.jsonl",
+          "note": "Read-only counters; no UI actions or forced GC. Ownership uses parent PID plus CIM creation time, retaining verified descendants until exit. Working-set sums can double-count shared pages."
+        },
+        "rawSamples": 150,
+        "overlapSamplesDropped": 8,
+        "keptSamples": 142,
+        "firstUtc": "2026-11-06T05:05:12.7986201Z",
+        "lastUtc": "2026-11-06T05:10:09.8393129Z",
+        "stopReason": "duration-complete",
+        "measuredSeconds": 300.011
+      },
+      {
+        "name": "ab-idle-tail",
+        "metadata": {
+          "startedUtc": "2026-11-06T05:10:24.4897542Z",
+          "targetPid": 13656,
+          "targetStartedUtc": "2026-11-06T04:35:10.215131Z",
+          "executablePath": "F:\\newworkspace\\snapTrans\\build\\bin\\snapTrans-imagebitmap-ab.exe",
+          "executableSHA256": "0068CCC76AF7582DD6646E771512ED58246BE5FE43DB1ED8FB138223218BCE60",
+          "durationMinutes": 5,
+          "intervalSeconds": 2,
+          "treeRefreshSeconds": 5,
+          "phaseFile": "F:\\newworkspace\\snapTrans\\build\\runtime-tests\\20261106-live\\ab-idle-tail\\phases.jsonl",
+          "note": "Read-only counters; no UI actions or forced GC. Ownership uses parent PID plus CIM creation time, retaining verified descendants until exit. Working-set sums can double-count shared pages."
+        },
+        "rawSamples": 150,
+        "overlapSamplesDropped": 0,
+        "keptSamples": 150,
+        "firstUtc": "2026-11-06T05:10:25.8425841Z",
+        "lastUtc": "2026-11-06T05:15:22.6372764Z",
+        "stopReason": "duration-complete",
+        "measuredSeconds": 300.018
+      }
+    ],
+    "mergePolicy": "Keep each prior segment through its last UTC; discard every overlapping newer sample. Preserve gaps without interpolation. Do not sum CPU or working-set measurements across segments.",
+    "mergedSamples": 1182,
+    "droppedOverlappingSamples": 18.0,
+    "firstUtc": "2026-11-06T04:35:49.9655139Z",
+    "lastUtc": "2026-11-06T05:15:22.6372764Z",
+    "errorSamples": 0,
+    "intervalSeconds": {
+      "minimum": 0.8981056,
+      "average": 2.0090362087214224,
+      "maximum": 16.0032712
+    },
+    "gapsAbove5Seconds": [
+      {
+        "fromUtc": "2026-11-06T05:10:09.8393129Z",
+        "toUtc": "2026-11-06T05:10:25.8425841Z",
+        "seconds": 16.0032712
+      }
+    ],
+    "ownedRoles": [
+      {
+        "pid": 29512,
+        "role": "WebView renderer"
+      },
+      {
+        "pid": 23676,
+        "role": "WebView GPU"
+      }
+    ],
+    "nativeHelperScope": "Separate NativeScroll/Go diagnostic processes were not descendants of PID13656 and were excluded."
+  },
+  "memory": {
+    "beforeBatchLast60Seconds": {
+      "sampleCount": 30,
+      "firstUtc": "2026-11-06T04:53:09.6538514Z",
+      "lastUtc": "2026-11-06T04:54:07.5460938Z",
+      "metrics": {
+        "mainPrivateBytes": {
+          "minimum": 93868032,
+          "median": 94568448,
+          "maximum": 95408128,
+          "first": 93868032,
+          "last": 95408128
+        },
+        "rendererPrivateBytes": {
+          "minimum": 46149632,
+          "median": 46149632,
+          "maximum": 46149632,
+          "first": 46149632,
+          "last": 46149632
+        },
+        "gpuPrivateBytes": {
+          "minimum": 80834560,
+          "median": 80834560,
+          "maximum": 80834560,
+          "first": 80834560,
+          "last": 80834560
+        },
+        "treePrivateBytes": {
+          "minimum": 364511232,
+          "median": 365182976,
+          "maximum": 366022656,
+          "first": 364511232,
+          "last": 366022656
+        },
+        "mainGdiObjects": {
+          "minimum": 127,
+          "median": 127,
+          "maximum": 127,
+          "first": 127,
+          "last": 127
+        },
+        "treeGdiObjects": {
+          "minimum": 251,
+          "median": 251,
+          "maximum": 251,
+          "first": 251,
+          "last": 251
+        },
+        "mainUserObjects": {
+          "minimum": 83,
+          "median": 83,
+          "maximum": 83,
+          "first": 83,
+          "last": 83
+        },
+        "treeUserObjects": {
+          "minimum": 184,
+          "median": 184,
+          "maximum": 184,
+          "first": 184,
+          "last": 184
+        },
+        "mainHandles": {
+          "minimum": 748,
+          "median": 748,
+          "maximum": 748,
+          "first": 748,
+          "last": 748
+        },
+        "treeHandles": {
+          "minimum": 4082,
+          "median": 4084,
+          "maximum": 4084,
+          "first": 4082,
+          "last": 4084
+        },
+        "processCount": {
+          "minimum": 9,
+          "median": 9,
+          "maximum": 9,
+          "first": 9,
+          "last": 9
+        }
+      }
+    },
+    "operatorBatchWindow": {
+      "sampleCount": 492,
+      "firstUtc": "2026-11-06T04:54:09.7179818Z",
+      "lastUtc": "2026-11-06T05:10:42.7106489Z",
+      "metrics": {
+        "mainPrivateBytes": {
+          "minimum": 95436800,
+          "median": 115531776,
+          "maximum": 127119360,
+          "first": 95436800,
+          "last": 116527104
+        },
+        "rendererPrivateBytes": {
+          "minimum": 46149632,
+          "median": 123822080,
+          "maximum": 300498944,
+          "first": 46149632,
+          "last": 300498944
+        },
+        "gpuPrivateBytes": {
+          "minimum": 80834560,
+          "median": 113553408,
+          "maximum": 138842112,
+          "first": 80834560,
+          "last": 124801024
+        },
+        "treePrivateBytes": {
+          "minimum": 366010368,
+          "median": 495517696,
+          "maximum": 698867712,
+          "first": 366051328,
+          "last": 698867712
+        },
+        "mainGdiObjects": {
+          "minimum": 127,
+          "median": 127,
+          "maximum": 130,
+          "first": 127,
+          "last": 127
+        },
+        "treeGdiObjects": {
+          "minimum": 251,
+          "median": 251,
+          "maximum": 254,
+          "first": 251,
+          "last": 251
+        },
+        "mainUserObjects": {
+          "minimum": 83,
+          "median": 87,
+          "maximum": 89,
+          "first": 83,
+          "last": 89
+        },
+        "treeUserObjects": {
+          "minimum": 184,
+          "median": 187,
+          "maximum": 193,
+          "first": 184,
+          "last": 192
+        },
+        "mainHandles": {
+          "minimum": 748,
+          "median": 770,
+          "maximum": 784,
+          "first": 748,
+          "last": 784
+        },
+        "treeHandles": {
+          "minimum": 4076,
+          "median": 4099,
+          "maximum": 4119,
+          "first": 4084,
+          "last": 4117
+        },
+        "processCount": {
+          "minimum": 9,
+          "median": 9,
+          "maximum": 9,
+          "first": 9,
+          "last": 9
+        }
+      }
+    },
+    "hiddenFirst180Seconds": {
+      "sampleCount": 91,
+      "firstUtc": "2026-11-06T05:11:46.6248298Z",
+      "lastUtc": "2026-11-06T05:14:46.627271Z",
+      "metrics": {
+        "mainPrivateBytes": {
+          "minimum": 98201600,
+          "median": 113311744,
+          "maximum": 117522432,
+          "first": 116531200,
+          "last": 98201600
+        },
+        "rendererPrivateBytes": {
+          "minimum": 299679744,
+          "median": 299679744,
+          "maximum": 299679744,
+          "first": 299679744,
+          "last": 299679744
+        },
+        "gpuPrivateBytes": {
+          "minimum": 82354176,
+          "median": 82354176,
+          "maximum": 82550784,
+          "first": 82550784,
+          "last": 82354176
+        },
+        "treePrivateBytes": {
+          "minimum": 634949632,
+          "median": 650063872,
+          "maximum": 654274560,
+          "first": 653508608,
+          "last": 634949632
+        },
+        "mainGdiObjects": {
+          "minimum": 127,
+          "median": 127,
+          "maximum": 127,
+          "first": 127,
+          "last": 127
+        },
+        "treeGdiObjects": {
+          "minimum": 251,
+          "median": 251,
+          "maximum": 251,
+          "first": 251,
+          "last": 251
+        },
+        "mainUserObjects": {
+          "minimum": 88,
+          "median": 88,
+          "maximum": 88,
+          "first": 88,
+          "last": 88
+        },
+        "treeUserObjects": {
+          "minimum": 188,
+          "median": 188,
+          "maximum": 189,
+          "first": 188,
+          "last": 189
+        },
+        "mainHandles": {
+          "minimum": 783,
+          "median": 784,
+          "maximum": 786,
+          "first": 784,
+          "last": 783
+        },
+        "treeHandles": {
+          "minimum": 4098,
+          "median": 4099,
+          "maximum": 4102,
+          "first": 4101,
+          "last": 4102
+        },
+        "processCount": {
+          "minimum": 9,
+          "median": 9,
+          "maximum": 9,
+          "first": 9,
+          "last": 9
+        }
+      }
+    },
+    "idleFinal60Seconds": {
+      "sampleCount": 31,
+      "firstUtc": "2026-11-06T05:13:46.6247114Z",
+      "lastUtc": "2026-11-06T05:14:46.627271Z",
+      "metrics": {
+        "mainPrivateBytes": {
+          "minimum": 98201600,
+          "median": 113311744,
+          "maximum": 113328128,
+          "first": 113291264,
+          "last": 98201600
+        },
+        "rendererPrivateBytes": {
+          "minimum": 299679744,
+          "median": 299679744,
+          "maximum": 299679744,
+          "first": 299679744,
+          "last": 299679744
+        },
+        "gpuPrivateBytes": {
+          "minimum": 82354176,
+          "median": 82354176,
+          "maximum": 82354176,
+          "first": 82354176,
+          "last": 82354176
+        },
+        "treePrivateBytes": {
+          "minimum": 634949632,
+          "median": 650063872,
+          "maximum": 650080256,
+          "first": 650010624,
+          "last": 634949632
+        },
+        "mainGdiObjects": {
+          "minimum": 127,
+          "median": 127,
+          "maximum": 127,
+          "first": 127,
+          "last": 127
+        },
+        "treeGdiObjects": {
+          "minimum": 251,
+          "median": 251,
+          "maximum": 251,
+          "first": 251,
+          "last": 251
+        },
+        "mainUserObjects": {
+          "minimum": 88,
+          "median": 88,
+          "maximum": 88,
+          "first": 88,
+          "last": 88
+        },
+        "treeUserObjects": {
+          "minimum": 188,
+          "median": 188,
+          "maximum": 189,
+          "first": 188,
+          "last": 189
+        },
+        "mainHandles": {
+          "minimum": 783,
+          "median": 783,
+          "maximum": 784,
+          "first": 784,
+          "last": 783
+        },
+        "treeHandles": {
+          "minimum": 4098,
+          "median": 4099,
+          "maximum": 4102,
+          "first": 4099,
+          "last": 4102
+        },
+        "processCount": {
+          "minimum": 9,
+          "median": 9,
+          "maximum": 9,
+          "first": 9,
+          "last": 9
+        }
+      }
+    },
+    "after180": {
+      "utc": "2026-11-06T05:14:46.627271Z",
+      "mainPrivateBytes": 98201600,
+      "rendererPrivateBytes": 299679744,
+      "gpuPrivateBytes": 82354176,
+      "treePrivateBytes": 634949632,
+      "mainGdiObjects": 127,
+      "treeGdiObjects": 251,
+      "mainHandles": 783,
+      "treeHandles": 4102
+    },
+    "retainedPrivateBytes": {
+      "mainPrivateBytes": {
+        "beforeBatchLast": 95408128,
+        "batchPeak": 127119360,
+        "after180": 98201600,
+        "deltaAfter180VsBeforeBatchLast": 2793472,
+        "idleFinal60Median": 113311744
+      },
+      "rendererPrivateBytes": {
+        "beforeBatchLast": 46149632,
+        "batchPeak": 300498944,
+        "after180": 299679744,
+        "deltaAfter180VsBeforeBatchLast": 253530112,
+        "idleFinal60Median": 299679744
+      },
+      "gpuPrivateBytes": {
+        "beforeBatchLast": 80834560,
+        "batchPeak": 138842112,
+        "after180": 82354176,
+        "deltaAfter180VsBeforeBatchLast": 1519616,
+        "idleFinal60Median": 82354176
+      },
+      "treePrivateBytes": {
+        "beforeBatchLast": 366022656,
+        "batchPeak": 698867712,
+        "after180": 634949632,
+        "deltaAfter180VsBeforeBatchLast": 268926976,
+        "idleFinal60Median": 650063872
+      }
+    },
+    "baselineComparison": {
+      "mainPrivateBytes": {
+        "baselineBefore": 107319296,
+        "baselinePeak": 126263296,
+        "baselineAfter180": 97882112,
+        "baselineRetainedDelta": -9437184,
+        "experimentBefore": 95408128,
+        "experimentPeak": 127119360,
+        "experimentAfter180": 98201600,
+        "experimentRetainedDelta": 2793472,
+        "experimentAfter180MinusBaseline": 319488
+      },
+      "rendererPrivateBytes": {
+        "baselineBefore": 47366144,
+        "baselinePeak": 166334464,
+        "baselineAfter180": 163745792,
+        "baselineRetainedDelta": 116379648,
+        "experimentBefore": 46149632,
+        "experimentPeak": 300498944,
+        "experimentAfter180": 299679744,
+        "experimentRetainedDelta": 253530112,
+        "experimentAfter180MinusBaseline": 135933952
+      },
+      "gpuPrivateBytes": {
+        "baselineBefore": 86630400,
+        "baselinePeak": 160096256,
+        "baselineAfter180": 92737536,
+        "baselineRetainedDelta": 6107136,
+        "experimentBefore": 80834560,
+        "experimentPeak": 138842112,
+        "experimentAfter180": 82354176,
+        "experimentRetainedDelta": 1519616,
+        "experimentAfter180MinusBaseline": -10383360
+      },
+      "treePrivateBytes": {
+        "baselineBefore": 383528960,
+        "baselinePeak": 589201408,
+        "baselineAfter180": 497123328,
+        "baselineRetainedDelta": 113594368,
+        "experimentBefore": 366022656,
+        "experimentPeak": 698867712,
+        "experimentAfter180": 634949632,
+        "experimentRetainedDelta": 268926976,
+        "experimentAfter180MinusBaseline": 137826304
+      }
+    }
+  },
+  "outcome": {
+    "demonstratedMemoryBenefit": false,
+    "rendererExperimentAfter180MiB": 285.8,
+    "rendererBaselineAfter180MiB": 156.16,
+    "assessment": "The experiment did not improve observed memory retention. Renderer and whole-tree private memory after180seconds were materially higher than baseline; reverting the experiment is supported.",
+    "causalLimit": "This does not establish which decoder branch ran, prove an intrinsic ImageBitmap defect, or establish an unbounded leak.",
+    "experimentAdopted": false,
+    "finalDecision": "Root decided to precisely revert the four experiment files and restore the HTMLImage baseline; the experiment is not adopted."
+  },
+  "phaseMarkers": [
+    {
+      "utc": "2026-11-06T04:42:00.7088946Z",
+      "cycle": 1,
+      "phase": "ab-warmup-start"
+    },
+    {
+      "utc": "2026-11-06T04:45:17.1399594Z",
+      "phase": "ab-two-warmups-hidden",
+      "cycle": 2
+    },
+    {
+      "utc": "2026-11-06T04:54:08.0544177Z",
+      "phase": "ab-continuous-30-start",
+      "cycle": 1
+    },
+    {
+      "cycle": 30,
+      "utc": "2026-11-06T05:10:44.2553467Z",
+      "phase": "ab-continuous-30-end"
+    },
+    {
+      "utc": "2026-11-06T05:11:46.6861424Z",
+      "cycle": 30,
+      "phase": "ab-hidden-idle-after-30"
+    }
+  ],
+  "limitations": [
+    "Nonrandom sequential cohorts with concurrent tools/compilation and independent NativeScroll work. Latency differences are observations,not isolated causal speed claims.",
+    "There was a coordination pause after the first five batch inputs. Actual application-ready intervals and phase timestamps are retained; preparation and idle time do not count as extra completed screenshots.",
+    "A16.003-second sampling gap occurred between05:10:09.839 and05:10:25.842. It is not interpolated or described as continuous; the30th ready record and the entire confirmed-hidden180seconds occurred after this gap.",
+    "Initial pre-capture samples had no screenshot log,but native window visibility was not independently established by the sampler. The formal comparison uses the state after the two warmup captures/cancels.",
+    "Codex prewarm and its conhost expired after five minutes. Their private-memory drop is not credited to rendering cleanup; per-process data is preserved.",
+    "Private bytes include allocator/cache retention. No forced GC,TrimWorkingSet,new App API,model request,or UI action was issued by the sampler; these counters alone do not prove a leak.",
+    "Working-set sums can double-count shared pages; medians are unweighted sample medians at nonuniform actual timestamps.",
+    "ImageBitmap support/preference in source does not directly verify the live branch; fallback was retained and no decoder telemetry was added.",
+    "Windows Graphics Capture/coordinate geometry remained unavailable,so visual screenshot/editor quality was not evaluated. Numeric NativeScroll tests are a separate experiment and do not belong to this App memory cohort."
+  ],
+  "rawSources": [
+    "build/runtime-tests/20261106-live/bitmap-capture-ui-inputs.json",
+    "build/runtime-tests/20261106-live/bitmap-warmup-inputs.json",
+    "build/runtime-tests/20261106-live/imagebitmap-ab-merged.jsonl",
+    "build/runtime-tests/20261106-live/imagebitmap-ab-after180.json"
+  ],
+  "shutdown": {
+    "operatorReportedStoppedAfter180Seconds": true,
+    "exactStopUtc": null,
+    "identityAbsenceCheckedUtc": "2026-11-06T05:19:00.8183943Z",
+    "sameRuntimeIdentityStillRunning": false,
+    "remainingSamplerIdentities": [],
+    "note": "Operator stopped the experimental task application only after the180-second observation. Exact Stop execution UTC was not supplied; the timestamp here is a later identity-absence verification,not a fabricated exact shutdown time. Stopping the application is not counted as a memory-optimization result."
+  },
+  "cadence": {
+    "batchStartUtc": "2026-11-06T04:54:08.0544177+00:00",
+    "batchEndMarkerUtc": "2026-11-06T05:10:44.2553467+00:00",
+    "maxApplicationReadyGapSeconds": 286.0,
+    "note": "Operator/tool pacing and coordination pauses are not application processing latency or completed extra screenshots."
+  }
+}

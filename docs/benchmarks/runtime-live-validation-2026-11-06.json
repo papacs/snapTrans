@@ -1,0 +1,146 @@
+{
+  "date": "2026-11-06",
+  "platform": "windows/amd64",
+  "status": "scroll-repair-verified-with-ui-and-device-limits",
+  "build": {
+    "candidate": "build/bin/snapTrans-scroll-candidate.exe",
+    "standardLauncher": "build/bin/snapTrans.exe",
+    "identity": "20261106T053715Z-7df60b44cd3772f6",
+    "sourceDigest": "7df60b44cd3772f6",
+    "sourceIdentityVerified": true,
+    "sha256": "87307460a93ae0992253cd27b8487e1bb78dd86fcfedafb71c4c8269e108ad18",
+    "standardLauncherHashVerified": true,
+    "bytes": 13073920,
+    "startedProcessId": 34456,
+    "startupLogIdentityVerified": true,
+    "frontendReady": true,
+    "ocrWarmup": { "ready": true, "startupMs": 1872, "errorClass": "none" }
+  },
+  "productionChangesThisRound": [
+    "Full-width unique row anchors preserve narrow section identifiers that periodic text and sparse overlap sampling previously obscured.",
+    "Conflicting or insufficient moving anchors reject weak aliases without poisoning the last confirmed observation.",
+    "Short overlaps accept two adjacent distinct anchor rows when nonlocal change supports a near-viewport jump; local-animation protections remain.",
+    "Native-window timing fields were added for observation; no speculative focus patch or added delay was introduced.",
+    "The ImageBitmap experiment was fully reverted after its actual memory result was worse."
+  ],
+  "verification": {
+    "goTest": {
+      "command": "go test -json -p 2 ./... -count=1 -timeout 180s",
+      "exitCode": 0,
+      "testedPackages": 13,
+      "topLevelTestsPassed": 398,
+      "testsIncludingSubtestsPassed": 494,
+      "testsSkipped": 22,
+      "failures": 0,
+      "rawOutput": "build/runtime-tests/20261106-live/go-final.jsonl"
+    },
+    "goVet": { "command": "go vet ./...", "exitCode": 0 },
+    "frontendAfterExperimentRollback": {
+      "testsPassed": 326,
+      "testFiles": 21,
+      "nodeMajorVersion": 24,
+      "typecheck": "passed",
+      "productionBuild": "passed again in final Wails build"
+    },
+    "wailsBuild": {
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -OutputName snapTrans-scroll-candidate.exe",
+      "exitCode": 0
+    },
+    "diffCheck": { "command": "git -c core.safecrlf=false diff --check", "exitCode": 0 }
+  },
+  "actualRuntimeEvidence": {
+    "ordinaryScreenshots": {
+      "profileBuild": "20261106T032840Z-dd9864ab31b0cb87",
+      "actualShortcutReentries": 30,
+      "matchingUiReadyRecords": 30,
+      "uiReadyP50Ms": 358,
+      "uiReadyP95Ms": 693,
+      "uiReadyMaxMs": 869,
+      "inputSpacing": "Typically seconds apart with coordination pauses; not a high-frequency burst.",
+      "visualQualityEvaluated": false,
+      "report": "docs/benchmarks/runtime-active-profile-2026-11-06.json"
+    },
+    "nativeCapture": {
+      "actualCaptures": 40,
+      "physicalPixels": "1920x1080",
+      "scale": 1.25,
+      "dpiContext": "PMV2 verified against native display mode",
+      "pngRoundtripPixelEqual": true,
+      "captureP50Ms": 37.5401,
+      "captureP95Ms": 47.4361
+    },
+    "finalScrollRepair": {
+      "originalRoiReplay": {
+        "nativeSourceCaptures": 220,
+        "appendedPixels": [27, 27, 783],
+        "finalHeight": 1757,
+        "bottomStaticSecondsApproximately": 63,
+        "bottomDuplicateAppends": 0,
+        "scope": "Native displacement and export; original ROI includes a footer."
+      },
+      "pureEditPixelOracle": {
+        "nativeSourceCaptures": 223,
+        "roi": { "x": 8, "y": 54, "width": 1000, "height": 918 },
+        "appendedPixels": [27, 27, 783],
+        "nativeFirstVisibleLine": { "initial": 295, "final": 326 },
+        "nativeMeasuredLineHeight": 27,
+        "expectedAndActualHeight": 1755,
+        "mismatchingRows": 0,
+        "mismatchingPixels": 0,
+        "nativeCaptureP50Ms": 18.2257,
+        "nativeCaptureP95Ms": 24.4132,
+        "bottomStaticSecondsApproximately": 40,
+        "bottomDuplicateAppends": 0,
+        "gdiBeforeAndAfter": [1, 1],
+        "extraDiagnosticMemoryAndTiming": true
+      },
+      "report": "docs/benchmarks/runtime-native-scroll-2026-11-06.json"
+    },
+    "activeMemory": {
+      "profileBuild": "20261106T032840Z-dd9864ab31b0cb87",
+      "secondsAfterConfirmedHide": 180,
+      "mainPrivateMiBBeforePeakAfter": [102.35, 120.41, 93.35],
+      "rendererPrivateMiBBeforePeakAfter": [45.17, 158.63, 156.16],
+      "treePrivateMiBBeforePeakAfter": [365.76, 561.91, 474.09],
+      "rendererRetainedIncrementMiB": 110.99,
+      "mainAndTreeGdiBeforeAndAfter": [127, 253],
+      "interpretation": "Main/GPU partly recover; renderer retention remains observed. This does not establish an unbounded leak or complete memory recovery.",
+      "rejectedExperiment": {
+        "imageBitmapPreferredAfterHideRendererMiB": 285.80,
+        "baselineAfterHideRendererMiB": 156.16,
+        "adopted": false,
+        "report": "docs/benchmarks/runtime-imagebitmap-ab-2026-11-06.json"
+      }
+    }
+  },
+  "android": {
+    "checkedAtUtc": "2026-11-06T06:00:05.9308137Z",
+    "command": "adb devices -l",
+    "exitCode": 0,
+    "deviceEntries": 0,
+    "rawResult": "build/runtime-tests/20261106-live/android-device-check.json",
+    "deviceCaptureRotationTouchOrMemoryTested": false,
+    "newAndroidProductionChangesThisRound": false,
+    "existingDebugApk": "android/app/build/outputs/apk/debug/app-debug.apk",
+    "existingDebugApkSHA256": "4010b35bd07ff18c4a160957dd5c674478722666d88be9002aa72fb4f26dde2b",
+    "priorJvmAndBuildEvidence": "docs/benchmarks/android-validation-2026-11-06.json"
+  },
+  "limits": [
+    "Computer-use Windows Graphics Capture continued timing out despite an unlocked visible desktop. Keyboard/UIA and actual application logs were usable; mouse-drag selection, visual occlusion and perceived animation smoothness were not certified.",
+    "The actual native scroll harness invokes the production capture/scroll component. It does not cover the complete Wails overlay hole and selection workflow.",
+    "The pixel oracle proves continuity of the controlled selected captured source against independent native-position tail assembly, not OCR semantics or an unoccluded underlying document.",
+    "Ordinary screenshot memory/timing observations predate the final scroll matcher. No claim is made that the final executable repeated those complete 30-action batches.",
+    "Host/tool load and nonrandom A/B conditions limit latency and memory comparisons. ImageBitmap decoder branch telemetry was not recorded.",
+    "No actual local API translation request was made in this round; prior API measurements were not replaced.",
+    "No connected Android device was available for real mobile performance verification."
+  ],
+  "cleanup": {
+    "nativeCaptureHelpersExited": true,
+    "memorySamplersFinished": true,
+    "experimentalApplicationsStopped": true,
+    "unusedSyntheticHttpFixtureStopped": true,
+    "finalStandardApplicationRunning": true,
+    "screenPixelFilesSaved": false,
+    "apiKeysOrUserConfigurationChanged": false
+  }
+}

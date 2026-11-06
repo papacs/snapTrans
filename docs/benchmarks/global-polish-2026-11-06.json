@@ -1,0 +1,40 @@
+{
+  "date": "2026-11-06",
+  "scope": "Capture/UI memory, Windows transitions, local API transport and Codex runtime reuse",
+  "local_compatible_transport": {
+    "fixture": "Offline 1.57 MB synthetic JSON request, three iterations; no network/model invocation",
+    "previous_json_wrapper": {"allocated_bytes_per_op": 4917189, "allocations_per_op": 55, "approximate_ms_per_op": 48},
+    "direct_body_forwarding": {"allocated_bytes_per_op": 752, "allocations_per_op": 7, "approximate_ms_per_op": 0.026},
+    "limit": "Measures wrapper overhead only. It does not establish TCP, TLS or model first-token latency. DeepSeek V4 retains its required thinking-field patch."
+  },
+  "memory_changes": [
+    "A newly admitted capture releases superseded encoded images instead of retaining prior full-screen PNGs",
+    "Capture asset eviction counts backing allocation capacity rather than only visible slice length",
+    "PNG compressor pools release source/output references and generic PNG encoders are not pooled",
+    "Canceled image loads release their source and handlers; closed canvases reset dimensions to zero",
+    "Mosaic buffers are created only when used and released after undo removes the last mosaic",
+    "History is loaded only on its settings tab and renders 30 entries per batch",
+    "Stopped API pool timers release references; stale expiry callbacks cannot close a freshly returned runtime",
+    "Both OCR and Codex helper processes use a Windows kill-on-close process guard"
+  ],
+  "connection_regressions": [
+    "Authenticated near-ready session setup can complete within a bounded handoff instead of repeating process startup and account checks",
+    "Cold successful foreground requests prepare the actual last-used prompt/direction for the next request",
+    "Hung startup/session preparation remains bounded; cancellation and obsolete settings cannot repopulate the pool",
+    "Each request retains a fresh ephemeral conversation and MCP isolation checks"
+  ],
+  "ui_regressions": [
+    "Native hide completes before clearing frozen pixels; late hide completion cannot erase a newer capture",
+    "Settings resize while hidden, then show after the new shell is rendered",
+    "Enter/Ctrl+C completes screenshots and Ctrl+S saves, respecting typing, IME and nested tools",
+    "Repeated copy/save is blocked while the current action is pending"
+  ],
+  "validation": {
+    "go": "go test -p 2 ./... -count=1 -timeout 180s passed",
+    "static_analysis": "go vet ./... passed",
+    "frontend": "324 tests across 21 files passed; threads, maxWorkers=2, testTimeout=30000, installed bundled Node 24; no project runtime or dependency changes",
+    "types": "Vue/TypeScript typecheck passed",
+    "visual": "680x780 browser preview inspected in light and dark themes; real Windows capture/hotkey, mixed-DPI and sustained memory scenarios were not manually certified"
+  },
+  "limits": "Encoding measurements are in capture-encoding-2026-11-06.json. No controlled before/after aggregate process-memory measurement or live API/model latency comparison was performed. System rendering and remote generation can still dominate total latency."
+}

@@ -12,15 +12,16 @@ import (
 // fresh ephemeral conversation, so messages and instructions cannot carry over.
 var warmProcess struct {
 	sync.Mutex
-	idle        *connection
-	path        string
-	timer       *time.Timer
-	epoch       uint64
-	warming     bool
-	ready       chan struct{}
-	warmingPath string
-	cancelWarm  context.CancelFunc
-	active      int
+	idle            *connection
+	path            string
+	timer           *time.Timer
+	epoch           uint64
+	warming         bool
+	ready           chan struct{}
+	sessionStarting chan struct{}
+	warmingPath     string
+	cancelWarm      context.CancelFunc
+	active          int
 }
 
 func takeWarm(ctx context.Context, path string, expectedEpoch ...uint64) (*connection, uint64, error) {
@@ -40,6 +41,7 @@ func takeWarm(ctx context.Context, path string, expectedEpoch ...uint64) (*conne
 	warmProcess.idle = nil
 	if warmProcess.timer != nil {
 		warmProcess.timer.Stop()
+		warmProcess.timer = nil
 	}
 	warmProcess.Unlock()
 	if c != nil {
@@ -90,17 +92,24 @@ func returnWarm(c *connection, path string, epoch uint64) {
 		return
 	}
 	warmProcess.idle, warmProcess.path = c, path
-	warmProcess.timer = time.AfterFunc(5*time.Minute, func() {
-		warmProcess.Lock()
-		if warmProcess.idle != c {
-			warmProcess.Unlock()
-			return
-		}
-		warmProcess.idle = nil
-		warmProcess.Unlock()
-		c.close()
-	})
+	var timer *time.Timer
+	timer = time.AfterFunc(5*time.Minute, func() { expireWarm(c, timer) })
+	warmProcess.timer = timer
 	warmProcess.Unlock()
+}
+
+func expireWarm(c *connection, timer *time.Timer) {
+	warmProcess.Lock()
+	// Stop cannot recall an AfterFunc callback already queued before checkout.
+	// The same process can be returned with a new idle timer before it runs.
+	if warmProcess.idle != c || warmProcess.timer != timer {
+		warmProcess.Unlock()
+		return
+	}
+	warmProcess.idle = nil
+	warmProcess.timer = nil
+	warmProcess.Unlock()
+	c.close()
 }
 
 // CloseIdle also invalidates borrowed connections so shutdown or a model
@@ -114,8 +123,10 @@ func CloseIdle() {
 	warmProcess.warming = false
 	warmProcess.cancelWarm = nil
 	warmProcess.ready = nil
+	warmProcess.sessionStarting = nil
 	if warmProcess.timer != nil {
 		warmProcess.timer.Stop()
+		warmProcess.timer = nil
 	}
 	warmProcess.Unlock()
 	if cancel != nil {
@@ -260,6 +271,8 @@ func warmWithPolicy(ctx context.Context, path string, key *sessionKey, expectedE
 	admittedEpoch := warmProcess.epoch
 	ready := make(chan struct{})
 	warmProcess.ready = ready
+	sessionStarting := make(chan struct{})
+	warmProcess.sessionStarting = sessionStarting
 	warmProcess.Unlock()
 	defer func() {
 		warmProcess.Lock()
@@ -277,6 +290,9 @@ func warmWithPolicy(ctx context.Context, path string, key *sessionKey, expectedE
 	stop := context.AfterFunc(ctx, c.close)
 	if key != nil {
 		if err = c.requireSubscription(); err == nil {
+			// Foreground work can briefly wait for this last setup stage rather
+			// than discarding the process and repeating subscription discovery.
+			close(sessionStarting)
 			err = c.prepareSession(*key)
 		}
 	}
@@ -330,6 +346,7 @@ func streamFastAttempt(ctx context.Context, cancel context.CancelCauseFunc, path
 	warmProcess.Lock()
 	warmProcess.active++
 	ready := warmProcess.ready
+	sessionStarting := warmProcess.sessionStarting
 	cancelWarm := warmProcess.cancelWarm
 	waiting := warmProcess.warming && warmProcess.warmingPath == path
 	warmProcess.Unlock()
@@ -354,14 +371,30 @@ func streamFastAttempt(ctx context.Context, cancel context.CancelCauseFunc, path
 		// for a background handshake that may itself be stuck on the network.
 		timer := time.NewTimer(150 * time.Millisecond)
 		defer timer.Stop()
-		select {
-		case <-ready:
-		case <-timer.C:
-			if cancelWarm != nil {
-				cancelWarm()
+	waitForWarm:
+		for {
+			select {
+			case <-ready:
+				break waitForWarm
+			case <-sessionStarting:
+				sessionStarting = nil
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				// The authenticated runtime is already usable. Bound only the
+				// remaining unused-thread setup, including a mismatched prompt.
+				timer.Reset(time.Second)
+			case <-timer.C:
+				if cancelWarm != nil {
+					cancelWarm()
+				}
+				break waitForWarm
+			case <-ctx.Done():
+				return "", ctx.Err()
 			}
-		case <-ctx.Done():
-			return "", ctx.Err()
 		}
 		slog.Info("Codex prewarm wait", "elapsed_ms", time.Since(started).Milliseconds())
 	}
@@ -377,10 +410,12 @@ func streamFastAttempt(ctx context.Context, cancel context.CancelCauseFunc, path
 		c.close()
 		return "", err
 	}
-	// Begin the idle deadline only after the model turn is accepted. Session
-	// setup and active reasoning must never consume a first-output deadline.
+	// Turn acceptance precedes local input/skill preparation. The response
+	// idle clock starts only when input is ready (or assistant activity begins);
+	// the overall caller deadline still bounds setup and the entire request.
 	var firstOutputTimer *time.Timer
 	receivedText := false
+	inputReady := false
 	output, err := c.streamWithProgress(model, instructions, input, effort, func(token string) {
 		if firstOutputTimer != nil && token != "" {
 			firstOutputTimer.Stop()
@@ -389,10 +424,14 @@ func streamFastAttempt(ctx context.Context, cancel context.CancelCauseFunc, path
 			receivedText = true
 		}
 		onToken(token)
-	}, func(string) {
+	}, func(stage string) {
 		if receivedText || (effort != "low" && effort != "none") {
 			return
 		}
+		if stage == "turn/start" || stage == "turn/started" || (stage == progressInputReady && inputReady) {
+			return
+		}
+		inputReady = true
 		if firstOutputTimer == nil {
 			firstOutputTimer = time.AfterFunc(firstOutputTimeout, func() { cancel(errFirstOutputTimeout) })
 		} else {
@@ -410,7 +449,9 @@ func streamFastAttempt(ctx context.Context, cancel context.CancelCauseFunc, path
 		}
 		return output, err
 	}
-	refill, refillEpoch = c.prepareEnabled, epoch
+	// A successful cold request must also recover preparation for the next
+	// capture, using its actual prompt rather than another speculative guess.
+	refill, refillEpoch = true, epoch
 	returnWarm(c, c.cmd.Path, epoch)
 	return output, nil
 }

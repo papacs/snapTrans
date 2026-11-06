@@ -82,6 +82,18 @@ func TestPNGCompressionLevelPrioritizesLocalCaptureLatency(t *testing.T) {
 	assertSamePixels(t, flat, decoded)
 }
 
+func TestPNGCompressionProbePreservesSpatialCompressibility(t *testing.T) {
+	// A desktop gradient has many distinct distant pixels, yet adjacent rows
+	// compress well. Disconnected pixel probes misclassify it as random noise.
+	frame := image.NewRGBA(image.Rect(-20, -10, 1900, 1070))
+	for y := frame.Rect.Min.Y; y < frame.Rect.Max.Y; y++ {
+		for x := frame.Rect.Min.X; x < frame.Rect.Max.X; x++ {
+			frame.SetRGBA(x, y, color.RGBA{R: byte(x), G: byte(y), B: byte(x + y), A: 255})
+		}
+	}
+	require.Equal(t, png.BestSpeed, pngCompressionLevel(frame))
+}
+
 func BenchmarkScreenshotEncoding1080p(b *testing.B) {
 	frame := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
 	for y := 0; y < frame.Bounds().Dy(); y++ {

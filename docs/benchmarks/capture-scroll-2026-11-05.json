@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-05",
+  "machine": "Windows amd64, Intel Core i7-9750H",
+  "command": "go test ./internal/capture -run '^$' -bench '^BenchmarkDesktopPixelCapture$|^BenchmarkActiveDisplayEncoding$' -benchtime=3x -count=1",
+  "method": "One current 1920x1080 desktop frame for PNG comparison; three iterations per case. Desktop pixel benchmarks capture independently. Only aggregate timings and sizes were retained; no screenshot pixels were saved.",
+  "png": {
+    "adaptive": {"ns_per_op": 795585300, "encoded_mib": 0.3978},
+    "best_speed": {"ns_per_op": 642267900, "encoded_mib": 0.3978},
+    "no_compression": {"ns_per_op": 275877700, "encoded_mib": 5.936}
+  },
+  "desktop_pixels": {
+    "compatible_bitmap_getdibits": {"ns_per_op": 162353367, "allocations": 5},
+    "direct_dib": {"ns_per_op": 119157467, "allocations": 4}
+  },
+  "interpretation": "The spatially filtered probe selected compression for this desktop and reduced transfer size by about 93%. Compression itself cost more CPU. Direct DIB capture avoids a selected-bitmap GetDIBits call and an intermediate bitmap readback. These short, loaded-machine samples do not establish end-to-end latency or elimination of intermittent display-driver stalls.",
+  "scroll_regressions": [
+    "Sparse text on white background advances by the actual 73 pixels",
+    "Blank overlap cannot establish scroll distance",
+    "Horizontal gradients retain vertical alignment evidence",
+    "Thirty small movements extend the image past the old 16-frame limit",
+    "Stored strips and preview preserve exact source pixels",
+    "Temporary native Enter/Escape commands are scoped to the active session"
+  ]
+}

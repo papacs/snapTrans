@@ -1,0 +1,36 @@
+{
+  "date": "2026-11-06",
+  "method": "30-minute real snapTrans-smooth process-tree idle sampler, 15-second requested interval; no forced GC; no UI input",
+  "build": "20261105T231123Z-fa409c0c4faeae09",
+  "targetProcessId": 25068,
+  "measuredSeconds": 1807.68,
+  "samples": 96,
+  "units": "MiB (1024*1024 bytes), private committed memory",
+  "first": {
+    "main": 88.57,
+    "processTree": 316.71,
+    "processes": 11
+  },
+  "last": {
+    "main": 88.3,
+    "processTree": 285.55,
+    "processes": 9
+  },
+  "mainRange": {
+    "min": 86.91,
+    "max": 88.6
+  },
+  "lastTenMinutes": {
+    "mainMin": 87.34,
+    "mainMax": 88.6,
+    "treeMin": 284.46,
+    "treeMax": 285.77
+  },
+  "limitations": [
+    "This is idle runtime evidence only. Repeated native screenshot/real browser scrolling were blocked by Computer Use automatic review and not executed.",
+    "Process-tree sums include only current snapTrans descendants (WebView2/OCR/helpers), not other applications. Working-set sums can double-count shared pages and are not used here.",
+    "Cold startup and idle helper expiry affect early samples. This does not certify multi-hour active-use memory or absence of all leaks."
+  ],
+  "rawSamples": "build/runtime-tests/20261106/native-memory.jsonl",
+  "sampler": "scripts/runtime-memory.ps1"
+}

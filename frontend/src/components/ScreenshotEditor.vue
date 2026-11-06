@@ -24,7 +24,7 @@ import TableExtractionPanel from "./TableExtractionPanel.vue";
 import { normalizeFeatures, type FeatureFlags } from "../utils/features";
 import { mergeTextLines } from "../utils/extensions";
 import { inferTable, tableToMarkdown, tableToTSV } from "../utils/table-extraction";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import {
   beginScrollingScreenshot,
@@ -32,10 +32,12 @@ import {
   copyText,
   extractText,
   finishScrollingScreenshot,
+  onBackendEvent,
   showCaptureWindow,
   stepScrollingScreenshot,
   type CapturePayload,
   type ManualScrollStatus,
+  type ScrollCaptureCommandEvent,
   type ScrollCaptureRegion
 } from "../services/backend";
 import {
@@ -47,11 +49,13 @@ import {
   type AnnotationTool
 } from "../utils/annotations";
 import { mapCssRectToImageRect, type Point, type Rect } from "../utils/selection";
+import { encodeTemporaryPNG, releaseCanvas } from "../utils/canvas";
 
 const props = defineProps<{
   sourceCanvas: HTMLCanvasElement;
   capture: CapturePayload;
   rect: Rect;
+  busy?: boolean;
   features?: FeatureFlags;
   locale?: string;
 }>();
@@ -111,9 +115,28 @@ let redrawFrame: number | null = null;
 let disposed = false;
 let scrollSequence = 0;
 let scrollPollTimer: number | null = null;
+let offScrollCommand: (() => void) | undefined;
+let pendingScrollCommand: ScrollCaptureCommandEvent | null = null;
 let toolbarResizeObserver: ResizeObserver | null = null;
 
 const SCROLL_POLL_INTERVAL_MS = 180;
+
+watch(editorCanvasRef, (canvas, previous) => {
+  if (previous && previous !== canvas) releaseCanvas(previous);
+  // The scrolling controller replaces this DOM subtree. On recovery Vue creates
+  // a fresh 300×150 canvas, while the original selection bitmap is still valid.
+  if (canvas && baseCanvas && (canvas.width !== baseCanvas.width || canvas.height !== baseCanvas.height)) {
+    canvas.width = baseCanvas.width;
+    canvas.height = baseCanvas.height;
+    redraw();
+  }
+}, { flush: "post" });
+
+watch(toolbarRef, (toolbar, previous) => {
+  if (previous) toolbarResizeObserver?.unobserve(previous);
+  if (toolbar) toolbarResizeObserver?.observe(toolbar);
+  void nextTick(syncToolbarLayout);
+}, { flush: "post" });
 
 const toolbarViewport = ref({ width: window.innerWidth, height: window.innerHeight });
 const toolbarSize = ref({ width: Math.min(720, Math.max(1, window.innerWidth - 16)), height: 48 });
@@ -231,6 +254,7 @@ const toolButtons: Array<{
 
 onMounted(() => {
   prepareCanvas();
+  offScrollCommand = onBackendEvent<ScrollCaptureCommandEvent>("scroll-capture-command", handleScrollCommand);
   window.addEventListener("keydown", onEditorKeyDown);
   window.addEventListener("resize", syncToolbarLayout);
   if (typeof globalThis.ResizeObserver === "function") {
@@ -255,6 +279,7 @@ onBeforeUnmount(() => {
     copiedTextTimer = null;
   }
   stopScrollPolling();
+  offScrollCommand?.();
   if (manualScrolling.value || startingScroll.value) {
     void cancelScrollingScreenshot();
   }
@@ -263,6 +288,11 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", syncToolbarLayout);
   toolbarResizeObserver?.disconnect();
   toolbarResizeObserver = null;
+  for (const canvas of [baseCanvas, pixelatedCanvas, editorCanvasRef.value]) {
+    releaseCanvas(canvas);
+  }
+  baseCanvas = pixelatedCanvas = null;
+  stitchedPreviewImage.value = toolsImage.value = "";
 });
 
 function syncToolbarLayout(): void {
@@ -306,7 +336,6 @@ function prepareCanvas(): void {
     editor.width,
     editor.height
   );
-  pixelatedCanvas = createPixelatedCanvas(baseCanvas, Math.max(8, Math.round(canvasScale() * 10)));
   redraw();
 }
 
@@ -332,7 +361,7 @@ function canvasPoint(event: MouseEvent): Point {
 }
 
 function onMouseDown(event: MouseEvent): void {
-  if (event.button !== 0 || startingScroll.value) {
+  if (event.button !== 0 || startingScroll.value || props.busy) {
     return;
   }
   event.preventDefault();
@@ -407,6 +436,7 @@ async function captureDownwardScroll(): Promise<void> {
   const regionY = Math.round((props.capture.originY ?? 0) + imageRect.y);
 
   startingScroll.value = true;
+  pendingScrollCommand = null;
   const captureRegion: ScrollCaptureRegion = {
     x: regionX,
     y: regionY,
@@ -426,6 +456,10 @@ async function captureDownwardScroll(): Promise<void> {
     // could otherwise cancel the user's next scrolling capture.
     if (disposed || sequence !== scrollSequence || !manualScrolling.value) return;
     scrollProgress.value = result;
+    startingScroll.value = false;
+    const command = pendingScrollCommand;
+    pendingScrollCommand = null;
+    if (command) handleScrollCommand(command);
     scheduleScrollPoll(120);
   } catch (error) {
     if (disposed || sequence !== scrollSequence || !manualScrolling.value) return;
@@ -445,6 +479,17 @@ function stopScrollPolling(): void {
     window.clearTimeout(scrollPollTimer);
     scrollPollTimer = null;
   }
+}
+
+function handleScrollCommand(command: ScrollCaptureCommandEvent): void {
+  if (disposed || !manualScrolling.value) return;
+  if (startingScroll.value) {
+    pendingScrollCommand = command;
+    return;
+  }
+  if (command.captureId !== scrollProgress.value.captureId) return;
+  if (command.action === "finish") void finishManualScrollingCapture();
+  else if (command.action === "cancel") void cancelManualScrollingCapture();
 }
 
 function scheduleScrollPoll(delay = SCROLL_POLL_INTERVAL_MS): void {
@@ -467,15 +512,14 @@ async function pollScrollingCapture(): Promise<void> {
   scrollStepPending.value = true;
   const sequence = scrollSequence;
   let pollingFailed = false;
+  let nextPollDelay = SCROLL_POLL_INTERVAL_MS;
   try {
     const result = await stepScrollingScreenshot();
     if (disposed || sequence !== scrollSequence || !manualScrolling.value) return;
-    scrollProgress.value = { frames: result.frames, width: result.width, height: result.height };
+    scrollProgress.value = { ...scrollProgress.value, frames: result.frames, width: result.width, height: result.height };
+    scrollNotice.value = "";
     if (result.appended && result.previewImage) {
-      await preloadImage(result.previewImage);
-      if (disposed || sequence !== scrollSequence || !manualScrolling.value) return;
       stitchedPreviewImage.value = result.previewImage;
-      scrollNotice.value = "";
     }
     if (result.limitReached) {
       pollingFailed = true;
@@ -483,27 +527,21 @@ async function pollScrollingCapture(): Promise<void> {
     }
   } catch (error) {
     if (disposed || sequence !== scrollSequence || !manualScrolling.value) return;
-    pollingFailed = true;
+    nextPollDelay = 750;
     scrollNotice.value = error instanceof Error ? error.message : "滚动画面采集失败";
   } finally {
     if (sequence === scrollSequence) {
       scrollStepPending.value = false;
-      if (!pollingFailed) scheduleScrollPoll();
+      if (!pollingFailed) scheduleScrollPoll(nextPollDelay);
     }
   }
 }
 
-function preloadImage(source: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve();
-    image.onerror = () => reject(new Error("滚动截图预览加载失败"));
-    image.src = source;
-  });
-}
-
 async function finishManualScrollingCapture(): Promise<void> {
   if (!manualScrolling.value || finishingScroll.value) {
+    return;
+  }
+  if (startingScroll.value) {
     return;
   }
   finishingScroll.value = true;
@@ -532,6 +570,7 @@ async function cancelManualScrollingCapture(): Promise<void> {
     return;
   }
   manualScrolling.value = false;
+  pendingScrollCommand = null;
   const sequence = ++scrollSequence;
   stopScrollPolling();
   startingScroll.value = false;
@@ -591,9 +630,17 @@ function redraw(): void {
     return;
   }
   context.clearRect(0, 0, editor.width, editor.height);
-  const visible = currentAnnotation.value
-    ? [...annotations.value, currentAnnotation.value]
-    : annotations.value;
+  drawVisibleAnnotations(context);
+}
+
+function drawVisibleAnnotations(context: CanvasRenderingContext2D): void {
+  const visible = currentAnnotation.value ? [...annotations.value, currentAnnotation.value] : annotations.value;
+  if (visible.some(annotation => annotation.tool === "mosaic")) {
+    if (!pixelatedCanvas && baseCanvas) pixelatedCanvas = createPixelatedCanvas(baseCanvas, Math.max(8, Math.round(canvasScale() * 10)));
+  } else if (pixelatedCanvas) {
+    releaseCanvas(pixelatedCanvas);
+    pixelatedCanvas = null;
+  }
   renderAnnotations(context, visible, pixelatedCanvas ?? undefined);
 }
 
@@ -635,19 +682,9 @@ function undo(): void {
   redraw();
 }
 function onEditorKeyDown(event: KeyboardEvent): void {
-  if (
-    event.key.toLowerCase() !== "z" ||
-    (!event.ctrlKey && !event.metaKey) ||
-    event.shiftKey ||
-    event.altKey ||
-    toolsOpen.value ||
-    annotations.value.length === 0 ||
-    textDraft.value !== null ||
-    manualScrolling.value
-  ) {
-    return;
-  }
-
+  if (props.busy || event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat ||
+      toolsOpen.value || textExtractionOpen.value || tableExtractionOpen.value || textDraft.value !== null ||
+      event.shiftKey || event.altKey) return;
   const target = event.target;
   if (
     target instanceof HTMLInputElement ||
@@ -656,9 +693,17 @@ function onEditorKeyDown(event: KeyboardEvent): void {
   ) {
     return;
   }
-
-  event.preventDefault();
-  undo();
+  if (manualScrolling.value) {
+    if (event.key === "Enter") { event.preventDefault(); void finishManualScrollingCapture(); }
+    else if (event.key === "Escape") { event.preventDefault(); void cancelManualScrollingCapture(); }
+    return;
+  }
+  const modifier = event.ctrlKey || event.metaKey;
+  const key = event.key.toLowerCase();
+  if (modifier && key === "z" && annotations.value.length) { event.preventDefault(); undo(); }
+  else if ((modifier && key === "c") || (event.key === "Enter" && !modifier && !(target instanceof HTMLButtonElement))) {
+    event.preventDefault(); complete();
+  } else if (modifier && key === "s") { event.preventDefault(); save(); }
 }
 
 
@@ -678,14 +723,12 @@ function exportDataUrl(): string {
   }
 
   context.drawImage(source, 0, 0);
-  const visible = currentAnnotation.value
-    ? [...annotations.value, currentAnnotation.value]
-    : annotations.value;
-  renderAnnotations(context, visible, pixelatedCanvas ?? undefined);
-  return target.toDataURL("image/png");
+  drawVisibleAnnotations(context);
+  return encodeTemporaryPNG(target);
 }
 
 function complete(): void {
+  if (props.busy) return;
   const dataUrl = exportDataUrl();
   if (dataUrl) {
     emit("complete", dataUrl);
@@ -693,6 +736,7 @@ function complete(): void {
 }
 
 function save(): void {
+  if (props.busy) return;
   const dataUrl = exportDataUrl();
   if (dataUrl) {
     emit("save", dataUrl);
@@ -851,7 +895,7 @@ function clamp(value: number, min: number, max: number): number {
     @contextmenu.prevent="cancelManualScrollingCapture"
   >
     <div
-      class="absolute overflow-hidden border-2 border-emerald-400 bg-white shadow-[0_0_0_9999px_rgba(2,6,23,0.48),0_0_0_1px_rgba(255,255,255,0.95)]"
+      class="absolute overflow-hidden outline outline-2 outline-emerald-400 shadow-[0_0_0_9999px_rgba(2,6,23,0.48),0_0_0_1px_rgba(255,255,255,0.95)]"
       :style="editorStyle"
       data-testid="manual-scroll-current"
     >
@@ -869,9 +913,10 @@ function clamp(value: number, min: number, max: number): number {
       </div>
       <div class="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg bg-slate-100 p-1">
         <img :src="stitchedPreviewImage" class="max-h-full max-w-full object-contain" alt="完整滚动截图预览" draggable="false" />
-      <div class="mb-2 px-0.5 text-[10px] leading-4 text-slate-500">在选区内使用原窗口滚轮或滚动条，右侧会自动更新预览</div>
       </div>
+      <div class="mt-2 px-0.5 text-[10px] leading-4 text-slate-500">在选区内使用原窗口滚轮或滚动条。Enter 完成，Esc 取消。</div>
       <div class="mt-2 truncate px-0.5 text-[10px] text-slate-500">{{ scrollProgress.width }} × {{ scrollProgress.height }}</div>
+      <div v-if="scrollNotice" role="status" class="mt-2 text-xs text-amber-700">{{ scrollNotice }}</div>
     </aside>
 
     <div
@@ -904,7 +949,7 @@ function clamp(value: number, min: number, max: number): number {
     </div>
   </section>
 
-  <section v-else class="absolute inset-0 z-30 select-none" data-testid="screenshot-editor" @contextmenu.prevent="emit('cancel')">
+  <section v-else class="absolute inset-0 z-30 select-none" data-testid="screenshot-editor" :inert="busy" :aria-busy="Boolean(busy)" @contextmenu.prevent="emit('cancel')">
     <div
       class="absolute overflow-hidden border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(2,6,23,0.42),0_0_0_1px_rgba(255,255,255,0.95)]"
       :style="editorStyle"
@@ -936,6 +981,8 @@ function clamp(value: number, min: number, max: number): number {
       class="absolute z-50 flex min-h-12 w-max flex-wrap items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-2 py-1 shadow-[0_8px_24px_rgba(15,23,42,0.24)]"
       :style="toolbarStyle"
       data-testid="screenshot-toolbar"
+      role="toolbar"
+      :aria-label="locale === 'en' ? 'Screenshot tools' : '截图工具'"
       @mousedown.stop
       @contextmenu.stop.prevent
     >
@@ -943,10 +990,11 @@ function clamp(value: number, min: number, max: number): number {
         v-for="item in toolButtons"
         :key="item.tool"
         class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition"
-        :class="activeTool === item.tool ? 'bg-slate-100 text-slate-950' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-950'"
+        :class="activeTool === item.tool ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'"
         type="button"
         :title="item.label"
         :aria-label="item.label"
+        :aria-pressed="activeTool === item.tool"
         :data-testid="`annotation-${item.tool}`"
         @click="activeTool = item.tool"
       >
@@ -987,7 +1035,7 @@ function clamp(value: number, min: number, max: number): number {
       <button
         class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-35"
         type="button"
-        :title="annotations.length > 0 ? '请先撤销标注，再进行滚动截图' : '向下滚动截图'"
+        :title="annotations.length > 0 ? '请先撤销标注，再进行滚动截图' : '向下滚动截图（Enter 完成，Esc 取消）'"
         aria-label="向下滚动截图"
         :disabled="startingScroll || annotations.length > 0"
         data-testid="screenshot-scroll-down"
@@ -1015,7 +1063,9 @@ function clamp(value: number, min: number, max: number): number {
       <button
         class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100"
         type="button"
-        title="保存图片"
+        title="保存图片（Ctrl+S）"
+        :disabled="busy"
+        aria-keyshortcuts="Control+s Meta+s"
         aria-label="保存图片"
         data-testid="screenshot-save"
         @click="save"
@@ -1035,7 +1085,9 @@ function clamp(value: number, min: number, max: number): number {
       <button
         class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-emerald-500 transition hover:bg-emerald-50 hover:text-emerald-600"
         type="button"
-        title="完成并复制"
+        title="完成并复制（Enter / Ctrl+C）"
+        :disabled="busy"
+        aria-keyshortcuts="Enter Control+c Meta+c"
         aria-label="完成并复制"
         data-testid="screenshot-complete"
         @click="complete"

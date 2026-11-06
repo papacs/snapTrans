@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-06",
+  "machine": "Windows amd64, Intel Core i7-9750H, 1920x1080 synthetic RGBA frames",
+  "command": "go test ./internal/capture -run 'PNG|CaptureResult' -bench '^BenchmarkScreenshotPNGFilters$|^BenchmarkSyntheticDesktopPNG$' -benchtime=5x -count=1",
+  "method": "Five iterations per case in one process, comparing the previous pooled standard-library BestSpeed PNG encoder against the sampled Sub/Up encoder on the same deterministic source frame. Only synthetic document, mixed document/noise and random-noise pixels were used. No desktop images were saved.",
+  "best_speed_png_comparison": {
+    "document": {
+      "standard": {"ns_per_op": 102969380, "encoded_bytes": 12512, "allocated_bytes_per_op": 269308, "allocations_per_op": 10},
+      "sampled": {"ns_per_op": 50475040, "encoded_bytes": 12615, "allocated_bytes_per_op": 263296, "allocations_per_op": 12}
+    },
+    "mixed": {
+      "standard": {"ns_per_op": 648911600, "encoded_bytes": 1913856, "allocated_bytes_per_op": 5457664, "allocations_per_op": 16},
+      "sampled": {"ns_per_op": 160144640, "encoded_bytes": 1913835, "allocated_bytes_per_op": 5452828, "allocations_per_op": 77}
+    },
+    "noise": {
+      "standard": {"ns_per_op": 1273971700, "encoded_bytes": 6224691, "allocated_bytes_per_op": 21185894, "allocations_per_op": 18},
+      "sampled": {"ns_per_op": 169829940, "encoded_bytes": 6224691, "allocated_bytes_per_op": 20934388, "allocations_per_op": 206}
+    }
+  },
+  "adaptive_capture_encoding": {
+    "document": {"ns_per_op": 111494920, "encoded_bytes": 12615, "allocations_per_op": 13},
+    "mixed": {"ns_per_op": 203253620, "encoded_bytes": 1913835, "allocations_per_op": 87},
+    "noise": {"ns_per_op": 57392420, "encoded_bytes": 6224691, "allocations_per_op": 202}
+  },
+  "interpretation": "The paired mixed-content PNG case used about 75% less encoding time with effectively the same file size. Document PNG encoding used about 51% less time with 103 additional bytes. Adaptive capture still selects uncompressed PNG for random noise. These short runs took place on a loaded development machine; they do not establish end-to-end hotkey latency, screen-driver timing or a universal speedup. Both encoders preserve source pixels; standard PNG decoding verifies CRCs and zlib streams in regression tests.",
+  "memory_and_cancellation": [
+    "Pooled compressors and chunk buffers reset their writers to io.Discard after every encode, releasing the original frame and output-buffer references",
+    "Generic/transparent/16-bit images use the standard encoder without pooling its source-retaining EncoderBuffer",
+    "Capture encoding checks cancellation between groups of 16 rows and discards partial output",
+    "Compression probes read RGBA pixels directly instead of boxing 8192 sampled colors and count compressed bytes without storing another buffer"
+  ]
+}

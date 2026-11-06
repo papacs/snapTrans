@@ -1,0 +1,3196 @@
+{
+  "date": "2026-11-06",
+  "method": "Real configured-provider production text translation; unique synthetic inputs; no screenshot data, credentials, source text or full model outputs retained. Stage attribution is by timestamp and process ID; background refill can overlap the next sample.",
+  "runs": [
+    {
+      "id": "20261105T233540.204162800Z",
+      "startedAt": "2026-11-05T23:35:40.2041628Z",
+      "provider": "codex",
+      "model": "gpt-6-luna",
+      "reasoningEffort": "low",
+      "fastTranslation": true,
+      "platform": "windows/amd64",
+      "requestTimeoutSeconds": 60,
+      "cases": [
+        {
+          "name": "cold-zh",
+          "direction": "to-zh",
+          "startedAt": "2026-11-05T23:35:40.2081637Z",
+          "firstTokenMs": 11603,
+          "totalMs": 11934,
+          "outputChars": 45,
+          "tokenChunks": 24,
+          "errorClass": "none",
+          "stages": [
+            {
+              "stage": "Codex runtime started",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 56,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "initialize",
+              "elapsedMs": 805,
+              "atMs": 861,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 860,
+              "atMs": 861
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 2722,
+              "atMs": 3584,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 33,
+              "atMs": 3617,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 375,
+              "atMs": 3992,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 88,
+              "atMs": 4080,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/unsubscribe",
+              "elapsedMs": 0,
+              "atMs": 11933,
+              "processId": 12964
+            }
+          ]
+        },
+        {
+          "name": "reused-zh",
+          "direction": "to-zh",
+          "startedAt": "2026-11-05T23:35:52.1441663Z",
+          "firstTokenMs": 8295,
+          "totalMs": 8667,
+          "outputChars": 46,
+          "tokenChunks": 25,
+          "errorClass": "none",
+          "stages": [
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 34,
+              "atMs": 37,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 37,
+              "atMs": 37
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 71,
+              "atMs": 109,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 725,
+              "atMs": 835,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 131,
+              "atMs": 966,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/unsubscribe",
+              "elapsedMs": 0,
+              "atMs": 8667,
+              "processId": 12964
+            }
+          ]
+        },
+        {
+          "name": "switch-en",
+          "direction": "to-en",
+          "startedAt": "2026-11-05T23:36:00.8124976Z",
+          "firstTokenMs": 8929,
+          "totalMs": 9326,
+          "outputChars": 90,
+          "tokenChunks": 24,
+          "errorClass": "none",
+          "stages": [
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 32,
+              "atMs": 33,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 586,
+              "atMs": 620,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex prewarm wait",
+              "phase": "request",
+              "elapsedMs": 620,
+              "atMs": 620
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 3,
+              "atMs": 624
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/unsubscribe",
+              "elapsedMs": 0,
+              "atMs": 625,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 52,
+              "atMs": 677,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 674,
+              "atMs": 1351,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 155,
+              "atMs": 1507,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/unsubscribe",
+              "elapsedMs": 11,
+              "atMs": 9322,
+              "processId": 12964
+            }
+          ]
+        },
+        {
+          "name": "reused-en",
+          "direction": "to-en",
+          "startedAt": "2026-11-05T23:36:10.1580159Z",
+          "firstTokenMs": 0,
+          "totalMs": 48894,
+          "outputChars": 0,
+          "tokenChunks": 0,
+          "errorClass": "first-output-timeout",
+          "stages": [
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 10,
+              "atMs": 10
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 215,
+              "atMs": 226,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 1814,
+              "atMs": 2040,
+              "processId": 12964
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 349,
+              "atMs": 2390,
+              "processId": 12964
+            },
+            {
+              "stage": "Reconnecting Codex model connection",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 22910
+            },
+            {
+              "stage": "Codex runtime started",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 22968,
+              "processId": 30304
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "initialize",
+              "elapsedMs": 1174,
+              "atMs": 24142,
+              "processId": 30304
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 1232,
+              "atMs": 24142
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 3044,
+              "atMs": 27187,
+              "processId": 30304
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 397,
+              "atMs": 27584,
+              "processId": 30304
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 879,
+              "atMs": 28464,
+              "processId": 30304
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 245,
+              "atMs": 28709,
+              "processId": 30304
+            }
+          ]
+        },
+        {
+          "name": "prewarmed-zh",
+          "direction": "to-zh",
+          "startedAt": "2026-11-05T23:36:59.0541242Z",
+          "prewarmMs": 4526,
+          "prewarmError": "none",
+          "firstTokenMs": 8609,
+          "totalMs": 8983,
+          "outputChars": 45,
+          "tokenChunks": 24,
+          "errorClass": "none",
+          "stages": [
+            {
+              "stage": "Codex runtime started",
+              "phase": "prewarm",
+              "elapsedMs": 0,
+              "atMs": 94,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "initialize",
+              "elapsedMs": 1094,
+              "atMs": 1189,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "account/read",
+              "elapsedMs": 2682,
+              "atMs": 3871,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "config/read",
+              "elapsedMs": 49,
+              "atMs": 3921,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "thread/start",
+              "elapsedMs": 604,
+              "atMs": 4526,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 40,
+              "atMs": 4574,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 47,
+              "atMs": 4574
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 119,
+              "atMs": 4694,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/unsubscribe",
+              "elapsedMs": 2,
+              "atMs": 13509,
+              "processId": 32000
+            }
+          ]
+        },
+        {
+          "name": "prepared-reused-zh",
+          "direction": "to-zh",
+          "startedAt": "2026-11-05T23:37:12.5653661Z",
+          "firstTokenMs": 9963,
+          "totalMs": 10546,
+          "outputChars": 45,
+          "tokenChunks": 24,
+          "errorClass": "none",
+          "stages": [
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 3,
+              "atMs": 3
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 53,
+              "atMs": 56,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 607,
+              "atMs": 663,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 73,
+              "atMs": 737,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/unsubscribe",
+              "elapsedMs": 2,
+              "atMs": 10546,
+              "processId": 32000
+            }
+          ]
+        },
+        {
+          "name": "prepared-switch-en",
+          "direction": "to-en",
+          "startedAt": "2026-11-05T23:37:23.1535994Z",
+          "firstTokenMs": 0,
+          "totalMs": 48223,
+          "outputChars": 0,
+          "tokenChunks": 0,
+          "errorClass": "first-output-timeout",
+          "stages": [
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 53,
+              "atMs": 17,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 604,
+              "atMs": 623,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex prewarm wait",
+              "phase": "request",
+              "elapsedMs": 623,
+              "atMs": 623
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 4,
+              "atMs": 628
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/unsubscribe",
+              "elapsedMs": 2,
+              "atMs": 630,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 62,
+              "atMs": 692,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 910,
+              "atMs": 1603,
+              "processId": 32000
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 153,
+              "atMs": 1756,
+              "processId": 32000
+            },
+            {
+              "stage": "Reconnecting Codex model connection",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 22034
+            },
+            {
+              "stage": "Codex runtime started",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 22112,
+              "processId": 29764
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "initialize",
+              "elapsedMs": 777,
+              "atMs": 22890,
+              "processId": 29764
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 855,
+              "atMs": 22890
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 2817,
+              "atMs": 25707,
+              "processId": 29764
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 188,
+              "atMs": 25895,
+              "processId": 29764
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 1456,
+              "atMs": 27352,
+              "processId": 29764
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 300,
+              "atMs": 27653,
+              "processId": 29764
+            }
+          ]
+        },
+        {
+          "name": "idle-reused-en",
+          "direction": "to-en",
+          "startedAt": "2026-11-05T23:38:11.4312768Z",
+          "idleMs": 30000,
+          "firstTokenMs": 0,
+          "totalMs": 61076,
+          "outputChars": 0,
+          "tokenChunks": 0,
+          "errorClass": "deadline",
+          "stages": [
+            {
+              "stage": "Codex runtime started",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 30121,
+              "processId": 33264
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "initialize",
+              "elapsedMs": 6070,
+              "atMs": 36191,
+              "processId": 33264
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 6190,
+              "atMs": 36191
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 3542,
+              "atMs": 39735,
+              "processId": 33264
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 340,
+              "atMs": 40075,
+              "processId": 33264
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 4972,
+              "atMs": 45049,
+              "processId": 33264
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 610,
+              "atMs": 45659,
+              "processId": 33264
+            },
+            {
+              "stage": "Reconnecting Codex model connection",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 66655
+            },
+            {
+              "stage": "Codex runtime started",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 66719,
+              "processId": 33380
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "initialize",
+              "elapsedMs": 6841,
+              "atMs": 73561,
+              "processId": 33380
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 6906,
+              "atMs": 73561
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 3537,
+              "atMs": 77098,
+              "processId": 33380
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 399,
+              "atMs": 77498,
+              "processId": 33380
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 7100,
+              "atMs": 84599,
+              "processId": 33380
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 464,
+              "atMs": 85063,
+              "processId": 33380
+            }
+          ]
+        },
+        {
+          "name": "return-zh",
+          "direction": "to-zh",
+          "startedAt": "2026-11-05T23:39:42.5222752Z",
+          "firstTokenMs": 0,
+          "totalMs": 61256,
+          "outputChars": 0,
+          "tokenChunks": 0,
+          "errorClass": "deadline",
+          "stages": [
+            {
+              "stage": "Codex runtime started",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 86,
+              "processId": 29152
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "initialize",
+              "elapsedMs": 6680,
+              "atMs": 6766,
+              "processId": 29152
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 6767,
+              "atMs": 6767
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 3686,
+              "atMs": 10453,
+              "processId": 29152
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 422,
+              "atMs": 10875,
+              "processId": 29152
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 4066,
+              "atMs": 14942,
+              "processId": 29152
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 265,
+              "atMs": 15209,
+              "processId": 29152
+            },
+            {
+              "stage": "Reconnecting Codex model connection",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 36101
+            },
+            {
+              "stage": "Codex runtime started",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 36189,
+              "processId": 30872
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "initialize",
+              "elapsedMs": 5384,
+              "atMs": 41573,
+              "processId": 30872
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 5471,
+              "atMs": 41573
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 2860,
+              "atMs": 44433,
+              "processId": 30872
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 113,
+              "atMs": 44547,
+              "processId": 30872
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 3552,
+              "atMs": 48099,
+              "processId": 30872
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 1353,
+              "atMs": 49453,
+              "processId": 30872
+            }
+          ]
+        },
+        {
+          "name": "prewarmed-en",
+          "direction": "to-en",
+          "startedAt": "2026-11-05T23:40:43.8792703Z",
+          "prewarmMs": 13262,
+          "prewarmError": "none",
+          "firstTokenMs": 0,
+          "totalMs": 51681,
+          "outputChars": 0,
+          "tokenChunks": 0,
+          "errorClass": "first-output-timeout",
+          "stages": [
+            {
+              "stage": "Codex runtime started",
+              "phase": "prewarm",
+              "elapsedMs": 0,
+              "atMs": 2952,
+              "processId": 16312
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "initialize",
+              "elapsedMs": 4715,
+              "atMs": 10520,
+              "processId": 16312
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "account/read",
+              "elapsedMs": 146,
+              "atMs": 10668,
+              "processId": 16312
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "config/read",
+              "elapsedMs": 141,
+              "atMs": 10809,
+              "processId": 16312
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "thread/start",
+              "elapsedMs": 2453,
+              "atMs": 13262,
+              "processId": 16312
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 37,
+              "atMs": 14895,
+              "processId": 16312
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 69,
+              "atMs": 14895
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 308,
+              "atMs": 15203,
+              "processId": 16312
+            },
+            {
+              "stage": "Reconnecting Codex model connection",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 35807
+            },
+            {
+              "stage": "Codex runtime started",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 35886,
+              "processId": 32888
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "initialize",
+              "elapsedMs": 3197,
+              "atMs": 39084,
+              "processId": 32888
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 3277,
+              "atMs": 39084
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 3424,
+              "atMs": 42508,
+              "processId": 32888
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 99,
+              "atMs": 42608,
+              "processId": 32888
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 1344,
+              "atMs": 43952,
+              "processId": 32888
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 410,
+              "atMs": 44363,
+              "processId": 32888
+            }
+          ]
+        }
+      ],
+      "profile": "baseline-before-input-ready-and-skill-isolation"
+    },
+    {
+      "id": "20261105T235540.612442600Z",
+      "startedAt": "2026-11-05T23:55:40.6124426Z",
+      "provider": "codex",
+      "model": "gpt-6-luna",
+      "reasoningEffort": "low",
+      "fastTranslation": true,
+      "platform": "windows/amd64",
+      "requestTimeoutSeconds": 60,
+      "cases": [
+        {
+          "name": "cold-zh",
+          "direction": "to-zh",
+          "startedAt": "2026-11-05T23:55:40.8270997Z",
+          "firstTokenMs": 0,
+          "totalMs": 61445,
+          "outputChars": 0,
+          "tokenChunks": 0,
+          "errorClass": "deadline",
+          "stages": [
+            {
+              "stage": "Codex runtime started",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 209,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "initialize",
+              "elapsedMs": 2684,
+              "atMs": 2894,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 2893,
+              "atMs": 2895
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "remoteControl/status/changed",
+              "elapsedMs": 0,
+              "atMs": 2895,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "account/updated",
+              "elapsedMs": 0,
+              "atMs": 11815,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 13367,
+              "atMs": 16262,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 228,
+              "atMs": 16492,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 2768,
+              "atMs": 19260,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/started",
+              "elapsedMs": 0,
+              "atMs": 19260,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "deprecationNotice",
+              "elapsedMs": 0,
+              "atMs": 19260,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 832,
+              "atMs": 20093,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/status/changed",
+              "elapsedMs": 0,
+              "atMs": 20093,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 20093,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 20094,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "skills/changed",
+              "elapsedMs": 0,
+              "atMs": 39115,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 39737,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 39737,
+              "processId": 9388
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/completed",
+              "elapsedMs": 0,
+              "atMs": 39737,
+              "processId": 9388
+            },
+            {
+              "stage": "Reconnecting Codex model connection",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 41526
+            },
+            {
+              "stage": "Codex runtime started",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 41705,
+              "processId": 31188
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "initialize",
+              "elapsedMs": 2502,
+              "atMs": 44208,
+              "processId": 31188
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 2682,
+              "atMs": 44209
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "remoteControl/status/changed",
+              "elapsedMs": 0,
+              "atMs": 44209,
+              "processId": 31188
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "account/updated",
+              "elapsedMs": 0,
+              "atMs": 47282,
+              "processId": 31188
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 3073,
+              "atMs": 47282,
+              "processId": 31188
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 507,
+              "atMs": 47791,
+              "processId": 31188
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 3001,
+              "atMs": 50793,
+              "processId": 31188
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "deprecationNotice",
+              "elapsedMs": 0,
+              "atMs": 50794,
+              "processId": 31188
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/started",
+              "elapsedMs": 0,
+              "atMs": 50798,
+              "processId": 31188
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 322,
+              "atMs": 51115,
+              "processId": 31188
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/status/changed",
+              "elapsedMs": 0,
+              "atMs": 51115,
+              "processId": 31188
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 51116,
+              "processId": 31188
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 51116,
+              "processId": 31188
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "skills/changed",
+              "elapsedMs": 0,
+              "atMs": 52681,
+              "processId": 31188
+            }
+          ]
+        },
+        {
+          "name": "prewarmed-en",
+          "direction": "to-en",
+          "startedAt": "2026-11-05T23:56:42.31597Z",
+          "prewarmMs": 12601,
+          "prewarmError": "none",
+          "firstTokenMs": 36798,
+          "totalMs": 37259,
+          "outputChars": 90,
+          "tokenChunks": 24,
+          "errorClass": "none",
+          "stages": [
+            {
+              "stage": "Codex runtime started",
+              "phase": "prewarm",
+              "elapsedMs": 0,
+              "atMs": 258,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "initialize",
+              "elapsedMs": 4425,
+              "atMs": 4683,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "prewarm",
+              "method": "remoteControl/status/changed",
+              "elapsedMs": 0,
+              "atMs": 4683,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "prewarm",
+              "method": "account/updated",
+              "elapsedMs": 0,
+              "atMs": 8439,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "account/read",
+              "elapsedMs": 3755,
+              "atMs": 8439,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "config/read",
+              "elapsedMs": 186,
+              "atMs": 8625,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "thread/start",
+              "elapsedMs": 3976,
+              "atMs": 12601,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "deprecationNotice",
+              "elapsedMs": 0,
+              "atMs": 12615,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/started",
+              "elapsedMs": 0,
+              "atMs": 12616,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 70,
+              "atMs": 12684,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 75,
+              "atMs": 12684
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 189,
+              "atMs": 12873,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/status/changed",
+              "elapsedMs": 0,
+              "atMs": 12873,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 12873,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 12873,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "skills/changed",
+              "elapsedMs": 0,
+              "atMs": 24669,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 30189,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 30189,
+              "processId": 35280
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/completed",
+              "elapsedMs": 0,
+              "atMs": 30190,
+              "processId": 35280
+            },
+            {
+              "stage": "Reconnecting Codex model connection",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 33114
+            },
+            {
+              "stage": "Codex runtime started",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 33232,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "initialize",
+              "elapsedMs": 2632,
+              "atMs": 35864,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 2749,
+              "atMs": 35864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "remoteControl/status/changed",
+              "elapsedMs": 0,
+              "atMs": 35876,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "account/updated",
+              "elapsedMs": 0,
+              "atMs": 39507,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 3642,
+              "atMs": 39507,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 141,
+              "atMs": 39648,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 1348,
+              "atMs": 40997,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "deprecationNotice",
+              "elapsedMs": 0,
+              "atMs": 40997,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/started",
+              "elapsedMs": 0,
+              "atMs": 40998,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 264,
+              "atMs": 41262,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/status/changed",
+              "elapsedMs": 0,
+              "atMs": 41291,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 41291,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 41291,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "skills/changed",
+              "elapsedMs": 0,
+              "atMs": 42925,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 48120,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 48120,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/completed",
+              "elapsedMs": 0,
+              "atMs": 48120,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 49385,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 49399,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49399,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49399,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49503,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49503,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49503,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49503,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49504,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49504,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49504,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49504,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49504,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49605,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49605,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49605,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49605,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49605,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49605,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49611,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49615,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49625,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49625,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49625,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49644,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 49645,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/completed",
+              "elapsedMs": 0,
+              "atMs": 49730,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/tokenUsage/updated",
+              "elapsedMs": 0,
+              "atMs": 49730,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "account/rateLimits/updated",
+              "elapsedMs": 0,
+              "atMs": 49731,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/status/changed",
+              "elapsedMs": 0,
+              "atMs": 49854,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "turn/completed",
+              "elapsedMs": 0,
+              "atMs": 49854,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "turn/completed",
+              "elapsedMs": 0,
+              "atMs": 49854,
+              "processId": 33260
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/unsubscribe",
+              "elapsedMs": 4,
+              "atMs": 49859,
+              "processId": 33260
+            }
+          ]
+        }
+      ],
+      "profile": "baseline-before-input-ready-and-skill-isolation"
+    },
+    {
+      "id": "20261106T000144.912480400Z",
+      "startedAt": "2026-11-06T00:01:44.9124804Z",
+      "provider": "codex",
+      "model": "gpt-6-luna",
+      "reasoningEffort": "low",
+      "fastTranslation": true,
+      "platform": "windows/amd64",
+      "requestTimeoutSeconds": 60,
+      "cases": [
+        {
+          "name": "cold-zh",
+          "direction": "to-zh",
+          "startedAt": "2026-11-06T00:01:44.9264745Z",
+          "firstTokenMs": 16102,
+          "totalMs": 16518,
+          "outputChars": 45,
+          "tokenChunks": 25,
+          "errorClass": "none",
+          "stages": [
+            {
+              "stage": "Codex runtime started",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 97,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "initialize",
+              "elapsedMs": 1535,
+              "atMs": 1632,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 1632,
+              "atMs": 1633
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "remoteControl/status/changed",
+              "elapsedMs": 0,
+              "atMs": 1633,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 3446,
+              "atMs": 5080,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "account/updated",
+              "elapsedMs": 0,
+              "atMs": 5083,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 130,
+              "atMs": 5211,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 1324,
+              "atMs": 6535,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/started",
+              "elapsedMs": 0,
+              "atMs": 6544,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "deprecationNotice",
+              "elapsedMs": 0,
+              "atMs": 6544,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/status/changed",
+              "elapsedMs": 0,
+              "atMs": 7244,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 7246,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 7247,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 711,
+              "atMs": 7247,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 14618,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "item/started",
+              "itemType": "userMessage",
+              "elapsedMs": 0,
+              "atMs": 14618,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/completed",
+              "elapsedMs": 0,
+              "atMs": 14618,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 16101,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "item/started",
+              "itemType": "agentMessage",
+              "elapsedMs": 0,
+              "atMs": 16101,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16102,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16102,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16259,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16259,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16259,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16259,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16259,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16261,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16261,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16261,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16261,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16261,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16261,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16388,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16388,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16388,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16388,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16389,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16389,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16389,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16389,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16396,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16396,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16396,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 16396,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/completed",
+              "elapsedMs": 0,
+              "atMs": 16440,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/tokenUsage/updated",
+              "elapsedMs": 0,
+              "atMs": 16444,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "account/rateLimits/updated",
+              "elapsedMs": 0,
+              "atMs": 16457,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/status/changed",
+              "elapsedMs": 0,
+              "atMs": 16513,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "turn/completed",
+              "elapsedMs": 0,
+              "atMs": 16513,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "turn/completed",
+              "elapsedMs": 0,
+              "atMs": 16513,
+              "processId": 28716
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/unsubscribe",
+              "elapsedMs": 4,
+              "atMs": 16518,
+              "processId": 28716
+            }
+          ]
+        }
+      ],
+      "profile": "baseline-before-input-ready-and-skill-isolation"
+    },
+    {
+      "profile": "input-ready-and-skill-isolation",
+      "id": "20261106T000859.395952900Z",
+      "startedAt": "2026-11-06T00:08:59.3959529Z",
+      "provider": "codex",
+      "model": "gpt-6-luna",
+      "reasoningEffort": "low",
+      "fastTranslation": true,
+      "platform": "windows/amd64",
+      "requestTimeoutSeconds": 60,
+      "cases": [
+        {
+          "name": "cold-zh",
+          "direction": "to-zh",
+          "startedAt": "2026-11-06T00:08:59.4119536Z",
+          "firstTokenMs": 11581,
+          "totalMs": 11951,
+          "outputChars": 44,
+          "tokenChunks": 24,
+          "errorClass": "none",
+          "stages": [
+            {
+              "stage": "Codex runtime started",
+              "phase": "request",
+              "elapsedMs": 0,
+              "atMs": 127,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "initialize",
+              "elapsedMs": 930,
+              "atMs": 1057,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 1057,
+              "atMs": 1070
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "remoteControl/status/changed",
+              "elapsedMs": 0,
+              "atMs": 1070,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "account/updated",
+              "elapsedMs": 0,
+              "atMs": 3909,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 2840,
+              "atMs": 3910,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "config/read",
+              "elapsedMs": 47,
+              "atMs": 3958,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/start",
+              "elapsedMs": 482,
+              "atMs": 4440,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/started",
+              "elapsedMs": 0,
+              "atMs": 4441,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "deprecationNotice",
+              "elapsedMs": 0,
+              "atMs": 4442,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "warning",
+              "elapsedMs": 0,
+              "atMs": 4442,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 80,
+              "atMs": 4521,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/status/changed",
+              "elapsedMs": 0,
+              "atMs": 4521,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 4522,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 4522,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "skills/changed",
+              "elapsedMs": 0,
+              "atMs": 6552,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 10481,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "item/started",
+              "itemType": "userMessage",
+              "elapsedMs": 0,
+              "atMs": 10481,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/completed",
+              "elapsedMs": 0,
+              "atMs": 10482,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 11580,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "item/started",
+              "itemType": "agentMessage",
+              "elapsedMs": 0,
+              "atMs": 11580,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11581,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11713,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11714,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11714,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11714,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11714,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11714,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11714,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11714,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11715,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11835,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11835,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11835,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11835,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11835,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11836,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11836,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11836,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11836,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11836,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11836,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11836,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11864,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11864,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/completed",
+              "elapsedMs": 0,
+              "atMs": 11907,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/tokenUsage/updated",
+              "elapsedMs": 0,
+              "atMs": 11915,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "account/rateLimits/updated",
+              "elapsedMs": 0,
+              "atMs": 11915,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/status/changed",
+              "elapsedMs": 0,
+              "atMs": 11942,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "turn/completed",
+              "elapsedMs": 0,
+              "atMs": 11942,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "turn/completed",
+              "elapsedMs": 0,
+              "atMs": 11948,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/unsubscribe",
+              "elapsedMs": 1,
+              "atMs": 11950,
+              "processId": 20864
+            }
+          ]
+        },
+        {
+          "name": "prewarmed-en",
+          "direction": "to-en",
+          "startedAt": "2026-11-06T00:09:11.3728628Z",
+          "prewarmMs": 4113,
+          "prewarmError": "none",
+          "firstTokenMs": 7453,
+          "totalMs": 7802,
+          "outputChars": 90,
+          "tokenChunks": 24,
+          "errorClass": "none",
+          "stages": [
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "account/read",
+              "elapsedMs": 60,
+              "atMs": 58,
+              "processId": 20864
+            },
+            {
+              "stage": "Codex runtime started",
+              "phase": "prewarm",
+              "elapsedMs": 0,
+              "atMs": 70,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "initialize",
+              "elapsedMs": 806,
+              "atMs": 876,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "prewarm",
+              "method": "remoteControl/status/changed",
+              "elapsedMs": 0,
+              "atMs": 878,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "prewarm",
+              "method": "account/updated",
+              "elapsedMs": 0,
+              "atMs": 3553,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "account/read",
+              "elapsedMs": 2675,
+              "atMs": 3553,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "config/read",
+              "elapsedMs": 41,
+              "atMs": 3596,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "prewarm",
+              "method": "thread/start",
+              "elapsedMs": 517,
+              "atMs": 4113,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "deprecationNotice",
+              "elapsedMs": 0,
+              "atMs": 4119,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/started",
+              "elapsedMs": 0,
+              "atMs": 4119,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "warning",
+              "elapsedMs": 0,
+              "atMs": 4119,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "account/read",
+              "elapsedMs": 31,
+              "atMs": 4149,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex connection setup",
+              "phase": "request",
+              "elapsedMs": 36,
+              "atMs": 4149
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "turn/start",
+              "elapsedMs": 87,
+              "atMs": 4236,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/status/changed",
+              "elapsedMs": 0,
+              "atMs": 4236,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 4237,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "turn/started",
+              "elapsedMs": 0,
+              "atMs": 4238,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 10516,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "item/started",
+              "itemType": "userMessage",
+              "elapsedMs": 0,
+              "atMs": 10516,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/completed",
+              "elapsedMs": 0,
+              "atMs": 10516,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/started",
+              "elapsedMs": 0,
+              "atMs": 11566,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "item/started",
+              "itemType": "agentMessage",
+              "elapsedMs": 0,
+              "atMs": 11566,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11566,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11567,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11698,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11700,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11700,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11701,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11701,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11701,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11701,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11701,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11701,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11812,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11812,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11813,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11813,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11813,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11815,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11817,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11817,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11817,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11817,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11817,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11824,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/agentMessage/delta",
+              "elapsedMs": 0,
+              "atMs": 11825,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "item/completed",
+              "elapsedMs": 0,
+              "atMs": 11871,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/tokenUsage/updated",
+              "elapsedMs": 0,
+              "atMs": 11881,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "account/rateLimits/updated",
+              "elapsedMs": 0,
+              "atMs": 11881,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "thread/status/changed",
+              "elapsedMs": 0,
+              "atMs": 11912,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex notification",
+              "phase": "request",
+              "method": "turn/completed",
+              "elapsedMs": 0,
+              "atMs": 11913,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex stream event",
+              "phase": "request",
+              "method": "turn/completed",
+              "elapsedMs": 0,
+              "atMs": 11913,
+              "processId": 13132
+            },
+            {
+              "stage": "Codex RPC",
+              "phase": "request",
+              "method": "thread/unsubscribe",
+              "elapsedMs": 1,
+              "atMs": 11915,
+              "processId": 13132
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "verificationCommands": [
+    "go test ./internal/translator -run ^TestLocalConfiguredRuntimeAPISoak$ -count=1 -v -timeout 15m (SNAPTRANS_RUNTIME_API_SOAK=1, initial10 cases)",
+    "go test <all internal/translator production .go files> internal/translator/runtime_api_test.go -run ^TestLocalConfiguredRuntimeAPISoak$ -count=1 -v -timeout 5m (isolated harness excludes unrelated image-test imports; same production translator/Codex/config pipeline)",
+    "SNAPTRANS_RUNTIME_API_CASES=cold-zh,prewarmed-en; SNAPTRANS_RUNTIME_API_PROFILE=input-ready-and-skill-isolation (last2 cases; unique synthetic inputs)"
+  ],
+  "interpretation": {
+    "baselineLogicalRequests": 13,
+    "baselineSuccessful": 7,
+    "baselineFailedWithoutText": 6,
+    "optimizedLogicalRequests": 2,
+    "optimizedSuccessful": 2,
+    "optimizedFirstTokenMs": [
+      11581,
+      7453
+    ],
+    "baselineLatestInputPreparationMs": 7371,
+    "optimizedInputPreparationMs": [
+      5960,
+      6280
+    ],
+    "timeoutFix": "Arm response idle timeout only once input is ready (or assistant activity starts), not when local turn scheduling is acknowledged. Repeated echoed input cannot reset it. Overall configured60s deadline remains.",
+    "scope": "Real synthetic text translations through saved Codex gpt-6-luna/low/fast settings. No screenshot data or global settings changes.",
+    "limits": "Small uncontrolled cohort; network/server and machine load vary. Compilation/link time excluded. Prior failures are retained; this does not establish a universal latency or long-run reliability guarantee."
+  },
+  "helperMemoryReports": [
+    "runtime-api-memory-2026-11-06.json",
+    "runtime-api-memory-optimized-2026-11-06.json"
+  ],
+  "runtimeIsolationEvidence": {
+    "installedCLIVersion": "codex-cli 0.166.0-alpha.6",
+    "featureListObservation": "Installed CLI features list recognizes skip_host_skill_discovery as under development; per-process override was accepted and both optimized translations completed.",
+    "processOverrides": [
+      "features.skip_host_skill_discovery=true",
+      "skills.bundled.enabled=false",
+      "skills.include_instructions=false"
+    ],
+    "scope": "Child-process and ephemeral-thread overrides only; saved app settings, CODEX_HOME, auth.json and global Codex configuration were not changed.",
+    "officialConfigurationReference": "https://learn.chatgpt.com/docs/config-file/config-reference",
+    "documentedKeys": [
+      "skills.bundled.enabled",
+      "skills.include_instructions",
+      "skills.config"
+    ],
+    "schemaEvidence": "Installed app-server generated v2/ThreadStartParams.json allows arbitrary JSON config overrides. Existing thread isolation rechecks config/read and disables inherited MCP server names.",
+    "compatibility": "The skip-host-discovery flag is installed-runtime evidence, not a documented stable cross-version guarantee. Existing startup error handling reports unsupported CLI initialization without exposing credentials."
+  }
+}

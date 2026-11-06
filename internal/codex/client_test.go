@@ -89,6 +89,20 @@ func fakeServer(mode string) {
 			respond(map[string]any{"config": map[string]any{"mcp_servers": map[string]any{"external": map[string]any{"command": "never-start-this"}}}})
 		case "thread/start":
 			threadStarts++
+			if mode == "prewarm-session-hang" && firstFakeAttempt() {
+				time.Sleep(time.Minute)
+				return
+			}
+			if mode == "prepared-handoff" && threadStarts == 1 {
+				marker := os.Getenv("SNAPTRANS_CODEX_FAKE_WARM_READY")
+				_ = os.WriteFile(marker, []byte(strconv.Itoa(os.Getpid())), 0600)
+				for {
+					if _, err := os.Stat(marker + ".release"); err == nil {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
 			if mode == "prepared-setup-fail" && threadStarts == 1 {
 				write(map[string]any{"id": request.ID, "error": map[string]any{"message": "thread setup failed"}})
 				continue
@@ -99,6 +113,11 @@ func fakeServer(mode string) {
 			cfg, _ := request.Params["config"].(map[string]any)
 			threadEffort = cfg["model_reasoning_effort"]
 			features, _ := cfg["features"].(map[string]any)
+			skills, _ := cfg["skills"].(map[string]any)
+			bundled, _ := skills["bundled"].(map[string]any)
+			if features["skip_host_skill_discovery"] != true || skills["include_instructions"] != false || bundled["enabled"] != false {
+				os.Exit(11)
+			}
 			servers, _ := cfg["mcp_servers"].(map[string]any)
 			external, _ := servers["external"].(map[string]any)
 			instructions := request.Params["baseInstructions"]
@@ -121,6 +140,19 @@ func fakeServer(mode string) {
 		case "turn/start":
 			turnStarts++
 			threadID, _ := request.Params["threadId"].(string)
+			if mode == "slow-input" || mode == "input-prep-hang" {
+				respond(map[string]any{"turn": map[string]any{"id": "turn-test"}})
+				if mode == "input-prep-hang" {
+					time.Sleep(time.Minute)
+					return
+				}
+				time.Sleep(350 * time.Millisecond)
+				notify("item/started", map[string]any{"threadId": threadID, "item": map[string]any{"type": "userMessage"}})
+				time.Sleep(30 * time.Millisecond)
+				notify("item/agentMessage/delta", map[string]any{"threadId": threadID, "delta": "[1] 你好"})
+				notify("turn/completed", map[string]any{"threadId": threadID, "turn": map[string]any{"status": "completed"}})
+				continue
+			}
 			if strings.HasPrefix(mode, "prepared-batch") {
 				for _, previous := range turnThreads {
 					if previous == threadID {
@@ -152,6 +184,7 @@ func fakeServer(mode string) {
 			}
 			if mode == "reasoning-progress" {
 				respond(map[string]any{"turn": map[string]any{"id": "turn-test"}})
+				notify("item/started", map[string]any{"threadId": threadID, "item": map[string]any{"type": "userMessage"}})
 				for i := 0; i < 5; i++ {
 					notify("item/reasoning/summaryTextDelta", map[string]any{"threadId": threadID, "delta": "thinking"})
 					time.Sleep(60 * time.Millisecond)
@@ -162,6 +195,7 @@ func fakeServer(mode string) {
 			}
 			if (mode == "first-output-hang" && firstFakeAttempt()) || mode == "no-output" {
 				respond(map[string]any{"turn": map[string]any{"id": "turn-test"}})
+				notify("item/started", map[string]any{"threadId": threadID, "item": map[string]any{"type": "userMessage"}})
 				time.Sleep(time.Minute)
 				return
 			}
@@ -330,7 +364,7 @@ func TestStreamDeliversTokensBeforeTurnStartAcknowledgement(t *testing.T) {
 	require.Equal(t, output, tokens)
 }
 
-func TestStreamProgressExcludesUserMessageItems(t *testing.T) {
+func TestStreamReportsInputReadyOnceWithoutAssistantProgress(t *testing.T) {
 	c, err := start(context.Background(), fakeExecutable(t, "user-message-progress"))
 	require.NoError(t, err)
 	defer c.close()
@@ -347,7 +381,8 @@ func TestStreamProgressExcludesUserMessageItems(t *testing.T) {
 		}
 	})
 	require.ErrorIs(t, err, context.Canceled)
-	require.Equal(t, []string{"turn/start"}, progress)
+	require.Equal(t, []string{"turn/start", progressInputReady}, progress,
+		"input echoes signal readiness once, without reporting assistant item activity")
 }
 
 func TestThreadAndTurnUseSameExplicitReasoningEffort(t *testing.T) {
@@ -384,7 +419,6 @@ func TestPreparedSessionStartsNoTurnAndSkipsSetupExactlyOnce(t *testing.T) {
 	key := sessionKey{model: "test-model", instructions: "translate only", effort: "low"}
 	require.NoError(t, c.prepareSession(key))
 	require.True(t, c.hasPreparedSession(key))
-	require.True(t, c.prepareEnabled)
 	require.NoError(t, c.prepareSession(key), "repeated prewarming must preserve the unused conversation")
 	first, err := c.startThread(key.model, key.instructions, key.effort)
 	require.NoError(t, err)
@@ -449,7 +483,6 @@ func TestPreparedSessionSetupFailureIsNeverCached(t *testing.T) {
 	key := sessionKey{model: "test-model", instructions: "translate only", effort: "low"}
 	require.ErrorContains(t, c.prepareSession(key), "thread setup failed")
 	require.False(t, c.hasPreparedSession(key))
-	require.False(t, c.prepareEnabled)
 	require.NoError(t, c.prepareSession(key))
 	require.True(t, c.hasPreparedSession(key))
 	stats := preparedSessionStats(t, c)
@@ -577,6 +610,9 @@ func TestStartDisablesInheritedAgentCapabilities(t *testing.T) {
 	defer c.close()
 	for _, feature := range []string{"hooks", "plugins", "plugin_discovery_prefetch", "skill_search", "apps"} {
 		require.Contains(t, c.cmd.Args, "features."+feature+"=false")
+	}
+	for _, flag := range []string{"features.skip_host_skill_discovery=true", "skills.bundled.enabled=false", "skills.include_instructions=false"} {
+		require.Contains(t, c.cmd.Args, flag, "translation helpers must not inherit skill discovery or instructions")
 	}
 }
 

@@ -68,6 +68,53 @@ func TestNewCaptureCannotReusePreviousFrameBeforeItsImageIsReady(t *testing.T) {
 	require.ErrorContains(t, app.TranslateRegion(TranslateRegionRequest{Width: 16, Height: 16}, "to-zh", 1), "no captured frame")
 }
 
+func TestNewCaptureReleasesPreviousEncodedImages(t *testing.T) {
+	app := NewApp(nil)
+	previousURL := app.captureAssets.Store(make([]byte, 4<<20))
+	_, epoch, started := app.beginCapture()
+	require.True(t, started)
+	require.Empty(t, app.captureAssets.images, "old captures must not accumulate between shortcuts")
+	require.Zero(t, app.captureAssets.bytes)
+	require.NotEqual(t, previousURL, app.captureAssets.Store([]byte("current")))
+	app.finishCapture(epoch)
+}
+
+func TestCaptureWindowRejectsDecodedImageFromCanceledOrOlderCapture(t *testing.T) {
+	app := NewApp(nil)
+	_, oldEpoch, _ := app.beginCapture()
+	app.frame = solidTestFrame(32, 32)
+	require.True(t, app.captureWindowCurrentLocked(oldEpoch))
+	app.finishCapture(oldEpoch)
+	_, currentEpoch, _ := app.beginCapture()
+	require.False(t, app.captureWindowCurrentLocked(oldEpoch))
+	require.False(t, app.captureWindowCurrentLocked(currentEpoch), "capture is not decoded yet")
+	app.frame = solidTestFrame(32, 32)
+	require.True(t, app.captureWindowCurrentLocked(currentEpoch))
+	require.NoError(t, app.HideWindow())
+	require.False(t, app.captureWindowCurrentLocked(currentEpoch))
+}
+
+func TestLateSettingsRenderCannotShowOverNewCapture(t *testing.T) {
+	app := NewApp(nil)
+	require.True(t, app.settingsWindowCurrentLocked())
+	_, epoch, _ := app.beginCapture()
+	require.False(t, app.settingsWindowCurrentLocked())
+	app.frame = solidTestFrame(32, 32)
+	app.finishCapture(epoch)
+	require.False(t, app.settingsWindowCurrentLocked())
+	require.NoError(t, app.ShowSettings())
+	require.True(t, app.settingsWindowCurrentLocked())
+	app.shuttingDown = true
+	require.False(t, app.settingsWindowCurrentLocked())
+}
+
+func TestSettingsHidesCaptureBeforePreparingCompactWindow(t *testing.T) {
+	app := NewApp(nil)
+	app.windowVisible = true
+	require.NoError(t, app.ShowSettings())
+	require.False(t, app.windowVisible, "frontend must finish drawing settings before the native window reappears")
+}
+
 func TestCaptureWindowPreparationIsReusedOnSameDisplay(t *testing.T) {
 	app := NewApp(nil)
 

@@ -1,0 +1,1287 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-06",
+  "timezone": "Asia/Shanghai",
+  "purpose": "Actual 30 Alt+W screenshot reentries, diagnostic native-window stages, and confirmed-hidden 180-second process-memory observation",
+  "runtime": {
+    "pid": 39724,
+    "executable": "build/bin/snapTrans-live-profile.exe",
+    "executableSHA256": "8271E570196FB047B855EE70B5365B674E6FB114587650010F6C1C21C9DDC0AA",
+    "sourceFingerprint": "dd9864ab31b0cb87",
+    "wailsVersion": "v2.12.0",
+    "productionBehaviorChangesForProfile": "Timing diagnostics only; no focus patch or added delay",
+    "scrollMatcher": "Before the independent scroll-matching fix; this profile does not validate that fix"
+  },
+  "verifiedActions": {
+    "actualBatchInputRecords": 30,
+    "batchCaptureUiReadyLogRecords": 30,
+    "totalRuntimeUiReadyRecords": 32,
+    "escapeHideConfirmedByRefreshedWindowList": true,
+    "visibleCaptureWindowsAfterHide": 0,
+    "rootProcessRemainedAliveAfterHide": true,
+    "hiddenConfirmedUtc": "2026-11-06T12:07:11.097+08:00",
+    "modelTranslationTurnsRequestedDuringActions": 0,
+    "actualScrollingSessionsCompleted": 0,
+    "visualScreenshotQualityEvaluated": false
+  },
+  "timingMilliseconds": {
+    "uiReadyMs": {
+      "count": 30,
+      "p50": 358,
+      "p95": 693,
+      "maximum": 869,
+      "minimum": 173,
+      "percentileMethod": "nearest-rank p95; median p50"
+    },
+    "captureTotalMs": {
+      "count": 30,
+      "p50": 161.5,
+      "p95": 330,
+      "maximum": 345,
+      "minimum": 77,
+      "percentileMethod": "nearest-rank p95; median p50"
+    },
+    "captureMs": {
+      "count": 30,
+      "p50": 66.5,
+      "p95": 120,
+      "maximum": 133,
+      "minimum": 32,
+      "percentileMethod": "nearest-rank p95; median p50"
+    },
+    "encodeMs": {
+      "count": 30,
+      "p50": 74,
+      "p95": 192,
+      "maximum": 194,
+      "minimum": 31,
+      "percentileMethod": "nearest-rank p95; median p50"
+    },
+    "nativeWindowMs": {
+      "count": 30,
+      "p50": 172,
+      "p95": 275,
+      "maximum": 345,
+      "minimum": 81,
+      "percentileMethod": "nearest-rank p95; median p50"
+    },
+    "nativeShowBarrierMs": {
+      "count": 30,
+      "p50": 158,
+      "p95": 246,
+      "maximum": 303,
+      "minimum": 76,
+      "percentileMethod": "nearest-rank p95; median p50"
+    },
+    "nativeTopmostMs": {
+      "count": 30,
+      "p50": 15,
+      "p95": 29,
+      "maximum": 41,
+      "minimum": 4,
+      "percentileMethod": "nearest-rank p95; median p50"
+    }
+  },
+  "captures": [
+    {
+      "uiReadyUtc": "2026-11-06T11:48:47+08:00",
+      "inBatch": false,
+      "uiReadyMs": 169,
+      "frontendReadyMs": 28,
+      "nativeWindowMs": 67,
+      "nativePrepareNeeded": true,
+      "nativePrepareMs": 8,
+      "nativeFullscreenMs": 6,
+      "nativeTopmostMs": 4,
+      "nativeShowBarrierMs": 54,
+      "capture": {
+        "captureUtc": "2026-11-06T11:48:47+08:00",
+        "captureTotalMs": 71,
+        "captureMs": 31,
+        "encodeMs": 40,
+        "pngBytes": 532095
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 1
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:52:30+08:00",
+      "inBatch": false,
+      "uiReadyMs": 483,
+      "frontendReadyMs": 37,
+      "nativeWindowMs": 294,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 5,
+      "nativeShowBarrierMs": 288,
+      "capture": {
+        "captureUtc": "2026-11-06T11:52:29+08:00",
+        "captureTotalMs": 148,
+        "captureMs": 59,
+        "encodeMs": 88,
+        "pngBytes": 359047
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:56:13+08:00",
+      "inBatch": true,
+      "uiReadyMs": 405,
+      "frontendReadyMs": 39,
+      "nativeWindowMs": 196,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 17,
+      "nativeShowBarrierMs": 178,
+      "capture": {
+        "captureUtc": "2026-11-06T11:56:13+08:00",
+        "captureTotalMs": 166,
+        "captureMs": 62,
+        "encodeMs": 83,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:56:27+08:00",
+      "inBatch": true,
+      "uiReadyMs": 412,
+      "frontendReadyMs": 42,
+      "nativeWindowMs": 193,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 16,
+      "nativeShowBarrierMs": 177,
+      "capture": {
+        "captureUtc": "2026-11-06T11:56:26+08:00",
+        "captureTotalMs": 174,
+        "captureMs": 70,
+        "encodeMs": 88,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:56:37+08:00",
+      "inBatch": true,
+      "uiReadyMs": 556,
+      "frontendReadyMs": 46,
+      "nativeWindowMs": 266,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 24,
+      "nativeShowBarrierMs": 242,
+      "capture": {
+        "captureUtc": "2026-11-06T11:56:36+08:00",
+        "captureTotalMs": 241,
+        "captureMs": 102,
+        "encodeMs": 121,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:56:46+08:00",
+      "inBatch": true,
+      "uiReadyMs": 236,
+      "frontendReadyMs": 23,
+      "nativeWindowMs": 104,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 6,
+      "nativeShowBarrierMs": 98,
+      "capture": {
+        "captureUtc": "2026-11-06T11:56:46+08:00",
+        "captureTotalMs": 107,
+        "captureMs": 46,
+        "encodeMs": 51,
+        "pngBytes": 357243
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:56:56+08:00",
+      "inBatch": true,
+      "uiReadyMs": 579,
+      "frontendReadyMs": 45,
+      "nativeWindowMs": 232,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 17,
+      "nativeShowBarrierMs": 215,
+      "capture": {
+        "captureUtc": "2026-11-06T11:56:55+08:00",
+        "captureTotalMs": 296,
+        "captureMs": 81,
+        "encodeMs": 157,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:57:06+08:00",
+      "inBatch": true,
+      "uiReadyMs": 425,
+      "frontendReadyMs": 45,
+      "nativeWindowMs": 187,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 22,
+      "nativeShowBarrierMs": 164,
+      "capture": {
+        "captureUtc": "2026-11-06T11:57:06+08:00",
+        "captureTotalMs": 191,
+        "captureMs": 86,
+        "encodeMs": 88,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:58:00+08:00",
+      "inBatch": true,
+      "uiReadyMs": 556,
+      "frontendReadyMs": 47,
+      "nativeWindowMs": 195,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 21,
+      "nativeShowBarrierMs": 173,
+      "capture": {
+        "captureUtc": "2026-11-06T11:58:00+08:00",
+        "captureTotalMs": 312,
+        "captureMs": 133,
+        "encodeMs": 152,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:58:09+08:00",
+      "inBatch": true,
+      "uiReadyMs": 622,
+      "frontendReadyMs": 71,
+      "nativeWindowMs": 231,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 26,
+      "nativeShowBarrierMs": 205,
+      "capture": {
+        "captureUtc": "2026-11-06T11:58:09+08:00",
+        "captureTotalMs": 316,
+        "captureMs": 119,
+        "encodeMs": 167,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:58:20+08:00",
+      "inBatch": true,
+      "uiReadyMs": 348,
+      "frontendReadyMs": 35,
+      "nativeWindowMs": 148,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 16,
+      "nativeShowBarrierMs": 132,
+      "capture": {
+        "captureUtc": "2026-11-06T11:58:20+08:00",
+        "captureTotalMs": 163,
+        "captureMs": 67,
+        "encodeMs": 78,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:58:30+08:00",
+      "inBatch": true,
+      "uiReadyMs": 246,
+      "frontendReadyMs": 24,
+      "nativeWindowMs": 127,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 7,
+      "nativeShowBarrierMs": 119,
+      "capture": {
+        "captureUtc": "2026-11-06T11:58:30+08:00",
+        "captureTotalMs": 94,
+        "captureMs": 38,
+        "encodeMs": 45,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:58:39+08:00",
+      "inBatch": true,
+      "uiReadyMs": 356,
+      "frontendReadyMs": 34,
+      "nativeWindowMs": 171,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 15,
+      "nativeShowBarrierMs": 155,
+      "capture": {
+        "captureUtc": "2026-11-06T11:58:38+08:00",
+        "captureTotalMs": 149,
+        "captureMs": 58,
+        "encodeMs": 72,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:58:47+08:00",
+      "inBatch": true,
+      "uiReadyMs": 322,
+      "frontendReadyMs": 29,
+      "nativeWindowMs": 167,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 7,
+      "nativeShowBarrierMs": 160,
+      "capture": {
+        "captureUtc": "2026-11-06T11:58:47+08:00",
+        "captureTotalMs": 124,
+        "captureMs": 51,
+        "encodeMs": 60,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:58:56+08:00",
+      "inBatch": true,
+      "uiReadyMs": 407,
+      "frontendReadyMs": 40,
+      "nativeWindowMs": 185,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 17,
+      "nativeShowBarrierMs": 167,
+      "capture": {
+        "captureUtc": "2026-11-06T11:58:56+08:00",
+        "captureTotalMs": 179,
+        "captureMs": 68,
+        "encodeMs": 92,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:59:17+08:00",
+      "inBatch": true,
+      "uiReadyMs": 869,
+      "frontendReadyMs": 187,
+      "nativeWindowMs": 345,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 41,
+      "nativeShowBarrierMs": 303,
+      "capture": {
+        "captureUtc": "2026-11-06T11:59:16+08:00",
+        "captureTotalMs": 330,
+        "captureMs": 107,
+        "encodeMs": 194,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T11:59:36+08:00",
+      "inBatch": true,
+      "uiReadyMs": 272,
+      "frontendReadyMs": 23,
+      "nativeWindowMs": 125,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 8,
+      "nativeShowBarrierMs": 117,
+      "capture": {
+        "captureUtc": "2026-11-06T11:59:36+08:00",
+        "captureTotalMs": 121,
+        "captureMs": 53,
+        "encodeMs": 50,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:00:31+08:00",
+      "inBatch": true,
+      "uiReadyMs": 432,
+      "frontendReadyMs": 38,
+      "nativeWindowMs": 186,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 15,
+      "nativeShowBarrierMs": 171,
+      "capture": {
+        "captureUtc": "2026-11-06T12:00:31+08:00",
+        "captureTotalMs": 203,
+        "captureMs": 72,
+        "encodeMs": 108,
+        "pngBytes": 357243
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:00:40+08:00",
+      "inBatch": true,
+      "uiReadyMs": 226,
+      "frontendReadyMs": 19,
+      "nativeWindowMs": 108,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 7,
+      "nativeShowBarrierMs": 100,
+      "capture": {
+        "captureUtc": "2026-11-06T12:00:40+08:00",
+        "captureTotalMs": 97,
+        "captureMs": 43,
+        "encodeMs": 45,
+        "pngBytes": 357243
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:00:49+08:00",
+      "inBatch": true,
+      "uiReadyMs": 360,
+      "frontendReadyMs": 30,
+      "nativeWindowMs": 194,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 12,
+      "nativeShowBarrierMs": 182,
+      "capture": {
+        "captureUtc": "2026-11-06T12:00:49+08:00",
+        "captureTotalMs": 135,
+        "captureMs": 55,
+        "encodeMs": 67,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:01:07+08:00",
+      "inBatch": true,
+      "uiReadyMs": 693,
+      "frontendReadyMs": 69,
+      "nativeWindowMs": 275,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 29,
+      "nativeShowBarrierMs": 246,
+      "capture": {
+        "captureUtc": "2026-11-06T12:01:06+08:00",
+        "captureTotalMs": 345,
+        "captureMs": 120,
+        "encodeMs": 192,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:01:17+08:00",
+      "inBatch": true,
+      "uiReadyMs": 526,
+      "frontendReadyMs": 52,
+      "nativeWindowMs": 202,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 15,
+      "nativeShowBarrierMs": 187,
+      "capture": {
+        "captureUtc": "2026-11-06T12:01:17+08:00",
+        "captureTotalMs": 268,
+        "captureMs": 95,
+        "encodeMs": 147,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:02:16+08:00",
+      "inBatch": true,
+      "uiReadyMs": 339,
+      "frontendReadyMs": 31,
+      "nativeWindowMs": 156,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 14,
+      "nativeShowBarrierMs": 142,
+      "capture": {
+        "captureUtc": "2026-11-06T12:02:16+08:00",
+        "captureTotalMs": 149,
+        "captureMs": 66,
+        "encodeMs": 63,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:02:28+08:00",
+      "inBatch": true,
+      "uiReadyMs": 257,
+      "frontendReadyMs": 26,
+      "nativeWindowMs": 116,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 11,
+      "nativeShowBarrierMs": 105,
+      "capture": {
+        "captureUtc": "2026-11-06T12:02:28+08:00",
+        "captureTotalMs": 113,
+        "captureMs": 43,
+        "encodeMs": 53,
+        "pngBytes": 357243
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:02:36+08:00",
+      "inBatch": true,
+      "uiReadyMs": 244,
+      "frontendReadyMs": 21,
+      "nativeWindowMs": 130,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 7,
+      "nativeShowBarrierMs": 123,
+      "capture": {
+        "captureUtc": "2026-11-06T12:02:36+08:00",
+        "captureTotalMs": 92,
+        "captureMs": 39,
+        "encodeMs": 45,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:02:45+08:00",
+      "inBatch": true,
+      "uiReadyMs": 173,
+      "frontendReadyMs": 13,
+      "nativeWindowMs": 81,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 4,
+      "nativeShowBarrierMs": 76,
+      "capture": {
+        "captureUtc": "2026-11-06T12:02:45+08:00",
+        "captureTotalMs": 77,
+        "captureMs": 32,
+        "encodeMs": 31,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:03:14+08:00",
+      "inBatch": true,
+      "uiReadyMs": 207,
+      "frontendReadyMs": 19,
+      "nativeWindowMs": 103,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 5,
+      "nativeShowBarrierMs": 97,
+      "capture": {
+        "captureUtc": "2026-11-06T12:03:13+08:00",
+        "captureTotalMs": 83,
+        "captureMs": 35,
+        "encodeMs": 37,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:03:32+08:00",
+      "inBatch": true,
+      "uiReadyMs": 302,
+      "frontendReadyMs": 24,
+      "nativeWindowMs": 164,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 11,
+      "nativeShowBarrierMs": 153,
+      "capture": {
+        "captureUtc": "2026-11-06T12:03:32+08:00",
+        "captureTotalMs": 111,
+        "captureMs": 44,
+        "encodeMs": 56,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:03:41+08:00",
+      "inBatch": true,
+      "uiReadyMs": 339,
+      "frontendReadyMs": 31,
+      "nativeWindowMs": 145,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 13,
+      "nativeShowBarrierMs": 131,
+      "capture": {
+        "captureUtc": "2026-11-06T12:03:40+08:00",
+        "captureTotalMs": 160,
+        "captureMs": 67,
+        "encodeMs": 74,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:03:51+08:00",
+      "inBatch": true,
+      "uiReadyMs": 444,
+      "frontendReadyMs": 41,
+      "nativeWindowMs": 173,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 17,
+      "nativeShowBarrierMs": 156,
+      "capture": {
+        "captureUtc": "2026-11-06T12:03:51+08:00",
+        "captureTotalMs": 227,
+        "captureMs": 96,
+        "encodeMs": 105,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:05:04+08:00",
+      "inBatch": true,
+      "uiReadyMs": 206,
+      "frontendReadyMs": 20,
+      "nativeWindowMs": 99,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 9,
+      "nativeShowBarrierMs": 89,
+      "capture": {
+        "captureUtc": "2026-11-06T12:05:04+08:00",
+        "captureTotalMs": 86,
+        "captureMs": 39,
+        "encodeMs": 39,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    },
+    {
+      "uiReadyUtc": "2026-11-06T12:05:16+08:00",
+      "inBatch": true,
+      "uiReadyMs": 381,
+      "frontendReadyMs": 31,
+      "nativeWindowMs": 179,
+      "nativePrepareNeeded": false,
+      "nativePrepareMs": 0,
+      "nativeFullscreenMs": 0,
+      "nativeTopmostMs": 15,
+      "nativeShowBarrierMs": 163,
+      "capture": {
+        "captureUtc": "2026-11-06T12:05:16+08:00",
+        "captureTotalMs": 167,
+        "captureMs": 77,
+        "encodeMs": 74,
+        "pngBytes": 357231
+      },
+      "nativeRestoreMs": 0,
+      "nativeUnfullscreenMs": 0,
+      "nativeMoveMs": 0
+    }
+  ],
+  "sampling": {
+    "segments": [
+      {
+        "name": "profile",
+        "metadata": {
+          "startedUtc": "2026-11-06T03:49:05.9801174Z",
+          "targetPid": 39724,
+          "targetStartedUtc": "2026-11-06T03:45:00.585463Z",
+          "executablePath": "F:\\newworkspace\\snapTrans\\build\\bin\\snapTrans-live-profile.exe",
+          "executableSHA256": "8271E570196FB047B855EE70B5365B674E6FB114587650010F6C1C21C9DDC0AA",
+          "durationMinutes": 12,
+          "intervalSeconds": 2,
+          "treeRefreshSeconds": 5,
+          "phaseFile": "F:\\newworkspace\\snapTrans\\build\\runtime-tests\\20261106-live\\profile\\phases.jsonl",
+          "note": "Read-only counters; no UI actions or forced GC. Ownership uses parent PID plus CIM creation time, retaining verified descendants until exit. Working-set sums can double-count shared pages."
+        },
+        "rawSamples": 360,
+        "overlapSamplesDropped": 0,
+        "keptSamples": 360,
+        "firstUtc": "2026-11-06T03:49:06.5685067Z",
+        "lastUtc": "2026-11-06T04:01:04.152464Z",
+        "stopReason": "duration-complete",
+        "measuredSeconds": 720.016
+      },
+      {
+        "name": "profile-tail",
+        "metadata": {
+          "startedUtc": "2026-11-06T04:00:55.4819367Z",
+          "targetPid": 39724,
+          "targetStartedUtc": "2026-11-06T03:45:00.585463Z",
+          "executablePath": "F:\\newworkspace\\snapTrans\\build\\bin\\snapTrans-live-profile.exe",
+          "executableSHA256": "8271E570196FB047B855EE70B5365B674E6FB114587650010F6C1C21C9DDC0AA",
+          "durationMinutes": 6,
+          "intervalSeconds": 2,
+          "treeRefreshSeconds": 5,
+          "phaseFile": "F:\\newworkspace\\snapTrans\\build\\runtime-tests\\20261106-live\\profile-tail\\phases.jsonl",
+          "note": "Read-only counters; no UI actions or forced GC. Ownership uses parent PID plus CIM creation time, retaining verified descendants until exit. Working-set sums can double-count shared pages."
+        },
+        "rawSamples": 180,
+        "overlapSamplesDropped": 5,
+        "keptSamples": 175,
+        "firstUtc": "2026-11-06T04:00:56.750532Z",
+        "lastUtc": "2026-11-06T04:06:53.5877856Z",
+        "stopReason": "duration-complete",
+        "measuredSeconds": 360.01
+      },
+      {
+        "name": "profile-idle",
+        "metadata": {
+          "startedUtc": "2026-11-06T04:06:48.1345542Z",
+          "targetPid": 39724,
+          "targetStartedUtc": "2026-11-06T03:45:00.585463Z",
+          "executablePath": "F:\\newworkspace\\snapTrans\\build\\bin\\snapTrans-live-profile.exe",
+          "executableSHA256": "8271E570196FB047B855EE70B5365B674E6FB114587650010F6C1C21C9DDC0AA",
+          "durationMinutes": 4,
+          "intervalSeconds": 2,
+          "treeRefreshSeconds": 5,
+          "phaseFile": "F:\\newworkspace\\snapTrans\\build\\runtime-tests\\20261106-live\\profile-idle\\phases.jsonl",
+          "note": "Read-only counters; no UI actions or forced GC. Ownership uses parent PID plus CIM creation time, retaining verified descendants until exit. Working-set sums can double-count shared pages."
+        },
+        "rawSamples": 120,
+        "overlapSamplesDropped": 3,
+        "keptSamples": 117,
+        "firstUtc": "2026-11-06T04:06:48.6631159Z",
+        "lastUtc": "2026-11-06T04:10:46.2151067Z",
+        "stopReason": "duration-complete",
+        "measuredSeconds": 240.014
+      }
+    ],
+    "mergePolicy": "Original segment is retained through its last UTC. Each next segment discards all samples at or before the previous retained last UTC. No CPU/working-set totals are accumulated across segments.",
+    "mergedSampleCount": 652,
+    "overlapSamplesDropped": 8.0,
+    "firstUtc": "2026-11-06T03:49:06.5685067Z",
+    "lastUtc": "2026-11-06T04:10:46.2151067Z",
+    "errorSamples": 0,
+    "actualIntervalSeconds": {
+      "minimum": 0.1236678,
+      "average": 1.9963849462365586,
+      "maximum": 11.9375694
+    },
+    "ownedRoles": [
+      {
+        "pid": 34316,
+        "role": "WebView renderer"
+      },
+      {
+        "pid": 23208,
+        "role": "WebView GPU"
+      }
+    ],
+    "roleEvidence": "Only safe --type values were extracted from already-owned process identities; command lines were not logged.",
+    "remainingSamplerProcessIdentities": []
+  },
+  "memory": {
+    "beforeBatchLast60Seconds": {
+      "sampleCount": 30,
+      "firstUtc": "2026-11-06T03:55:04.1604027Z",
+      "lastUtc": "2026-11-06T03:56:02.1137237Z",
+      "metrics": {
+        "mainPrivateBytes": {
+          "minimum": 107294720,
+          "median": 107319296,
+          "maximum": 107319296,
+          "first": 107294720,
+          "last": 107319296
+        },
+        "rendererPrivateBytes": {
+          "minimum": 47198208,
+          "median": 47366144,
+          "maximum": 47366144,
+          "first": 47198208,
+          "last": 47366144
+        },
+        "gpuPrivateBytes": {
+          "minimum": 86630400,
+          "median": 86630400,
+          "maximum": 86630400,
+          "first": 86630400,
+          "last": 86630400
+        },
+        "treePrivateBytes": {
+          "minimum": 383455232,
+          "median": 383834112,
+          "maximum": 383975424,
+          "first": 383455232,
+          "last": 383528960
+        },
+        "mainGdiObjects": {
+          "minimum": 127,
+          "median": 127,
+          "maximum": 127,
+          "first": 127,
+          "last": 127
+        },
+        "treeGdiObjects": {
+          "minimum": 253,
+          "median": 253,
+          "maximum": 253,
+          "first": 253,
+          "last": 253
+        },
+        "mainUserObjects": {
+          "minimum": 85,
+          "median": 85,
+          "maximum": 85,
+          "first": 85,
+          "last": 85
+        },
+        "treeUserObjects": {
+          "minimum": 186,
+          "median": 186,
+          "maximum": 186,
+          "first": 186,
+          "last": 186
+        },
+        "mainHandles": {
+          "minimum": 771,
+          "median": 771,
+          "maximum": 778,
+          "first": 771,
+          "last": 772
+        },
+        "treeHandles": {
+          "minimum": 3904,
+          "median": 3905,
+          "maximum": 3912,
+          "first": 3904,
+          "last": 3906
+        },
+        "processCount": {
+          "minimum": 9,
+          "median": 9,
+          "maximum": 9,
+          "first": 9,
+          "last": 9
+        }
+      }
+    },
+    "operatorBatchWindow": {
+      "sampleCount": 317,
+      "firstUtc": "2026-11-06T03:56:04.1249567Z",
+      "lastUtc": "2026-11-06T04:06:35.7370011Z",
+      "metrics": {
+        "mainPrivateBytes": {
+          "minimum": 107249664,
+          "median": 116088832,
+          "maximum": 126263296,
+          "first": 107319296,
+          "last": 116002816
+        },
+        "rendererPrivateBytes": {
+          "minimum": 40026112,
+          "median": 114663424,
+          "maximum": 166334464,
+          "first": 47366144,
+          "last": 164823040
+        },
+        "gpuPrivateBytes": {
+          "minimum": 86564864,
+          "median": 118943744,
+          "maximum": 160096256,
+          "first": 86630400,
+          "last": 102785024
+        },
+        "treePrivateBytes": {
+          "minimum": 383160320,
+          "median": 494772224,
+          "maximum": 589201408,
+          "first": 383528960,
+          "last": 526245888
+        },
+        "mainGdiObjects": {
+          "minimum": 127,
+          "median": 127,
+          "maximum": 130,
+          "first": 127,
+          "last": 127
+        },
+        "treeGdiObjects": {
+          "minimum": 253,
+          "median": 253,
+          "maximum": 256,
+          "first": 253,
+          "last": 253
+        },
+        "mainUserObjects": {
+          "minimum": 85,
+          "median": 89,
+          "maximum": 90,
+          "first": 85,
+          "last": 89
+        },
+        "treeUserObjects": {
+          "minimum": 184,
+          "median": 188,
+          "maximum": 193,
+          "first": 186,
+          "last": 189
+        },
+        "mainHandles": {
+          "minimum": 770,
+          "median": 779,
+          "maximum": 784,
+          "first": 774,
+          "last": 779
+        },
+        "treeHandles": {
+          "minimum": 3897,
+          "median": 3922,
+          "maximum": 3940,
+          "first": 3908,
+          "last": 3922
+        },
+        "processCount": {
+          "minimum": 9,
+          "median": 9,
+          "maximum": 9,
+          "first": 9,
+          "last": 9
+        }
+      }
+    },
+    "confirmedHiddenFirst180Seconds": {
+      "sampleCount": 91,
+      "firstUtc": "2026-11-06T04:07:12.2427907Z",
+      "lastUtc": "2026-11-06T04:10:12.2391891Z",
+      "metrics": {
+        "mainPrivateBytes": {
+          "minimum": 97882112,
+          "median": 110153728,
+          "maximum": 116436992,
+          "first": 116412416,
+          "last": 97882112
+        },
+        "rendererPrivateBytes": {
+          "minimum": 163565568,
+          "median": 163762176,
+          "maximum": 163872768,
+          "first": 163565568,
+          "last": 163745792
+        },
+        "gpuPrivateBytes": {
+          "minimum": 92684288,
+          "median": 92737536,
+          "maximum": 92868608,
+          "first": 92864512,
+          "last": 92737536
+        },
+        "treePrivateBytes": {
+          "minimum": 497123328,
+          "median": 509530112,
+          "maximum": 515481600,
+          "first": 515457024,
+          "last": 497123328
+        },
+        "mainGdiObjects": {
+          "minimum": 127,
+          "median": 127,
+          "maximum": 127,
+          "first": 127,
+          "last": 127
+        },
+        "treeGdiObjects": {
+          "minimum": 253,
+          "median": 253,
+          "maximum": 253,
+          "first": 253,
+          "last": 253
+        },
+        "mainUserObjects": {
+          "minimum": 89,
+          "median": 89,
+          "maximum": 89,
+          "first": 89,
+          "last": 89
+        },
+        "treeUserObjects": {
+          "minimum": 189,
+          "median": 189,
+          "maximum": 189,
+          "first": 189,
+          "last": 189
+        },
+        "mainHandles": {
+          "minimum": 776,
+          "median": 777,
+          "maximum": 780,
+          "first": 779,
+          "last": 776
+        },
+        "treeHandles": {
+          "minimum": 3917,
+          "median": 3925,
+          "maximum": 3935,
+          "first": 3917,
+          "last": 3920
+        },
+        "processCount": {
+          "minimum": 9,
+          "median": 9,
+          "maximum": 9,
+          "first": 9,
+          "last": 9
+        }
+      }
+    },
+    "idleFinal60SecondPlatform": {
+      "sampleCount": 31,
+      "firstUtc": "2026-11-06T04:09:12.23177Z",
+      "lastUtc": "2026-11-06T04:10:12.2391891Z",
+      "metrics": {
+        "mainPrivateBytes": {
+          "minimum": 97882112,
+          "median": 97882112,
+          "maximum": 110223360,
+          "first": 110223360,
+          "last": 97882112
+        },
+        "rendererPrivateBytes": {
+          "minimum": 163745792,
+          "median": 163762176,
+          "maximum": 163762176,
+          "first": 163762176,
+          "last": 163745792
+        },
+        "gpuPrivateBytes": {
+          "minimum": 92737536,
+          "median": 92737536,
+          "maximum": 92737536,
+          "first": 92737536,
+          "last": 92737536
+        },
+        "treePrivateBytes": {
+          "minimum": 497123328,
+          "median": 497160192,
+          "maximum": 509530112,
+          "first": 509530112,
+          "last": 497123328
+        },
+        "mainGdiObjects": {
+          "minimum": 127,
+          "median": 127,
+          "maximum": 127,
+          "first": 127,
+          "last": 127
+        },
+        "treeGdiObjects": {
+          "minimum": 253,
+          "median": 253,
+          "maximum": 253,
+          "first": 253,
+          "last": 253
+        },
+        "mainUserObjects": {
+          "minimum": 89,
+          "median": 89,
+          "maximum": 89,
+          "first": 89,
+          "last": 89
+        },
+        "treeUserObjects": {
+          "minimum": 189,
+          "median": 189,
+          "maximum": 189,
+          "first": 189,
+          "last": 189
+        },
+        "mainHandles": {
+          "minimum": 776,
+          "median": 776,
+          "maximum": 778,
+          "first": 778,
+          "last": 776
+        },
+        "treeHandles": {
+          "minimum": 3920,
+          "median": 3921,
+          "maximum": 3925,
+          "first": 3925,
+          "last": 3920
+        },
+        "processCount": {
+          "minimum": 9,
+          "median": 9,
+          "maximum": 9,
+          "first": 9,
+          "last": 9
+        }
+      }
+    },
+    "after180Checkpoint": {
+      "utc": "2026-11-06T04:10:12.2391891Z",
+      "secondsAfterHiddenConfirmation": 181.1421891,
+      "mainPrivateBytes": 97882112,
+      "rendererPrivateBytes": 163745792,
+      "gpuPrivateBytes": 92737536,
+      "treePrivateBytes": 497123328,
+      "mainGdiObjects": 127,
+      "treeGdiObjects": 253,
+      "mainHandles": 776,
+      "treeHandles": 3920
+    },
+    "retainedPrivateBytes": {
+      "mainPrivateBytes": {
+        "beforeBatchLast": 107319296,
+        "batchPeak": 126263296,
+        "after180": 97882112,
+        "deltaAfter180VsBeforeBatchLast": -9437184,
+        "afterIdleFinal60Median": 97882112
+      },
+      "rendererPrivateBytes": {
+        "beforeBatchLast": 47366144,
+        "batchPeak": 166334464,
+        "after180": 163745792,
+        "deltaAfter180VsBeforeBatchLast": 116379648,
+        "afterIdleFinal60Median": 163762176
+      },
+      "gpuPrivateBytes": {
+        "beforeBatchLast": 86630400,
+        "batchPeak": 160096256,
+        "after180": 92737536,
+        "deltaAfter180VsBeforeBatchLast": 6107136,
+        "afterIdleFinal60Median": 92737536
+      },
+      "treePrivateBytes": {
+        "beforeBatchLast": 383528960,
+        "batchPeak": 589201408,
+        "after180": 497123328,
+        "deltaAfter180VsBeforeBatchLast": 113594368,
+        "afterIdleFinal60Median": 497160192
+      }
+    }
+  },
+  "interpretation": [
+    "All 30 batch application-ready records completed below one second in this run. Window preparation was skipped on the warm batch; show+barrier includes Wails ShowWindow and its queued ScreenGetAll barrier, so the components cannot be separated from these timings.",
+    "Main private memory and GPU private memory fell from their batch peaks after hiding. Renderer private memory remained substantially above its pre-batch level through 180 seconds; the tree did not return to its original platform.",
+    "GDI and handle plateaus are reported independently from private-memory retention. These observations do not prove the absence of a leak or establish that retained renderer memory is an unbounded leak.",
+    "Read-only frontend review found cleanup for prior image loads, Image.src, canvas backing sizes, listener/abort handlers, editor timers and observers; no definite stale-frame reference was identified. Browser allocator/cache retention was not measured with a heap profiler."
+  ],
+  "limitations": [
+    "The first diagnostic screenshot occurred before the sampler started, so this run has no hidden cold-process memory baseline. The pre-batch comparison is an already-initialized runtime.",
+    "An initial Codex prewarm child plus conhost expired after five minutes; their approximately 32 MiB private-memory drop is not attributed to screenshot cleanup. Per-process details remain in raw samples.",
+    "Concurrent automation, tool execution and harness compilation affected host load. Results describe this observed cohort rather than an isolated benchmark or a universal latency guarantee.",
+    "The configured 2-second cadence can have jitter and catch-up samples. Actual UTC timestamps are retained, and platform medians are unweighted sample medians.",
+    "Working-set sums may double-count shared pages. Private-memory values include allocator retention; no forced GC, working-set trimming, UI operations or API/model requests were issued by the sampler.",
+    "Windows Graphics Capture timed out and coordinate geometry was unavailable to the automation engine, so visual screenshot/editor/overlay quality was not evaluated.",
+    "Immediate window lists can lag and text-only UIA can expose hidden trees or later calls can reactivate a window. The earlier Escape failure interpretation is inconclusive; this run confirmed hiding by refreshing the list while the process remained alive.",
+    "No focus patch was applied. Ordinary screenshot measurements do not validate scrolling alignment or the independent later scroll fix."
+  ],
+  "rawSources": [
+    "build/runtime-tests/20261106-live/profile-capture-ui-inputs.json",
+    "build/runtime-tests/20261106-live/profile/phases.jsonl",
+    "build/runtime-tests/20261106-live/profile-tail/phases.jsonl",
+    "build/runtime-tests/20261106-live/profile-idle/phases.jsonl",
+    "build/runtime-tests/20261106-live/profile-merged.jsonl"
+  ]
+}

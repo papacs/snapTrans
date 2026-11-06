@@ -45,7 +45,7 @@ const backendMocks = vi.hoisted(() => {
     listeners,
     emit,
     copyImageDataUrl: vi.fn(async () => {}),
-    beginScrollingScreenshot: vi.fn(async () => ({
+    beginScrollingScreenshot: vi.fn(async (): Promise<import("./services/backend").ManualScrollStatus> => ({
       frames: 1,
       width: 440,
       height: 290
@@ -91,7 +91,7 @@ const backendMocks = vi.hoisted(() => {
     translateSelection: vi.fn(async (_id: string, _direction: string, _generation: number) => {}),
     translateRegion: vi.fn(async (_region: unknown, _direction: string, _generation: number) => {}),
     saveScreenshot: vi.fn(async () => "capture.png"),
-    showCaptureWindow: vi.fn(async () => {}),
+    showCaptureWindow: vi.fn(async (_captureId?: number) => true),
     showSettingsWindow: vi.fn(async () => {}),
     triggerCapture: vi.fn(async () => {
       emit("capture-start", {
@@ -170,6 +170,7 @@ class MockImage {
   set src(_value: string) {
     queueMicrotask(() => this.onload?.());
   }
+  removeAttribute(_name: string): void {}
 }
 
 class ControlledImage {
@@ -186,6 +187,9 @@ class ControlledImage {
 
   resolve(): void {
     this.onload?.();
+  }
+  removeAttribute(name: string): void {
+    if (name === "src") this.source = "";
   }
 }
 
@@ -725,7 +729,7 @@ describe("App capture cancellation", () => {
     const annotationCanvas = viewport.find("canvas");
     expect(viewport.classes()).not.toContain("bg-white");
     expect(annotationCanvas.classes()).toContain("bg-transparent");
-    expect(drawImageMock).toHaveBeenCalledTimes(4);
+    expect(drawImageMock).toHaveBeenCalledTimes(2);
   });
 
   it("keeps a live full preview while observing user-driven scrolling", async () => {
@@ -761,6 +765,8 @@ describe("App capture cancellation", () => {
     });
     expect(wrapper.find("[data-testid='manual-scroll-controller']").exists()).toBe(true);
     expect(wrapper.find("[data-testid='manual-scroll-current']").exists()).toBe(true);
+    expect(wrapper.get("[data-testid='manual-scroll-current']").classes()).not.toContain("bg-white");
+    expect(wrapper.get("[data-testid='manual-scroll-current']").classes()).toContain("outline-2");
     expect(wrapper.find("[data-testid='manual-scroll-preview']").exists()).toBe(true);
 
     const showCallsBeforePoll = backendMocks.showCaptureWindow.mock.calls.length;
@@ -781,6 +787,89 @@ describe("App capture cancellation", () => {
     expect(wrapper.find("[data-testid='manual-scroll-controller']").exists()).toBe(false);
     expect(wrapper.find("[data-testid='screenshot-editor']").exists()).toBe(false);
     expect(backendMocks.hideWindow).toHaveBeenCalledTimes(1);
+  });
+
+  async function startScrollingCapture() {
+    const wrapper = mount(App);
+    await flushPromises();
+    await backendMocks.triggerScreenshot();
+    await flushPromises();
+    await wrapper.get("section.cursor-crosshair").trigger("mousedown", {button:0,clientX:80,clientY:70});
+    window.dispatchEvent(new MouseEvent("mouseup", {button:0,clientX:520,clientY:360}));
+    await flushPromises();
+    await wrapper.get('[data-testid="screenshot-scroll-down"]').trigger("click");
+    await flushPromises();
+    return wrapper;
+  }
+
+  it("recovers scrolling capture after a temporary frame failure and shows the error beside the preview", async () => {
+    vi.useFakeTimers();
+    backendMocks.stepScrollingScreenshot.mockRejectedValueOnce(new Error("TEMPORARY_CAPTURE_FAILURE"));
+    const wrapper = await startScrollingCapture();
+    await vi.advanceTimersByTimeAsync(120);
+    await flushPromises();
+    expect(wrapper.get('[data-testid="manual-scroll-preview"]').text()).toContain("TEMPORARY_CAPTURE_FAILURE");
+    await vi.advanceTimersByTimeAsync(750);
+    await flushPromises();
+    expect(backendMocks.stepScrollingScreenshot).toHaveBeenCalledTimes(2);
+    expect(wrapper.get('[data-testid="manual-scroll-preview"]').text()).not.toContain("TEMPORARY_CAPTURE_FAILURE");
+  });
+
+  it("continues observing scrolling while a preview image is still decoding", async () => {
+    vi.useFakeTimers();
+    const wrapper = await startScrollingCapture();
+    vi.stubGlobal("Image", ControlledImage);
+    await vi.advanceTimersByTimeAsync(120 + 180);
+    await flushPromises();
+    expect(backendMocks.stepScrollingScreenshot).toHaveBeenCalledTimes(2);
+    expect(wrapper.get("img[alt='完整滚动截图预览']").attributes("src")).toContain("cHJldmlldw==");
+  });
+
+  it.each(["finish", "cancel"] as const)("handles the native scrolling %s command while the capture window is unfocused", async action => {
+    const wrapper = await startScrollingCapture();
+    backendMocks.emit("scroll-capture-command", {action});
+    await flushPromises();
+    expect(action === "finish" ? backendMocks.finishScrollingScreenshot : backendMocks.cancelScrollingScreenshot).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('[data-testid="manual-scroll-controller"]').exists()).toBe(false);
+  });
+
+  it("queues a native finish command until scrolling capture has finished starting", async () => {
+    let begin!: (value: {frames:number;width:number;height:number}) => void;
+    backendMocks.beginScrollingScreenshot.mockImplementationOnce(() => new Promise(resolve => {begin=resolve;}));
+    const wrapper = await startScrollingCapture();
+    backendMocks.emit("scroll-capture-command", {action:"finish"});
+    await flushPromises();
+    expect(backendMocks.finishScrollingScreenshot).not.toHaveBeenCalled();
+    begin({frames:1,width:440,height:290});
+    await flushPromises();
+    expect(backendMocks.finishScrollingScreenshot).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('[data-testid="manual-scroll-controller"]').exists()).toBe(false);
+  });
+
+  it("ignores native commands belonging to an earlier scrolling session", async () => {
+    vi.useFakeTimers();
+    backendMocks.beginScrollingScreenshot.mockResolvedValueOnce({captureId:12,frames:1,width:440,height:290});
+    const wrapper = await startScrollingCapture();
+    await vi.advanceTimersByTimeAsync(120);
+    await flushPromises();
+    backendMocks.emit("scroll-capture-command", {captureId:11,action:"finish"});
+    await flushPromises();
+    expect(backendMocks.finishScrollingScreenshot).not.toHaveBeenCalled();
+    backendMocks.emit("scroll-capture-command", {captureId:12,action:"finish"});
+    await flushPromises();
+    expect(backendMocks.finishScrollingScreenshot).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('[data-testid="manual-scroll-controller"]').exists()).toBe(false);
+  });
+
+  it("drops an earlier scrolling session's command queued while a new session is starting", async () => {
+    let begin!: (value: import("./services/backend").ManualScrollStatus) => void;
+    backendMocks.beginScrollingScreenshot.mockImplementationOnce(() => new Promise(resolve => {begin=resolve;}));
+    const wrapper = await startScrollingCapture();
+    backendMocks.emit("scroll-capture-command", {captureId:11,action:"cancel"});
+    begin({captureId:12,frames:1,width:440,height:290});
+    await flushPromises();
+    expect(backendMocks.cancelScrollingScreenshot).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="manual-scroll-controller"]').exists()).toBe(true);
   });
 
   it("cancels the manual scrolling session from its floating controller", async () => {
@@ -906,6 +995,58 @@ describe("App capture cancellation", () => {
 
     expect(drawImageMock).toHaveBeenCalledTimes(1);
     expect(backendMocks.showCaptureWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops an obsolete image decode immediately when a new capture replaces it", async () => {
+    vi.stubGlobal("Image", ControlledImage);
+    mount(App);
+    await flushPromises();
+    backendMocks.emit("capture-start", {image:"data:image/png;base64,old",width:800,height:600});
+    await flushPromises();
+    const oldImage = controlledImages[0]!;
+    backendMocks.emit("capture-start", {image:"data:image/png;base64,new",width:800,height:600});
+    await flushPromises();
+    expect(oldImage.onload).toBeNull();
+    expect(oldImage.source).toBe("");
+  });
+
+  it("releases the decoded image after drawing and the frozen canvas after closing", async () => {
+    vi.stubGlobal("Image", ControlledImage);
+    const wrapper = mount(App);
+    await flushPromises();
+    backendMocks.emit("capture-start", {image:"data:image/png;base64,frame",width:800,height:600});
+    await flushPromises();
+    const image = controlledImages[0]!;
+    image.resolve();
+    await flushPromises();
+    expect(image.source).toBe("");
+    const canvas = wrapper.get<HTMLCanvasElement>("canvas").element;
+    expect(canvas.width * canvas.height).toBeGreaterThan(0);
+    window.dispatchEvent(new KeyboardEvent("keydown", {key:"Escape"}));
+    await flushPromises();
+    expect(canvas.width * canvas.height).toBe(0);
+  });
+
+  it.each([false, true])("keeps the frozen frame until native hide returns (new capture=%s)", async replace => {
+    let finishHide!: () => void;
+    backendMocks.hideWindow.mockImplementationOnce(() => new Promise<void>(resolve => {finishHide=resolve;}));
+    const wrapper = mount(App);
+    await flushPromises();
+    await backendMocks.triggerCapture();
+    await flushPromises();
+    const canvas = wrapper.get<HTMLCanvasElement>("canvas").element;
+    window.dispatchEvent(new KeyboardEvent("keydown", {key:"Escape"}));
+    await flushPromises();
+    expect(canvas.width * canvas.height).toBeGreaterThan(0);
+    expect(wrapper.find("section.cursor-crosshair").exists()).toBe(true);
+    if (replace) {
+      backendMocks.emit("capture-start", {image:"data:image/png;base64,new",width:800,height:600});
+      await flushPromises();
+    }
+    finishHide();
+    await flushPromises();
+    expect(wrapper.find("section.cursor-crosshair").exists()).toBe(replace);
+    expect(canvas.width * canvas.height > 0).toBe(replace);
   });
 
   it("keeps drawing when the pointer leaves the capture surface and shows the clamped size", async () => {
@@ -1162,7 +1303,7 @@ describe("App capture cancellation", () => {
 
     expect(wrapper.find("[data-testid='settings-shell']").exists()).toBe(true);
     expect(wrapper.find("[data-testid='settings-scroll']").exists()).toBe(true);
-    expect(wrapper.findAll("[data-testid='settings-section']")).toHaveLength(4);
+    expect(wrapper.findAll("[data-testid='settings-section']")).toHaveLength(3);
     expect(wrapper.find("[data-testid='settings-footer']").exists()).toBe(true);
   });
 
@@ -1264,6 +1405,8 @@ describe("App capture cancellation", () => {
     await flushPromises();
 
     expect(wrapper.find("[data-testid='settings-shell']").exists()).toBe(true);
+    await wrapper.get('[data-testid="settings-tab-library"]').trigger("click");
+    await flushPromises();
     expect(wrapper.text()).toContain("\u6682\u65e0\u7ffb\u8bd1\u8bb0\u5f55\u3002");
   });
 
@@ -2059,6 +2202,31 @@ describe("App capture cancellation", () => {
       selectedText:{id:"selection-1",x:.2,y:.15,width:.4,height:.2,blocks:[{text:"A selected paragraph",x:0,y:0,width:.9,height:.3,background:"#ffffff",foreground:"#172033"}]}});
     await flushPromises(); return wrapper;
   }
+  it("has an opaque frozen frame ready when showing native selection translation", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+    let classesAtShow: string[] = [];
+    backendMocks.showCaptureWindow.mockImplementationOnce(async () => {
+      classesAtShow = wrapper.get("canvas").element.parentElement!.className.split(" ");
+      return true;
+    });
+    backendMocks.emit("capture-start", {image:"data:image/png;base64,fake",width:800,height:600,mode:"translate",
+      selectedText:{id:"selection-1",x:.2,y:.15,width:.4,height:.2,blocks:[]}});
+    await flushPromises();
+    expect(classesAtShow).toContain("opacity-100");
+    expect(classesAtShow).not.toContain("transition-opacity");
+  });
+  it("does not submit a native translation when the backend rejects an obsolete capture", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+    backendMocks.showCaptureWindow.mockResolvedValueOnce(false);
+    backendMocks.emit("capture-start", {captureId:12,image:"data:image/png;base64,fake",width:800,height:600,mode:"translate",
+      selectedText:{id:"obsolete",x:.2,y:.15,width:.4,height:.2,blocks:[]}});
+    await flushPromises();
+    expect(backendMocks.showCaptureWindow).toHaveBeenCalledWith(12);
+    expect(backendMocks.translateSelection).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
   it("starts native selection translation in place without a box or OCR",async()=>{
     const wrapper=await nativeResult();
     expect(backendMocks.translateSelection).toHaveBeenCalledWith("selection-1","to-zh",1);
@@ -2682,6 +2850,40 @@ describe("settings drafts and history", () => {
   await flushPromises();
   return wrapper;
  }
+ it("loads history only on demand and renders it in small batches", async () => {
+  backendMocks.getHistory.mockClear();
+  backendMocks.getHistory.mockResolvedValueOnce(Array.from({length:90}, (_,index) => ({
+   id:`history-${index}`,timestamp:"2026-11-06T10:00:00+08:00",source:`Source ${index}`,translation:`译文 ${index}`,direction:"to-zh" as const
+  })));
+  const wrapper = await settings();
+  expect(backendMocks.getHistory).not.toHaveBeenCalled();
+  expect(wrapper.findAll("time")).toHaveLength(0);
+  await wrapper.get('[data-testid="settings-tab-library"]').trigger("click");
+  await flushPromises();
+  expect(wrapper.findAll("time")).toHaveLength(30);
+  await wrapper.get('[data-testid="history-load-more"]').trigger("click");
+  expect(wrapper.findAll("time")).toHaveLength(60);
+  await wrapper.get('input[aria-label="搜索历史"]').setValue("Source 89");
+  expect(wrapper.findAll("time")).toHaveLength(1);
+  expect(wrapper.text()).toContain("Source 89");
+  await wrapper.get('[data-testid="settings-tab-ai"]').trigger("click");
+  expect(wrapper.findAll("time")).toHaveLength(0);
+ });
+ it("ignores history returned after its settings session has closed", async () => {
+  let finishOld!: (entries: import("./services/backend").HistoryEntry[]) => void;
+  backendMocks.getHistory.mockImplementationOnce(() => new Promise(resolve => {finishOld=resolve;}));
+  const wrapper = await settings();
+  await wrapper.get('[data-testid="settings-tab-library"]').trigger("click");
+  await flushPromises();
+  await wrapper.get('button[aria-label="Close"]').trigger("click");
+  backendMocks.getHistory.mockResolvedValueOnce([{id:"new",timestamp:"",source:"Current history",translation:"新记录",direction:"to-zh"}]);
+  await wrapper.get('button[aria-label="Settings"]').trigger("click");
+  await flushPromises();
+  finishOld([{id:"old",timestamp:"",source:"Obsolete history",translation:"旧记录",direction:"to-zh"}]);
+  await flushPromises();
+  expect(wrapper.text()).toContain("Current history");
+  expect(wrapper.text()).not.toContain("Obsolete history");
+ });
  it("keeps initial settings disabled until the saved configuration loads", async () => {
   let finish!: (config: typeof backendMocks.defaultConfig) => void;
   backendMocks.loadConfig.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
@@ -2860,6 +3062,7 @@ describe("settings drafts and history", () => {
   }]);
   const wrapper = await settings();
   await wrapper.get('[data-testid="settings-tab-library"]').trigger('click');
+  await flushPromises();
   expect(wrapper.get("time").attributes("datetime")).toBe("2026-08-31T10:20:30+08:00");
   expect(wrapper.get("time").text()).toContain("2026");
   expect(wrapper.get("details").text()).not.toContain("[1]");
@@ -2873,6 +3076,7 @@ describe("settings drafts and history", () => {
   backendMocks.copyText.mockRejectedValueOnce(new Error("clipboard busy"));
   const wrapper = await settings();
   await wrapper.get('[data-testid="settings-tab-library"]').trigger('click');
+  await flushPromises();
   await wrapper.get("button[aria-label='Copy history entry']").trigger("click");
   await flushPromises();
   expect(wrapper.text()).toContain("复制失败");

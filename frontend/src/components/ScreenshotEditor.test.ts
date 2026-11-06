@@ -1,19 +1,23 @@
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ScreenshotEditor from "./ScreenshotEditor.vue";
+import * as annotations from "../utils/annotations";
 import type { OCRResultPayload } from "../services/backend";
 
 const mocks = vi.hoisted(() => ({
   extract: vi.fn(async (_image: string): Promise<OCRResultPayload> => ({ text: "Original text", blocks: [] })),
   copy: vi.fn(async (_text: string) => {}),
+  beginScroll: vi.fn(async () => ({frames:1,width:440,height:290})),
+  finishScroll: vi.fn(async () => ({image:"data:image/png;base64,scroll",width:440,height:580})),
 }));
 vi.mock("../services/backend", () => ({
   extractText: mocks.extract,
   copyText: mocks.copy,
-  beginScrollingScreenshot: vi.fn(),
+  beginScrollingScreenshot: mocks.beginScroll,
   cancelScrollingScreenshot: vi.fn(),
-  finishScrollingScreenshot: vi.fn(),
+  finishScrollingScreenshot: mocks.finishScroll,
   showCaptureWindow: vi.fn(),
+  onBackendEvent: vi.fn(() => () => {}),
   stepScrollingScreenshot: vi.fn(),
 }));
 
@@ -21,9 +25,12 @@ enableAutoUnmount(afterEach);
 beforeEach(() => {
   mocks.extract.mockReset();
   mocks.copy.mockClear();
+  mocks.beginScroll.mockReset().mockResolvedValue({frames:1,width:440,height:290});
+  mocks.finishScroll.mockReset().mockResolvedValue({image:"data:image/png;base64,scroll",width:440,height:580});
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     clearRect: vi.fn(), drawImage: vi.fn(),
     save: vi.fn(), restore: vi.fn(), fillText: vi.fn(),
+    createPattern: vi.fn(() => ({})), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
   } as unknown as CanvasRenderingContext2D);
   vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,capture");
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
@@ -31,7 +38,7 @@ beforeEach(() => {
     toJSON: () => ({}),
   } as DOMRect);
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function editor() {
   const sourceCanvas = document.createElement("canvas");
@@ -57,6 +64,90 @@ const table: OCRResultPayload = {
     { text: "92", x: 0.63, y: 0.35, width: 0.05, height: 0.08 },
   ],
 };
+
+describe("screenshot canvas lifecycle and shortcuts", () => {
+  it.each(["begin", "finish"] as const)("restores full-size editing after a scrolling %s failure without retaining the removed canvas", async failure => {
+    const observer = {observe:vi.fn(),unobserve:vi.fn(),disconnect:vi.fn()};
+    vi.stubGlobal("ResizeObserver", class { constructor() { return observer; } });
+    vi.mocked(HTMLCanvasElement.prototype.toDataURL).mockImplementation(function(this: HTMLCanvasElement) {
+      return `data:image/png;base64,${this.width}x${this.height}`;
+    });
+    if (failure === "begin") mocks.beginScroll.mockRejectedValueOnce(new Error("SCROLL_RECOVERY"));
+    else mocks.finishScroll.mockRejectedValueOnce(new Error("SCROLL_RECOVERY"));
+    const wrapper = editor();
+    await flushPromises();
+    const oldCanvas = wrapper.get<HTMLCanvasElement>('[data-testid="screenshot-viewport"] canvas').element;
+    const oldToolbar = wrapper.get('[data-testid="screenshot-toolbar"]').element;
+    await wrapper.get('[data-testid="screenshot-scroll-down"]').trigger("click");
+    await flushPromises();
+    if (failure === "finish") {
+      await wrapper.get('[data-testid="manual-scroll-complete"]').trigger("click");
+      await flushPromises();
+    }
+    const canvas = wrapper.get<HTMLCanvasElement>('[data-testid="screenshot-viewport"] canvas').element;
+    expect(canvas).not.toBe(oldCanvas);
+    expect([canvas.width,canvas.height]).toEqual([440,290]);
+    expect(oldCanvas.width * oldCanvas.height).toBe(0);
+    expect(observer.unobserve).toHaveBeenCalledWith(oldToolbar);
+    expect(observer.observe).toHaveBeenCalledWith(wrapper.get('[data-testid="screenshot-toolbar"]').element);
+    expect(wrapper.text()).toContain("SCROLL_RECOVERY");
+    await wrapper.get('[data-testid="screenshot-complete"]').trigger("click");
+    expect(wrapper.emitted("complete")).toEqual([["data:image/png;base64,440x290"]]);
+  });
+
+  it("allocates the mosaic bitmap only when drawing mosaic, reuses it, and releases it after undo", async () => {
+    const pixelate = vi.spyOn(annotations, "createPixelatedCanvas");
+    const wrapper = editor();
+    expect(pixelate).not.toHaveBeenCalled();
+    await wrapper.get('[data-testid="annotation-mosaic"]').trigger("click");
+    const canvas = wrapper.get('[data-testid="screenshot-viewport"] canvas');
+    await canvas.trigger("mousedown", {button:0,clientX:120,clientY:100});
+    window.dispatchEvent(new MouseEvent("mouseup", {button:0,clientX:160,clientY:140}));
+    await flushPromises();
+    expect(pixelate).toHaveBeenCalledTimes(1);
+    const bitmap = pixelate.mock.results[0]!.value as HTMLCanvasElement;
+    expect(bitmap.width).toBe(440);
+    await wrapper.get('[data-testid="annotation-undo"]').trigger("click");
+    expect(bitmap.width * bitmap.height).toBe(0);
+  });
+
+  it("releases the editor backing store when closed", () => {
+    const wrapper = editor();
+    const canvas = wrapper.get<HTMLCanvasElement>('[data-testid="screenshot-viewport"] canvas').element;
+    expect(canvas.width * canvas.height).toBeGreaterThan(0);
+    wrapper.unmount();
+    expect(canvas.width * canvas.height).toBe(0);
+  });
+
+  it.each([{key:"Enter",ctrlKey:false,kind:"complete"},{key:"c",ctrlKey:true,kind:"complete"},{key:"s",ctrlKey:true,kind:"save"}])("supports screenshot shortcut $key (ctrl=$ctrlKey)", async ({key,ctrlKey,kind}) => {
+    const wrapper = editor();
+    window.dispatchEvent(new KeyboardEvent("keydown", {key,ctrlKey,cancelable:true}));
+    await flushPromises();
+    expect(wrapper.emitted(kind)).toEqual([["data:image/png;base64,capture"]]);
+  });
+
+  it("does not copy the screenshot for an input method, repeated key, or editable text", async () => {
+    const wrapper = editor();
+    window.dispatchEvent(new KeyboardEvent("keydown", {key:"Enter",isComposing:true}));
+    window.dispatchEvent(new KeyboardEvent("keydown", {key:"Enter",repeat:true}));
+    await wrapper.get('[data-testid="annotation-text"]').trigger("click");
+    await wrapper.get('[data-testid="screenshot-viewport"] canvas').trigger("mousedown", {button:0,clientX:120,clientY:100});
+    await wrapper.get('input[placeholder="输入文字"]').trigger("keydown", {key:"c",ctrlKey:true});
+    expect(wrapper.emitted("complete")).toBeUndefined();
+  });
+
+  it("does not repeatedly encode the image while a copy or save is pending", async () => {
+    const wrapper = editor();
+    await wrapper.setProps({busy:true});
+    vi.mocked(HTMLCanvasElement.prototype.toDataURL).mockClear();
+    window.dispatchEvent(new KeyboardEvent("keydown", {key:"Enter",cancelable:true}));
+    window.dispatchEvent(new KeyboardEvent("keydown", {key:"s",ctrlKey:true,cancelable:true}));
+    await flushPromises();
+    expect(HTMLCanvasElement.prototype.toDataURL).not.toHaveBeenCalled();
+    expect(wrapper.emitted("complete")).toBeUndefined();
+    expect(wrapper.emitted("save")).toBeUndefined();
+  });
+});
 
 describe("screenshot extraction recovery", () => {
   it.each(["text", "table"] as const)("ignores an earlier copy failure after editing the extracted %s", async kind => {

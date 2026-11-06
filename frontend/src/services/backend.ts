@@ -28,6 +28,7 @@ export interface AppConfig {
 }
 
 export interface CapturePayload {
+  captureId?: number;
   image: string;
   width: number;
   height: number;
@@ -58,10 +59,16 @@ export interface SelectionRegion {
 export interface TranslationRegion extends SelectionRegion { inputMode?: "ocr" | "image" }
 
 export interface ManualScrollStatus {
+  captureId?: number;
   frames: number;
   width: number;
   height: number;
   error?: string;
+}
+
+export interface ScrollCaptureCommandEvent {
+  captureId?: number;
+  action: "finish" | "cancel";
 }
 
 export interface ScrollCaptureStepResult {
@@ -149,6 +156,7 @@ export interface EnvironmentStatus {
 
 type EventName =
   | "text-action"
+  | "scroll-capture-command"
   | "capture-start"
   | "ocr-start"
   | "ocr-result"
@@ -291,10 +299,14 @@ export async function warmReply(scene: ReplyScene, inputMode: "ocr" | "image"): 
   }
 }
 
-export async function showCaptureWindow(): Promise<void> {
+export async function showCaptureWindow(captureId?: number): Promise<boolean> {
   if (hasWailsBackend()) {
+    if (captureId !== undefined) {
+      return window.go!.desktop!.App!.ShowCaptureWindowForCapture(captureId);
+    }
     await window.go!.desktop!.App!.ShowCaptureWindow();
   }
+  return true;
 }
 
 let fallbackScrollRegion: ScrollCaptureRegion | null = null;

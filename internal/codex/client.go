@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"snaptrans/internal/childprocess"
 )
 
 type Model struct {
@@ -34,6 +36,7 @@ type Status struct {
 // Let Codex choose its native transport and fallback for subscription access.
 // Forcing a custom HTTP-only provider can stall behind local proxies.
 const subscriptionProvider = "openai"
+const progressInputReady = "input-ready"
 
 var errConnectionClosed = errors.New("Codex App Server closed unexpectedly; check the CLI path and local Codex configuration")
 
@@ -79,11 +82,11 @@ type connection struct {
 	dir                   string
 	closeOnce             sync.Once
 	processCancel         context.CancelFunc
+	processGuard          io.Closer
 	subscriptionCheckedAt time.Time
 	accountRevision       uint64
 	defaultModel          string
 	prepared              *preparedThread
-	prepareEnabled        bool
 }
 
 func start(ctx context.Context, path string) (*connection, error) {
@@ -100,7 +103,8 @@ func start(ctx context.Context, path string) (*connection, error) {
 	cmd := exec.CommandContext(ctx, path, "app-server", "-c", `model_provider="`+subscriptionProvider+`"`,
 		"-c", "features.hooks=false", "-c", "features.plugins=false",
 		"-c", "features.plugin_discovery_prefetch=false", "-c", "features.skill_search=false",
-		"-c", "features.apps=false")
+		"-c", "features.apps=false", "-c", "features.skip_host_skill_discovery=true",
+		"-c", "skills.bundled.enabled=false", "-c", "skills.include_instructions=false")
 	cmd.Dir = dir
 	cmd.WaitDelay = 2 * time.Second
 	configureCommand(cmd)
@@ -121,8 +125,17 @@ func start(ctx context.Context, path string) (*connection, error) {
 		os.Remove(dir)
 		return nil, fmt.Errorf("start Codex: %w", err)
 	}
-	slog.Info("Codex runtime started", "path", path)
-	c := &connection{ctx: ctx, cmd: cmd, in: in, out: bufio.NewScanner(out), dir: dir}
+	guard, err := childprocess.Guard(cmd.Process)
+	if err != nil {
+		in.Close()
+		out.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		_ = os.Remove(dir)
+		return nil, fmt.Errorf("guard Codex process: %w", err)
+	}
+	slog.Info("Codex runtime started", "path", path, "process_id", cmd.Process.Pid)
+	c := &connection{ctx: ctx, cmd: cmd, in: in, out: bufio.NewScanner(out), dir: dir, processGuard: guard}
 	c.out.Buffer(make([]byte, 4096), 4<<20)
 	err = c.call("initialize", map[string]any{"clientInfo": map[string]string{
 		"name": "snaptrans", "title": "snapTrans", "version": "0.2.1",
@@ -143,10 +156,21 @@ func (c *connection) close() {
 			c.processCancel()
 		}
 		c.in.Close()
+		if c.processGuard != nil {
+			_ = c.processGuard.Close()
+			c.processGuard = nil
+		}
 		_ = c.cmd.Process.Kill()
 		_ = c.cmd.Wait()
 		_ = os.Remove(c.dir)
 	})
+}
+
+func (c *connection) processID() int {
+	if c.cmd != nil && c.cmd.Process != nil {
+		return c.cmd.Process.Pid
+	}
+	return 0
 }
 
 func (c *connection) send(value any) error {
@@ -182,6 +206,11 @@ func (c *connection) read() (message, error) {
 	}
 	if err := json.Unmarshal(c.out.Bytes(), &msg); err != nil {
 		return msg, fmt.Errorf("invalid Codex response: %w", err)
+	}
+	if msg.Method != "" && len(msg.ID) == 0 {
+		// Protocol activity only: never log notification payloads, source text,
+		// reasoning or tool arguments when diagnosing a delayed first token.
+		slog.Debug("Codex notification", "method", msg.Method, "process_id", c.processID())
 	}
 	// This client implements no tool or approval requests.
 	if msg.Method != "" && len(msg.ID) > 0 {
@@ -230,7 +259,9 @@ func (c *connection) deferNotification(msg message) error {
 
 func (c *connection) call(method string, params any, result any) error {
 	started := time.Now()
-	defer func() { slog.Info("Codex RPC", "method", method, "elapsed_ms", time.Since(started).Milliseconds()) }()
+	defer func() {
+		slog.Info("Codex RPC", "method", method, "process_id", c.processID(), "elapsed_ms", time.Since(started).Milliseconds())
+	}()
 	c.seq++
 	id := c.seq
 	if err := c.send(map[string]any{"id": id, "method": method, "params": params}); err != nil {
@@ -474,7 +505,6 @@ func (c *connection) prepareSession(key sessionKey) error {
 		return err
 	}
 	c.prepared = &preparedThread{key: key, id: id, accountRevision: revision}
-	c.prepareEnabled = true
 	return nil
 }
 
@@ -511,9 +541,11 @@ func (c *connection) startThread(model, instructions, effort string) (string, er
 	}
 	options := map[string]any{
 		"mcp_servers": servers, "web_search": "disabled", "project_doc_max_bytes": 0,
+		"skills": map[string]any{"bundled": map[string]any{"enabled": false}, "include_instructions": false},
 		"features": map[string]any{"shell_tool": false, "unified_exec": false, "apps": false, "view_image": false,
 			"hooks": false, "plugins": false, "plugin_discovery_prefetch": false, "skill_search": false,
-			"apply_patch_freeform": false, "collab": false, "multi_agent": false, "code_mode": false},
+			"skip_host_skill_discovery": true,
+			"apply_patch_freeform":      false, "collab": false, "multi_agent": false, "code_mode": false},
 	}
 	if effort != "" && effort != "default" {
 		options["model_reasoning_effort"] = effort
@@ -564,7 +596,7 @@ func (c *connection) streamWithProgress(model, instructions, input, effort strin
 	}
 	var output strings.Builder
 	var lastUpstreamError string
-	var acknowledged, completed bool
+	var acknowledged, completed, inputReady bool
 	var acknowledgementTimer *time.Timer
 	defer func() {
 		if acknowledgementTimer != nil {
@@ -584,7 +616,7 @@ streamLoop:
 			return output.String(), err
 		}
 		if string(msg.ID) == fmt.Sprint(requestID) && msg.Method == "" {
-			slog.Info("Codex RPC", "method", "turn/start", "elapsed_ms", time.Since(turnStarted).Milliseconds())
+			slog.Info("Codex RPC", "method", "turn/start", "process_id", c.processID(), "elapsed_ms", time.Since(turnStarted).Milliseconds())
 			if acknowledgementTimer != nil && !acknowledgementTimer.Stop() {
 				return output.String(), errors.New("Codex turn/start acknowledgement timed out after completed output")
 			}
@@ -621,10 +653,17 @@ streamLoop:
 		}
 		// Log protocol stages only, never screen text or reasoning contents.
 		if msg.Method != "item/agentMessage/delta" {
-			slog.Debug("Codex stream event", "method", msg.Method, "item_type", event.Item.Type)
+			slog.Debug("Codex stream event", "method", msg.Method, "item_type", event.Item.Type, "process_id", c.processID())
 		}
 		switch msg.Method {
 		case "turn/started", "item/started", "item/reasoning/textDelta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded":
+			if msg.Method == "item/started" && event.Item.Type == "userMessage" {
+				if !inputReady && onProgress != nil {
+					onProgress(progressInputReady)
+				}
+				inputReady = true
+				continue
+			}
 			if msg.Method == "item/started" && event.Item.Type != "reasoning" && event.Item.Type != "agentMessage" {
 				continue
 			}

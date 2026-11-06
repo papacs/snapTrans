@@ -14,8 +14,14 @@ import (
 // request semantics.
 type translationTransport struct{ base http.RoundTripper }
 
-func translationHTTPClient() *http.Client {
-	return &http.Client{Transport: translationTransport{base: http.DefaultTransport}}
+func translationHTTPClient(model string) *http.Client {
+	var transport http.RoundTripper = http.DefaultTransport
+	// Local and other compatible models need no JSON patch. Forward their
+	// original request stream instead of copying image/base64 payloads again.
+	if isDeepSeekV4Model(model) {
+		transport = translationTransport{base: transport}
+	}
+	return &http.Client{Transport: transport}
 }
 
 func (t translationTransport) RoundTrip(request *http.Request) (*http.Response, error) {

@@ -1,8 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { warmReply, beginScrollingScreenshot, cancelScrollingScreenshot, stepScrollingScreenshot, finishScrollingScreenshot, copyImageDataUrl, copyText, defaultConfig, saveConfig, testConnection, loadConfig, clearHistory, getHistory, getCodexStatus, loginCodex, translateRegion } from "./backend";
+import { showCaptureWindow, warmReply, beginScrollingScreenshot, cancelScrollingScreenshot, stepScrollingScreenshot, finishScrollingScreenshot, copyImageDataUrl, copyText, defaultConfig, saveConfig, testConnection, loadConfig, clearHistory, getHistory, getCodexStatus, loginCodex, translateRegion } from "./backend";
 
 afterEach(() => { delete window.go; delete window.runtime; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe("native boundary", () => {
+ it("checks capture identity before showing the prepared screenshot", async () => {
+  const show = vi.fn(async () => {});
+  const scopedShow = vi.fn(async (_captureId: number) => false);
+  window.go = {desktop:{App:{ShowCaptureWindow:show,ShowCaptureWindowForCapture:scopedShow}}} as unknown as Window["go"];
+  await expect(showCaptureWindow(12)).resolves.toBe(false);
+  expect(scopedShow).toHaveBeenCalledExactlyOnceWith(12);
+  expect(show).not.toHaveBeenCalled();
+  await expect(showCaptureWindow()).resolves.toBe(true);
+  expect(show).toHaveBeenCalledTimes(1);
+ });
  it("warms a reply with only its scene and input mode", async () => {
   const warm = vi.fn(async () => {});
   window.go = {desktop:{App:{WarmReply:warm}}} as unknown as Window["go"];

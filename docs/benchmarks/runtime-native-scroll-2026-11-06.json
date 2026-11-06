@@ -1,0 +1,996 @@
+{
+  "date": "2026-11-06",
+  "status": "controlled-native-alignment-and-pixel-oracle-passed",
+  "privacy": {
+    "pixelFilesSaved": false,
+    "pixelOrHashOutput": false,
+    "source": "Root-controlled synthetic Notepad fixture only",
+    "agentInput": false
+  },
+  "scope": "PMV2 native ScreenRegion plus production manual-scroll component; no Wails hole/selection flow claim",
+  "native40": {
+    "capture": {
+      "count": 40,
+      "meanMs": 38.717205,
+      "p50Ms": 37.5401,
+      "p95Ms": 47.4361,
+      "maxMs": 55.3361
+    },
+    "decode": {
+      "count": 40,
+      "meanMs": 36.044385,
+      "p50Ms": 35.0032,
+      "p95Ms": 44.4884,
+      "maxMs": 46.9701
+    },
+    "distinctRasters": 2,
+    "documentTextOCRVerified": false,
+    "encode": {
+      "count": 40,
+      "meanMs": 36.9535025,
+      "p50Ms": 36.4646,
+      "p95Ms": 43.7438,
+      "maxMs": 49.6771
+    },
+    "iterations": 40,
+    "memory": [
+      {
+        "iteration": 0,
+        "heapBytes": 343896,
+        "heapSysBytes": 8126464,
+        "gdiObjects": 1
+      },
+      {
+        "iteration": 10,
+        "heapBytes": 371056,
+        "heapSysBytes": 50135040,
+        "gdiObjects": 1
+      },
+      {
+        "iteration": 20,
+        "heapBytes": 374512,
+        "heapSysBytes": 58523648,
+        "gdiObjects": 1
+      },
+      {
+        "iteration": 30,
+        "heapBytes": 377792,
+        "heapSysBytes": 58523648,
+        "gdiObjects": 1
+      },
+      {
+        "iteration": 40,
+        "heapBytes": 381056,
+        "heapSysBytes": 58523648,
+        "gdiObjects": 1
+      }
+    ],
+    "nonFlatCenterFrames": 40,
+    "pngPixelsVerified": true
+  },
+  "oldDPIUnaware40Excluded": "1536x864 virtualized data cannot establish 1920x1080 production timing",
+  "scrolling": [
+    {
+      "run": 1,
+      "log": "build/runtime-tests/20261106-live/native-scroll-01.jsonl",
+      "result": "static-only-input-after-window",
+      "summary": {
+        "appended": 0,
+        "distinctRasters": 1,
+        "documentOrderVerified": false,
+        "exportPNGDecoded": true,
+        "frames": 1,
+        "height": 920,
+        "memory": [
+          {
+            "iteration": 0,
+            "heapBytes": 339240,
+            "heapSysBytes": 3964928,
+            "gdiObjects": 1
+          },
+          {
+            "iteration": 90,
+            "heapBytes": 373288,
+            "heapSysBytes": 62717952,
+            "gdiObjects": 1
+          }
+        ],
+        "native": {
+          "count": 90,
+          "meanMs": 56.392556666666664,
+          "p50Ms": 29.1865,
+          "p95Ms": 75.3726,
+          "maxMs": 1751.9693
+        },
+        "observations": 90,
+        "pngBytes": 85061,
+        "sourceCaptures": 91,
+        "step": {
+          "count": 90,
+          "meanMs": 74.39957,
+          "p50Ms": 30.7179,
+          "p95Ms": 82.6967,
+          "maxMs": 1755.5452
+        },
+        "uiHoleAndHotkeyVerified": false,
+        "width": 1600
+      },
+      "appends": [],
+      "viewport": []
+    },
+    {
+      "run": 2,
+      "log": "build/runtime-tests/20261106-live/native-scroll-02.jsonl",
+      "result": "alignment-failed",
+      "summary": {
+        "appended": 2,
+        "distinctRasters": 11,
+        "documentOrderVerified": false,
+        "exportPNGDecoded": true,
+        "frames": 3,
+        "height": 1514,
+        "memory": [
+          {
+            "iteration": 0,
+            "heapBytes": 334720,
+            "heapSysBytes": 8159232,
+            "gdiObjects": 1
+          },
+          {
+            "iteration": 328,
+            "heapBytes": 1633104,
+            "heapSysBytes": 58490880,
+            "gdiObjects": 1
+          }
+        ],
+        "native": {
+          "count": 328,
+          "meanMs": 23.912820426829267,
+          "p50Ms": 21.8269,
+          "p95Ms": 38.2836,
+          "maxMs": 47.8628
+        },
+        "observations": 328,
+        "pngBytes": 146907,
+        "sourceCaptures": 329,
+        "step": {
+          "count": 328,
+          "meanMs": 25.477478658536587,
+          "p50Ms": 22.9594,
+          "p95Ms": 42.3854,
+          "maxMs": 57.8995
+        },
+        "uiHoleAndHotkeyVerified": false,
+        "width": 1600
+      },
+      "appends": [
+        {
+          "utc": "2026-11-06T03:41:56.8655535Z",
+          "height": 1487,
+          "frames": 2
+        },
+        {
+          "utc": "2026-11-06T03:42:18.6439342Z",
+          "height": 1514,
+          "frames": 3
+        }
+      ],
+      "viewport": []
+    },
+    {
+      "run": 3,
+      "log": "build/runtime-tests/20261106-live/native-scroll-03.jsonl",
+      "result": "alignment-failed",
+      "summary": {
+        "appended": 2,
+        "distinctRasters": 7,
+        "documentOrderVerified": false,
+        "exportPNGDecoded": true,
+        "frames": 3,
+        "height": 974,
+        "memory": [
+          {
+            "iteration": 0,
+            "heapBytes": 339720,
+            "heapSysBytes": 8159232,
+            "gdiObjects": 1
+          },
+          {
+            "iteration": 326,
+            "heapBytes": 1637632,
+            "heapSysBytes": 66912256,
+            "gdiObjects": 1
+          }
+        ],
+        "native": {
+          "count": 326,
+          "meanMs": 25.185973619631902,
+          "p50Ms": 23.4749,
+          "p95Ms": 38.1906,
+          "maxMs": 52.6531
+        },
+        "observations": 326,
+        "pngBytes": 79066,
+        "sourceCaptures": 327,
+        "step": {
+          "count": 326,
+          "meanMs": 27.487652760736196,
+          "p50Ms": 25.6325,
+          "p95Ms": 43.1584,
+          "maxMs": 66.5921
+        },
+        "uiHoleAndHotkeyVerified": false,
+        "width": 1600
+      },
+      "appends": [
+        {
+          "utc": "2026-11-06T04:21:07.507461Z",
+          "height": 947,
+          "frames": 2
+        },
+        {
+          "utc": "2026-11-06T04:22:32.1990733Z",
+          "height": 974,
+          "frames": 3
+        }
+      ],
+      "viewport": []
+    },
+    {
+      "run": 4,
+      "log": "build/runtime-tests/20261106-live/native-scroll-04.jsonl",
+      "result": "alignment-failed",
+      "summary": {
+        "appended": 1,
+        "distinctRasters": 4,
+        "documentOrderVerified": false,
+        "exportPNGDecoded": true,
+        "frames": 2,
+        "height": 947,
+        "memory": [
+          {
+            "iteration": 0,
+            "heapBytes": 334008,
+            "heapSysBytes": 8159232,
+            "gdiObjects": 1
+          },
+          {
+            "iteration": 327,
+            "heapBytes": 1633952,
+            "heapSysBytes": 66879488,
+            "gdiObjects": 1
+          }
+        ],
+        "native": {
+          "count": 327,
+          "meanMs": 24.4536871559633,
+          "p50Ms": 22.5464,
+          "p95Ms": 39.4602,
+          "maxMs": 49.4549
+        },
+        "observations": 327,
+        "pngBytes": 78288,
+        "sourceCaptures": 328,
+        "step": {
+          "count": 327,
+          "meanMs": 27.3821871559633,
+          "p50Ms": 24.8777,
+          "p95Ms": 44.388,
+          "maxMs": 83.3848
+        },
+        "uiHoleAndHotkeyVerified": false,
+        "width": 1600
+      },
+      "appends": [
+        {
+          "utc": "2026-11-06T04:31:19.7446471Z",
+          "height": 947,
+          "frames": 2
+        }
+      ],
+      "viewport": [
+        {
+          "utc": "2026-11-06T04:30:16.9873306Z",
+          "firstVisible": null,
+          "lineHeight": null,
+          "nativeForeground": true,
+          "anchors": []
+        },
+        {
+          "utc": "2026-11-06T04:31:00.1153613Z",
+          "firstVisible": null,
+          "lineHeight": null,
+          "nativeForeground": true,
+          "anchors": []
+        },
+        {
+          "utc": "2026-11-06T04:31:10.1788127Z",
+          "firstVisible": null,
+          "lineHeight": null,
+          "nativeForeground": true,
+          "anchors": []
+        },
+        {
+          "utc": "2026-11-06T04:31:19.697595Z",
+          "firstVisible": null,
+          "lineHeight": null,
+          "nativeForeground": true,
+          "anchors": []
+        }
+      ]
+    },
+    {
+      "run": 5,
+      "log": "build/runtime-tests/20261106-live/native-scroll-05.jsonl",
+      "result": "alignment-failed",
+      "summary": {
+        "appended": 1,
+        "distinctRasters": 4,
+        "documentOrderVerified": false,
+        "exportPNGDecoded": true,
+        "frames": 2,
+        "height": 947,
+        "memory": [
+          {
+            "iteration": 0,
+            "heapBytes": 334408,
+            "heapSysBytes": 8159232,
+            "gdiObjects": 1
+          },
+          {
+            "iteration": 328,
+            "heapBytes": 1643904,
+            "heapSysBytes": 66912256,
+            "gdiObjects": 1
+          }
+        ],
+        "native": {
+          "count": 328,
+          "meanMs": 23.906638719512195,
+          "p50Ms": 21.7863,
+          "p95Ms": 38.9834,
+          "maxMs": 53.6224
+        },
+        "observations": 328,
+        "pngBytes": 78288,
+        "sourceCaptures": 329,
+        "step": {
+          "count": 328,
+          "meanMs": 27.000300914634145,
+          "p50Ms": 23.8001,
+          "p95Ms": 42.7568,
+          "maxMs": 130.4939
+        },
+        "uiHoleAndHotkeyVerified": false,
+        "width": 1600
+      },
+      "appends": [
+        {
+          "utc": "2026-11-06T04:50:15.4385356Z",
+          "height": 947,
+          "frames": 2
+        }
+      ],
+      "viewport": [
+        {
+          "utc": "2026-11-06T04:49:35.0673894Z",
+          "firstVisible": 295,
+          "lineHeight": null,
+          "nativeForeground": true,
+          "anchors": []
+        },
+        {
+          "utc": "2026-11-06T04:49:52.6018793Z",
+          "firstVisible": 296,
+          "lineHeight": null,
+          "nativeForeground": true,
+          "anchors": []
+        },
+        {
+          "utc": "2026-11-06T04:50:03.6661313Z",
+          "firstVisible": 297,
+          "lineHeight": null,
+          "nativeForeground": true,
+          "anchors": []
+        },
+        {
+          "utc": "2026-11-06T04:50:15.3774828Z",
+          "firstVisible": 326,
+          "lineHeight": null,
+          "nativeForeground": true,
+          "anchors": []
+        }
+      ]
+    },
+    {
+      "run": 6,
+      "log": "build/runtime-tests/20261106-live/native-scroll-06.jsonl",
+      "result": "alignment-failed",
+      "summary": {
+        "appended": 2,
+        "controlledNotepadOracle": null,
+        "distinctRasters": 4,
+        "documentOrderVerified": false,
+        "exportPNGDecoded": true,
+        "extraOracleMemoryAndTiming": false,
+        "frames": 3,
+        "height": 974,
+        "memory": [
+          {
+            "iteration": 0,
+            "heapBytes": 339480,
+            "heapSysBytes": 8159232,
+            "gdiObjects": 1
+          },
+          {
+            "iteration": 324,
+            "heapBytes": 1633208,
+            "heapSysBytes": 66879488,
+            "gdiObjects": 1
+          }
+        ],
+        "native": {
+          "count": 324,
+          "meanMs": 26.363305246913583,
+          "p50Ms": 24.2804,
+          "p95Ms": 40.2706,
+          "maxMs": 50.9989
+        },
+        "observations": 324,
+        "pngBytes": 85425,
+        "sourceCaptures": 325,
+        "step": {
+          "count": 324,
+          "meanMs": 30.276952777777776,
+          "p50Ms": 27.7201,
+          "p95Ms": 46.0938,
+          "maxMs": 99.945
+        },
+        "uiHoleAndHotkeyVerified": false,
+        "width": 1600
+      },
+      "appends": [
+        {
+          "utc": "2026-11-06T05:25:43.8283674Z",
+          "height": 947,
+          "frames": 2
+        },
+        {
+          "utc": "2026-11-06T05:25:55.6053033Z",
+          "height": 974,
+          "frames": 3
+        }
+      ],
+      "viewport": [
+        {
+          "utc": "2026-11-06T05:24:52.9279832Z",
+          "firstVisible": 295,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": []
+        },
+        {
+          "utc": "2026-11-06T05:25:43.8023753Z",
+          "firstVisible": 296,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": [
+            {
+              "advance": 0,
+              "uniqueRowPairCount": 43,
+              "nextYFirst": 661,
+              "nextYLast": 914,
+              "nextYSpan": 253
+            },
+            {
+              "advance": 27,
+              "uniqueRowPairCount": 105,
+              "nextYFirst": 72,
+              "nextYLast": 842,
+              "nextYSpan": 770
+            }
+          ]
+        },
+        {
+          "utc": "2026-11-06T05:25:55.5768859Z",
+          "firstVisible": 297,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": [
+            {
+              "advance": 0,
+              "uniqueRowPairCount": 44,
+              "nextYFirst": 661,
+              "nextYLast": 914,
+              "nextYSpan": 253
+            },
+            {
+              "advance": 27,
+              "uniqueRowPairCount": 92,
+              "nextYFirst": 45,
+              "nextYLast": 815,
+              "nextYSpan": 770
+            }
+          ]
+        },
+        {
+          "utc": "2026-11-06T05:26:16.8064266Z",
+          "firstVisible": 326,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": [
+            {
+              "advance": 0,
+              "uniqueRowPairCount": 49,
+              "nextYFirst": 661,
+              "nextYLast": 914,
+              "nextYSpan": 253
+            },
+            {
+              "advance": 783,
+              "uniqueRowPairCount": 2,
+              "nextYFirst": 31,
+              "nextYLast": 32,
+              "nextYSpan": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run": 7,
+      "log": "build/runtime-tests/20261106-live/native-scroll-07.jsonl",
+      "result": "original-ROI-native-alignment-passed",
+      "summary": {
+        "appended": 3,
+        "controlledNotepadOracle": null,
+        "distinctRasters": 5,
+        "documentOrderVerified": false,
+        "exportPNGDecoded": true,
+        "extraOracleMemoryAndTiming": false,
+        "frames": 4,
+        "height": 1757,
+        "memory": [
+          {
+            "iteration": 0,
+            "heapBytes": 334240,
+            "heapSysBytes": 3964928,
+            "gdiObjects": 1
+          },
+          {
+            "iteration": 219,
+            "heapBytes": 383904,
+            "heapSysBytes": 83656704,
+            "gdiObjects": 1
+          }
+        ],
+        "native": {
+          "count": 219,
+          "meanMs": 22.756890410958906,
+          "p50Ms": 21.9643,
+          "p95Ms": 31.0353,
+          "maxMs": 41.5967
+        },
+        "observations": 219,
+        "pngBytes": 158456,
+        "sourceCaptures": 220,
+        "step": {
+          "count": 219,
+          "meanMs": 26.707095890410958,
+          "p50Ms": 23.9865,
+          "p95Ms": 36.6724,
+          "maxMs": 161.1944
+        },
+        "uiHoleAndHotkeyVerified": false,
+        "width": 1600
+      },
+      "appends": [
+        {
+          "utc": "2026-11-06T05:46:16.4401469Z",
+          "height": 947,
+          "frames": 2
+        },
+        {
+          "utc": "2026-11-06T05:46:28.2039276Z",
+          "height": 974,
+          "frames": 3
+        },
+        {
+          "utc": "2026-11-06T05:46:41.5866317Z",
+          "height": 1757,
+          "frames": 4
+        }
+      ],
+      "viewport": [
+        {
+          "utc": "2026-11-06T05:45:44.5516462Z",
+          "firstVisible": 295,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": []
+        },
+        {
+          "utc": "2026-11-06T05:46:16.4025764Z",
+          "firstVisible": 296,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": [
+            {
+              "advance": 0,
+              "uniqueRowPairCount": 54,
+              "nextYFirst": 607,
+              "nextYLast": 919,
+              "nextYSpan": 312
+            },
+            {
+              "advance": 27,
+              "uniqueRowPairCount": 90,
+              "nextYFirst": 72,
+              "nextYLast": 842,
+              "nextYSpan": 770
+            }
+          ]
+        },
+        {
+          "utc": "2026-11-06T05:46:17.1423986Z",
+          "firstVisible": 296,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": [
+            {
+              "advance": 0,
+              "uniqueRowPairCount": 246,
+              "nextYFirst": 72,
+              "nextYLast": 914,
+              "nextYSpan": 842
+            }
+          ]
+        },
+        {
+          "utc": "2026-11-06T05:46:28.17337Z",
+          "firstVisible": 297,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": [
+            {
+              "advance": 0,
+              "uniqueRowPairCount": 43,
+              "nextYFirst": 607,
+              "nextYLast": 914,
+              "nextYSpan": 307
+            },
+            {
+              "advance": 27,
+              "uniqueRowPairCount": 90,
+              "nextYFirst": 45,
+              "nextYLast": 815,
+              "nextYSpan": 770
+            }
+          ]
+        },
+        {
+          "utc": "2026-11-06T05:46:41.4879881Z",
+          "firstVisible": 326,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": [
+            {
+              "advance": 0,
+              "uniqueRowPairCount": 43,
+              "nextYFirst": 607,
+              "nextYLast": 914,
+              "nextYSpan": 307
+            },
+            {
+              "advance": 783,
+              "uniqueRowPairCount": 13,
+              "nextYFirst": 18,
+              "nextYLast": 32,
+              "nextYSpan": 14
+            }
+          ]
+        }
+      ],
+      "oracleAccepted": []
+    },
+    {
+      "run": 8,
+      "log": "build/runtime-tests/20261106-live/native-scroll-08.jsonl",
+      "result": "pure-Edit-independent-position-pixel-oracle-passed",
+      "summary": {
+        "appended": 3,
+        "controlledNotepadOracle": {
+          "diagnosticExtraMemory": true,
+          "expectedHeight": 1755,
+          "finalFirstVisibleLine": 326,
+          "initialFirstVisibleLine": 295,
+          "measuredLineHeight": 27,
+          "mismatchingPixels": 0,
+          "mismatchingRows": 0,
+          "nativeAppendCount": 3,
+          "pixelEqual": true,
+          "problem": "",
+          "stableSamplesRequired": 2
+        },
+        "distinctRasters": 5,
+        "documentOrderVerified": false,
+        "exportPNGDecoded": true,
+        "extraOracleMemoryAndTiming": true,
+        "frames": 4,
+        "height": 1755,
+        "memory": [
+          {
+            "iteration": 0,
+            "heapBytes": 334248,
+            "heapSysBytes": 3964928,
+            "gdiObjects": 1
+          },
+          {
+            "iteration": 222,
+            "heapBytes": 1627720,
+            "heapSysBytes": 58490880,
+            "gdiObjects": 1
+          }
+        ],
+        "native": {
+          "count": 222,
+          "meanMs": 18.409091441441443,
+          "p50Ms": 18.2257,
+          "p95Ms": 24.4132,
+          "maxMs": 31.2612
+        },
+        "observations": 222,
+        "pngBytes": 123776,
+        "sourceCaptures": 223,
+        "step": {
+          "count": 222,
+          "meanMs": 24.483812162162163,
+          "p50Ms": 22.4205,
+          "p95Ms": 39.1951,
+          "maxMs": 130.0128
+        },
+        "uiHoleAndHotkeyVerified": false,
+        "width": 1000
+      },
+      "appends": [
+        {
+          "utc": "2026-11-06T05:50:48.7878493Z",
+          "height": 945,
+          "frames": 2
+        },
+        {
+          "utc": "2026-11-06T05:51:11.1160993Z",
+          "height": 972,
+          "frames": 3
+        },
+        {
+          "utc": "2026-11-06T05:51:37.8618186Z",
+          "height": 1755,
+          "frames": 4
+        }
+      ],
+      "viewport": [
+        {
+          "utc": "2026-11-06T05:50:17.4421126Z",
+          "firstVisible": 295,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": []
+        },
+        {
+          "utc": "2026-11-06T05:50:48.766803Z",
+          "firstVisible": 296,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": [
+            {
+              "advance": 27,
+              "uniqueRowPairCount": 135,
+              "nextYFirst": 6,
+              "nextYLast": 884,
+              "nextYSpan": 878
+            }
+          ]
+        },
+        {
+          "utc": "2026-11-06T05:51:11.0960986Z",
+          "firstVisible": 297,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": [
+            {
+              "advance": 27,
+              "uniqueRowPairCount": 120,
+              "nextYFirst": 87,
+              "nextYLast": 857,
+              "nextYSpan": 770
+            }
+          ]
+        },
+        {
+          "utc": "2026-11-06T05:51:32.7917125Z",
+          "firstVisible": 297,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": [
+            {
+              "advance": 0,
+              "uniqueRowPairCount": 120,
+              "nextYFirst": 87,
+              "nextYLast": 857,
+              "nextYSpan": 770
+            }
+          ]
+        },
+        {
+          "utc": "2026-11-06T05:51:37.8108185Z",
+          "firstVisible": 326,
+          "lineHeight": 27,
+          "nativeForeground": true,
+          "anchors": [
+            {
+              "advance": 783,
+              "uniqueRowPairCount": 13,
+              "nextYFirst": 60,
+              "nextYLast": 74,
+              "nextYSpan": 14
+            }
+          ]
+        }
+      ],
+      "oracleAccepted": [
+        {
+          "utc": "2026-11-06T05:50:17.9915157Z",
+          "data": {
+            "expectedHeight": 918,
+            "firstVisibleLine": 295,
+            "measuredLineHeight": 27
+          }
+        },
+        {
+          "utc": "2026-11-06T05:50:49.3706962Z",
+          "data": {
+            "expectedHeight": 945,
+            "firstVisibleLine": 296,
+            "measuredLineHeight": 27,
+            "nativeExtension": 27
+          }
+        },
+        {
+          "utc": "2026-11-06T05:51:11.7219302Z",
+          "data": {
+            "expectedHeight": 972,
+            "firstVisibleLine": 297,
+            "measuredLineHeight": 27,
+            "nativeExtension": 27
+          }
+        },
+        {
+          "utc": "2026-11-06T05:51:38.4406721Z",
+          "data": {
+            "expectedHeight": 1755,
+            "firstVisibleLine": 326,
+            "measuredLineHeight": 27,
+            "nativeExtension": 783
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [
+    "Sparse sampler edge exclusion and best-row trimming discarded narrow section numbers.",
+    "94-percent row agreement plus absolute matching-row count still aliased one-row identifiers.",
+    "Full-width unique row anchors preserve narrow identifiers and reject contradictory weak fallback.",
+    "Run06 true783 retained exactly two adjacent unique row anchors at nextY31/32; short-overlap glyph-spacing gate rejected them and is now removed.",
+    "Historical finding: the original 920px ROI included 36px outside the Edit client, so height alone verified alignment only. Run08 has since completed the final pure-Edit 1000x918 native-position pixel oracle with zero differing rows and pixels; the earlier 800px control was superseded."
+  ],
+  "verification": {
+    "capture": "go test ./internal/capture -count=1: PASS 13.776s",
+    "oracle": "three opt-in harness synthetic oracle tests: PASS 2.031s",
+    "peer": "latest short-overlap change reviewed without new blocker",
+    "actualRepairStatus": "Final source passed original1600x920 ROI native27/27/783 alignment (Run07), then pureEdit1000x918 native-position oracle with zero differing rows/pixels (Run08)."
+  },
+  "oracleMethod": {
+    "nativePosition": "EM_GETFIRSTVISIBLELINE",
+    "physicalLineHeight": "EM_LINEINDEX followed by EM_POSFROMCHAR on adjacent visible lines; observed27px",
+    "stableSamples": 2,
+    "comparison": "independent native-position tail strips versus decoded production PNG, row/pixel mismatch counts only",
+    "extraDiagnosticMemoryAndTiming": true
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/controls/em-getfirstvisibleline",
+    "https://learn.microsoft.com/en-us/windows/win32/controls/em-lineindex",
+    "https://learn.microsoft.com/en-us/windows/win32/controls/em-posfromchar"
+  ],
+  "latestAlgorithm": {
+    "uniqueness": "Full-width informative row CRC must occur exactly once in each complete frame; no fixed edge cut.",
+    "candidate": "Signed previousY-nextY from matching unique rows; at least two distinct row signatures.",
+    "longOverlap": "Require separated anchor positions across the overlap; repeated body matches cannot outweigh numbered anchors.",
+    "shortOverlap": "For overlap below one quarter viewport with broad nonlocal changes, two distinct adjacent rows remain valid; no extra glyph-spacing gate.",
+    "animation": "Changed pixels must reach three of four vertical bands; long-overlap locality and stationary unique anchors across three bands veto local animation.",
+    "conflicts": "Conflicting/insufficient moving anchors return a conclusive veto. Caller preserves last confirmed frame/position and skips weak fallback.",
+    "bounds": "Frame/pixel/canvas caps unchanged; context cancellation retained."
+  },
+  "latestRegressionEvidence": [
+    {
+      "case": "One-pixel-row section identifiers, true594 versus alias54",
+      "old": "974 output height instead of1514",
+      "current": "pass"
+    },
+    {
+      "case": "One-pixel-row identifier, whole108 cycle",
+      "old": "movement discarded",
+      "current": "pass"
+    },
+    {
+      "case": "Fixed160x45 island plus optional36 footer, 27/27/783",
+      "current": "alignment-only pass"
+    },
+    {
+      "case": "Only two adjacent distinct identifier rows in short overlap",
+      "old": "Go red at offset837 with spacing8",
+      "current": "Go green after spacing removal; final same-original-ROI native783 passed with13 anchors spanning14px. Exact2-adjacent-row condition remains directly covered by deterministic Go regression."
+    },
+    {
+      "case": "Caret/small island/multiple carets/different-column carets, small icon plus unrelated flashing bars",
+      "current": "no false append"
+    },
+    {
+      "case": "Conflicting distinct anchors",
+      "current": "no append; observed frame and position preserved"
+    }
+  ],
+  "actualEvidenceBoundary": {
+    "passed": [
+      "PMV2 native40 actual1920x1080 capture/PNG decode exact/nonflat diagnostics; GDI count stable.",
+      "Run07 original1600x920 selectedROI: native295->296->297->326, measuredline27; actual appends27+27+783; final1757; PNGdecoded; approximately63s bottom-static with no duplicate append.",
+      "Run08 pureEdit(8,54,1000,918) verified inside native Edit client: same295->326 native delta31*27=837; final1755.",
+      "Run08 independent two-stable-raster oracle assembled tails from native viewport indices and measured line height: production decodedPNG matched all pixels, mismatchingRows0/mismatchingPixels0.",
+      "Run08 approximately40s bottom-static without duplicate append; both disposable helpers exited."
+    ],
+    "notClaimed": [
+      "No actual Wails hole, frontend selection or global-hotkey flow is covered by this component harness.",
+      "No OCR comparison against the complete underlying unoccluded document; pixel oracle proves selected captured-source continuity against independent native-position assembly.",
+      "Run07 final783 had13 matching unique rows/span14 because the fixed overlay moved; historical exacttwo-adjacent-row native failure was not recreated pixel-identically. Its threshold correction is covered by focused Go regression.",
+      "Oracle and numerical diagnostics allocate extra memory and add timing overhead; their process high-water/step timing does not establish production app memory or UI latency."
+    ],
+    "externalState": "User restored the controlled source; Run07 andRun08 completed without additional UI automation by the capture agent. No capture remains running."
+  },
+  "oracleGeometryAssessment": {
+    "proposed": "x8,y54,width1600,height918: bottom972 inside Edit980;34x27 full lines; native31-line delta837 gives expected1755; final783 overlap135.",
+    "valid": "Geometry and native-position arithmetic are correct if the window is restored to the calibrated maximized state.",
+    "limitation": "A fixed island in an appended tail is copied into both production and independent source-tail oracle. Pixel equality alone cannot prove the underlying document is unoccluded or that no HUD is repeated.",
+    "run05Island": "True27 mismatches: nextY46..91 within old920 ROI, physical near x8..168,y142..187.",
+    "run06Island": "True27 mismatch180 rows: oldROI x1040..1279,y598..827, physical near x1048..1287,y694..923; cannot reuse Run05 top-island assumption.",
+    "interpretation": "A changed ROI that avoids the obstruction is a controlled content/export comparison, not a replacement for replaying the original live783 two-adjacent-row regression."
+  },
+  "finalLiveComparison": {
+    "run07": {
+      "nativeP50Ms": 21.9643,
+      "nativeP95Ms": 31.0353,
+      "nativeMaxMs": 41.5967,
+      "observations": 219,
+      "sourceCaptures": 220,
+      "finalHeight": 1757,
+      "heapBefore": 334240,
+      "heapAfter": 383904,
+      "gdiBefore": 1,
+      "gdiAfter": 1,
+      "semanticScope": "alignment-only-originalROI"
+    },
+    "run08": {
+      "nativeP50Ms": 18.2257,
+      "nativeP95Ms": 24.4132,
+      "nativeMaxMs": 31.2612,
+      "observations": 222,
+      "sourceCaptures": 223,
+      "finalHeight": 1755,
+      "pixelEqual": true,
+      "differingRows": 0,
+      "differingPixels": 0,
+      "oracleExtraDiagnosticMemory": true,
+      "gdiBefore": 1,
+      "gdiAfter": 1
+    }
+  }
+}

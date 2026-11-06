@@ -99,6 +99,8 @@ import {
 import { buildSourceRegions, layoutTranslations, OVERLAY_FONT_FAMILY, type SourceRegion, type OverlayBlock } from "./utils/overlay-layout";
 import { canvasTextMeasurer, leadingMarkerInset, paintTranslationOverlay } from "./utils/overlay-painter";
 import { nativeSelectionBackdrop } from "./utils/selection-backdrop";
+import { loadCaptureImage } from "./utils/capture-image";
+import { encodeTemporaryPNG, releaseCanvas } from "./utils/canvas";
 import { layoutPlainTranslation } from "./utils/plain-translation";
 import { shortcutKeyFromKeyboardEvent } from "./utils/shortcut";
 import { toolbarPosition } from "./utils/annotations";
@@ -136,6 +138,8 @@ const translationInputOverride = ref<"ocr" | undefined>();
 const hasResultSource = computed(() => Boolean(capture.value?.selectedText || lastImageRegion.value || currentCropDataUrl.value));
 const workflowGeneration = ref(0);
 let captureLoadSequence = 0;
+let captureImageAbort: AbortController | null = null;
+const closingCaptureSequence = ref<number | null>(null);
 const errorMessage = ref("");
 const settingsOpen = ref(false);
 const settingsSection = ref<SettingsSection>("ai");
@@ -178,6 +182,9 @@ const favoritesOnly = ref(false);
 const favoritePending = ref("");
 const historyEntries = ref<HistoryEntry[]>([]);
 const historyLoaded = ref(false);
+const historyVisibleCount = ref(30);
+let historyLoadSequence = 0;
+let historyCopyTimer: number | null = null;
 const testStatus = ref<"idle" | "testing" | "ok" | "error">("idle");
 const testMessage = ref("");
 const shortcutRecording = ref<"translate" | "screenshot" | "reply" | null>(null);
@@ -192,7 +199,7 @@ const appVersion = ref("");
 const copied = ref(false);
 const copiedImage = ref(false);
 const copyingGeneration = ref<number | null>(null);
-let savingScreenshotGeneration: number | null = null;
+const savingScreenshotGeneration = ref<number | null>(null);
 const expandedTranslation = ref(false);
 const originalPreviewHeld = ref(false);
 const isDesktop = hasWailsBackend();
@@ -206,6 +213,20 @@ watch(() => [config.provider, config.apiKey, config.baseURL, config.model, confi
 const featureFlags = computed(() => normalizeFeatures(savedConfig.features));
 const hasResultTools = computed(() => Object.entries(featureFlags.value).some(([key,value]) => value && !["historyTools","redaction","textExtraction","tableExtraction"].includes(key)));
 const visibleHistory = computed(() => filterLibrary(historyEntries.value.filter(e=>e.kind!=="learning"),featureFlags.value.historyTools?historyQuery.value:"",featureFlags.value.historyTools&&favoritesOnly.value?"favorites":"all"));
+const renderedHistory = computed(() => visibleHistory.value.slice(0, historyVisibleCount.value));
+watch([historyQuery, favoritesOnly], () => { historyVisibleCount.value = 30; });
+watch(() => settingsOpen.value && settingsSection.value === "library", visible => {
+  if (visible) void loadHistory();
+  else {
+    historyLoadSequence += 1;
+    historyEntries.value = [];
+    historyLoaded.value = false;
+    historyVisibleCount.value = 30;
+    copiedHistoryID.value = "";
+    if (historyCopyTimer !== null) window.clearTimeout(historyCopyTimer);
+    historyCopyTimer = null;
+  }
+});
 watch(() => featureFlags.value.imageCompare, enabled => {if(!enabled)clearComparisonBaseline();});
 const settingsLocale = computed(() => normalizeSettingsLocale(config.uiLanguage));
 const settingsText = computed(() => settingsMessages[settingsLocale.value]);
@@ -635,6 +656,7 @@ onMounted(async () => {
       extensionOpen.value = false;
       sourceText.value = "";
       invalidatePendingCaptureLoad();
+      releaseCaptureResources();
       capture.value = null;
       resultRect.value = null;
       selection.value = null;
@@ -660,7 +682,6 @@ onMounted(async () => {
       if (!settingsOpen.value || session !== settingsSession) return;
       await showSettingsWindow();
       if (!settingsOpen.value || session !== settingsSession) return;
-      void loadHistory();
       void loadEnvironmentStatus();
       if (!wasOpen) void loadAutoStart();
       void loadVersion();
@@ -680,6 +701,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   invalidatePendingCaptureLoad();
+  releaseCaptureResources();
+  historyLoadSequence += 1;
+  if (historyCopyTimer !== null) window.clearTimeout(historyCopyTimer);
   resetTranslationText();
   window.removeEventListener("resize", updateViewport);
   window.removeEventListener("keydown", onKeyDown);
@@ -704,7 +728,8 @@ function updateViewport(): void {
 }
 
 function isCurrentGeneration(payload: { generation?: number }): boolean {
-  return typeof payload.generation !== "number" || payload.generation === workflowGeneration.value;
+  return closingCaptureSequence.value !== captureLoadSequence &&
+    (typeof payload.generation !== "number" || payload.generation === workflowGeneration.value);
 }
 
 function isActiveWorkflow(payload: { generation?: number }): boolean {
@@ -732,7 +757,7 @@ function onKeyDown(event: KeyboardEvent): void {
     return;
   }
   if (extensionOpen.value || document.querySelector("[data-extension-workbench]")) {
-    if(event.key === "Escape") {event.preventDefault(); extensionOpen.value=false;}
+    if(event.key === "Escape") {event.preventDefault(); closeResultTools();}
     return;
   }
   if (settingsOpen.value) {
@@ -769,12 +794,15 @@ async function startCapture(payload: CapturePayload): Promise<void> {
   translationInputOverride.value = undefined;
   replyOpen.value = false;
   extensionOpen.value=false;sourceText.value="";
-  const sequence = ++captureLoadSequence;
-  sampledPaletteCache.clear();
-  measureOverlayText = undefined;
+  invalidatePendingCaptureLoad();
+  const sequence = captureLoadSequence;
+  closingCaptureSequence.value = null;
+  releaseCaptureResources();
   discardSettingsDraft();
   settingsOpen.value = false;
-  capture.value = payload;
+  // The canvas owns the frozen pixels after decoding; avoid retaining the PNG
+  // string/asset URL for the entire translation or editor session.
+  capture.value = { ...payload, image: "" };
   dragStart.value = null;
   selection.value = null;
   resultRect.value = null;
@@ -802,10 +830,10 @@ async function startCapture(payload: CapturePayload): Promise<void> {
       return;
     }
 
-    phase.value = payload.selectedText ? "loading" : "ready";
+    phase.value = payload.selectedText ? "processing" : "ready";
     await nextTick();
     if (sequence !== captureLoadSequence) return;
-    await showCaptureWindow();
+    if (!await showCaptureWindow(payload.captureId)) return;
     if (sequence !== captureLoadSequence) return;
     if (payload.selectedText) {
       await nextTick();
@@ -820,37 +848,29 @@ async function startCapture(payload: CapturePayload): Promise<void> {
     phase.value = "error";
     await nextTick();
     if (sequence !== captureLoadSequence) return;
-    await showCaptureWindow().catch(() => {});
+    await showCaptureWindow(payload.captureId).catch(() => {});
   }
 }
 
 async function drawCapture(payload: CapturePayload, sequence: number): Promise<boolean> {
-  const image = new Image();
-  await new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = () => reject(new Error("Failed to load captured image"));
-    image.src = payload.image;
-  });
-
-  if (sequence !== captureLoadSequence) {
-    return false;
+  const controller = new AbortController();
+  captureImageAbort = controller;
+  let image: HTMLImageElement | null = null;
+  try {
+    image = await loadCaptureImage(payload.image, controller.signal);
+    if (!image || sequence !== captureLoadSequence) return false;
+    const canvas = canvasRef.value;
+    if (!canvas) return false;
+    canvas.width = image.naturalWidth || payload.width;
+    canvas.height = image.naturalHeight || payload.height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new Error("Canvas 2D context is unavailable");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return true;
+  } finally {
+    image?.removeAttribute("src");
+    if (captureImageAbort === controller) captureImageAbort = null;
   }
-
-  const canvas = canvasRef.value;
-  if (!canvas) {
-    return false;
-  }
-
-  canvas.width = image.naturalWidth || payload.width;
-  canvas.height = image.naturalHeight || payload.height;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) {
-    throw new Error("Canvas 2D context is unavailable");
-  }
-
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  return true;
 }
 
 function nativeSelectionRect(): Rect | null {
@@ -879,6 +899,21 @@ async function submitNativeSelection(sequence: number): Promise<void> {
 
 function invalidatePendingCaptureLoad(): void {
   captureLoadSequence += 1;
+  captureImageAbort?.abort();
+  captureImageAbort = null;
+}
+
+function releaseCaptureResources(): void {
+  releaseCanvas(canvasRef.value);
+  sampledPaletteCache.clear();
+  measureOverlayText = undefined;
+  closeResultTools();
+}
+
+function closeResultTools(): void {
+  extensionOpen.value = false;
+  extensionImage.value = "";
+  extensionTranslatedImage.value = "";
 }
 
 function pointerPosition(event: MouseEvent): Point {
@@ -1041,11 +1076,27 @@ function isCaptureActive(): boolean {
 }
 
 async function cancelCapture(): Promise<void> {
-  replyOpen.value = false;
-  extensionOpen.value=false;sourceText.value="";
+  if (closingCaptureSequence.value === captureLoadSequence) return;
   invalidatePendingCaptureLoad();
+  const sequence = captureLoadSequence;
+  closingCaptureSequence.value = sequence;
+  workflowGeneration.value += 1;
+  flushTranslationText();
   detachCaptureDragListeners();
   dragStart.value = null;
+  // Keep the frozen pixels in place until the native window is hidden. A slow
+  // bridge must not briefly expose an empty fullscreen WebView on close.
+  try { await hideWindow(); }
+  catch (error) {
+    if (sequence === captureLoadSequence) screenshotNotice.value = error instanceof Error ? error.message : "Unable to close capture";
+    return;
+  } finally {
+    if (closingCaptureSequence.value === sequence) closingCaptureSequence.value = null;
+  }
+  if (sequence !== captureLoadSequence) return;
+  releaseCaptureResources();
+  replyOpen.value = false;
+  sourceText.value = "";
   selection.value = null;
   capture.value = null;
   resultRect.value = null;
@@ -1058,9 +1109,7 @@ async function cancelCapture(): Promise<void> {
   currentCropDataUrl.value = "";
   lastImageRegion.value = null;
   screenshotNotice.value = "";
-  workflowGeneration.value += 1;
   phase.value = "idle";
-  await hideWindow();
 }
 
 async function completeScreenshot(dataUrl: string): Promise<void> {
@@ -1082,8 +1131,8 @@ async function completeScreenshot(dataUrl: string): Promise<void> {
 
 async function saveEditedScreenshot(dataUrl: string): Promise<void> {
   const generation = workflowGeneration.value;
-  if (savingScreenshotGeneration === generation) return;
-  savingScreenshotGeneration = generation;
+  if (savingScreenshotGeneration.value === generation) return;
+  savingScreenshotGeneration.value = generation;
   screenshotNotice.value = "正在保存...";
   try {
     const path = await saveScreenshot(dataUrl);
@@ -1093,7 +1142,7 @@ async function saveEditedScreenshot(dataUrl: string): Promise<void> {
     if (generation !== workflowGeneration.value) return;
     screenshotNotice.value = error instanceof Error ? error.message : "保存截图失败";
   } finally {
-    if (savingScreenshotGeneration === generation) savingScreenshotGeneration = null;
+    if (savingScreenshotGeneration.value === generation) savingScreenshotGeneration.value = null;
   }
 }
 
@@ -1267,7 +1316,7 @@ function renderTranslatedSelectionImage(): string | null {
     context.textAlign = "left";
     context.textBaseline = "middle";
     card.lines.forEach((line, index) => context.fillText(line, card.padding, card.padding + card.lineHeight * (index + 0.5)));
-    return target.toDataURL("image/png");
+    return encodeTemporaryPNG(target);
   }
   target.width = imageRect.width;
   target.height = imageRect.height;
@@ -1282,7 +1331,7 @@ function renderTranslatedSelectionImage(): string | null {
   }
   context.restore();
   paintTranslationOverlay(context, styledOverlayBlocks.value, imageRect.width / rect.width, imageRect.height / rect.height);
-  return target.toDataURL("image/png");
+  return encodeTemporaryPNG(target);
 }
 
 function openResultTools(): void {
@@ -1293,7 +1342,7 @@ function openResultTools(): void {
  const cropped=document.createElement("canvas");cropped.width=imageRect.width;cropped.height=imageRect.height;
  const ctx=cropped.getContext("2d");if(!ctx)return;
  ctx.drawImage(canvas,imageRect.x,imageRect.y,imageRect.width,imageRect.height,0,0,cropped.width,cropped.height);
- extensionImage.value=cropped.toDataURL("image/png");
+ extensionImage.value=encodeTemporaryPNG(cropped);
  extensionTranslatedImage.value=cleanTranslationText.value?renderTranslatedSelectionImage()??"":"";
  extensionOrigin.value={x:(capture.value?.originX??0)+imageRect.x,y:(capture.value?.originY??0)+imageRect.y};
  extensionOpen.value=true;
@@ -1315,22 +1364,7 @@ function cssColorForSampledColor(color: SampledColor | null): string | null {
 }
 
 async function restore(): Promise<void> {
-  replyOpen.value = false;
-  extensionOpen.value=false;sourceText.value="";
-  phase.value = "idle";
-  capture.value = null;
-  selection.value = null;
-  resultRect.value = null;
-  textBlocks.value = [];
-  resetTranslationText();
-  currentCropDataUrl.value = "";
-  lastImageRegion.value = null;
-  errorMessage.value = "";
-  copied.value = false;
-  copiedImage.value = false;
-  expandedTranslation.value = false;
-  workflowGeneration.value += 1;
-  await hideWindow();
+  await cancelCapture();
 }
 
 function discardSettingsDraft(): void {
@@ -1359,7 +1393,6 @@ function openSettings(): void {
   discardSettingsDraft();
   settingsError.value = "";
   settingsOpen.value = true;
-  void loadHistory();
   void loadEnvironmentStatus();
   void loadAutoStart();
   void loadVersion();
@@ -1390,11 +1423,18 @@ async function loadAutoStart(): Promise<void> {
 }
 
 async function copyHistoryEntry(entry: HistoryEntry): Promise<void> {
+  const sequence = historyLoadSequence;
   try {
     await copyText(bilingualHistoryText(entry, settingsLocale.value));
+    if (sequence !== historyLoadSequence || !settingsOpen.value) return;
     copiedHistoryID.value = entry.id;
-    window.setTimeout(() => { if (copiedHistoryID.value === entry.id) copiedHistoryID.value = ""; }, 1500);
+    if (historyCopyTimer !== null) window.clearTimeout(historyCopyTimer);
+    historyCopyTimer = window.setTimeout(() => {
+      if (sequence === historyLoadSequence) copiedHistoryID.value = "";
+      historyCopyTimer = null;
+    }, 1500);
   } catch {
+    if (sequence !== historyLoadSequence || !settingsOpen.value) return;
     settingsError.value = settingsText.value.copyFailed;
   }
 }
@@ -1408,10 +1448,14 @@ async function loadEnvironmentStatus(): Promise<void> {
 }
 
 async function loadHistory(): Promise<void> {
+  if (!settingsOpen.value || settingsSection.value !== "library") return;
+  const sequence = ++historyLoadSequence;
   try {
     const entries = await getHistory();
+    if (sequence !== historyLoadSequence || !settingsOpen.value || settingsSection.value !== "library") return;
     historyEntries.value = Array.isArray(entries) ? entries : [];
   } catch {
+    if (sequence !== historyLoadSequence || !settingsOpen.value || settingsSection.value !== "library") return;
     historyEntries.value = [];
   }
   historyLoaded.value = true;
@@ -1506,8 +1550,8 @@ async function saveSettings(): Promise<void> {
 }
 
 function closeReply(): void {
-  replyOpen.value = false;
   if (capture.value?.mode === "reply") void cancelCapture();
+  else replyOpen.value = false;
 }
 
 function replyFromResult(): void {
@@ -1523,6 +1567,7 @@ function replyFromResult(): void {
 <template>
   <main
     class="relative h-full w-full overflow-hidden bg-transparent"
+    :inert="closingCaptureSequence === captureLoadSequence"
     :class="config.theme === 'dark' ? 'dark text-slate-50' : 'text-slate-950'"
     @mousedown="onMainMouseDown"
     @contextmenu="onMainContextMenu"
@@ -1582,7 +1627,7 @@ function replyFromResult(): void {
     <section
       v-if="capture"
       ref="captureLayerRef"
-      class="absolute inset-0 z-10 select-none transition-opacity duration-75"
+      class="absolute inset-0 z-10 select-none"
       :class="[
         phase === 'ready' || phase === 'drawing' ? 'cursor-crosshair' : 'cursor-default',
         phase === 'loading' ? 'pointer-events-none opacity-0' : 'opacity-100'
@@ -1624,6 +1669,7 @@ function replyFromResult(): void {
       v-if="phase === 'editing' && capture && selection && canvasRef"
       :source-canvas="canvasRef"
       :capture="capture"
+      :busy="copyingGeneration === workflowGeneration || savingScreenshotGeneration === workflowGeneration"
       :rect="selection"
       :features="featureFlags"
       :locale="settingsLocale"
@@ -1632,7 +1678,7 @@ function replyFromResult(): void {
       @save="saveEditedScreenshot"
     />
 
-    <ExtensionWorkbench v-if="extensionOpen" :features="featureFlags" :locale="settingsLocale" :image="extensionImage" :translated-image="extensionTranslatedImage" :source="sourceText" :translation="cleanTranslationText" :origin="extensionOrigin" @close="extensionOpen=false" @pinned="restore" />
+    <ExtensionWorkbench v-if="extensionOpen" :features="featureFlags" :locale="settingsLocale" :image="extensionImage" :translated-image="extensionTranslatedImage" :source="sourceText" :translation="cleanTranslationText" :origin="extensionOrigin" @close="closeResultTools" @pinned="restore" />
     <ReplyPanel v-if="replyOpen" :key="replySequence" :source="replySource" :region="replyRegion" :anchor="replyAnchor" :viewport="viewport" :locale="settingsLocale" :direct-image-input="savedConfig.directImageInput" @close="closeReply" @copied="restore" />
     <div v-if="replyOpen && capture?.mode === 'reply'" class="pointer-events-none absolute z-20 rounded-sm ring-2 ring-emerald-400/80" :style="{left:replyAnchor.x+'px',top:replyAnchor.y+'px',width:replyAnchor.width+'px',height:replyAnchor.height+'px'}" />
 
@@ -2167,7 +2213,7 @@ function replyFromResult(): void {
             <div v-show="settingsSection === 'experiments'" id="settings-panel-experiments" role="tabpanel" aria-labelledby="settings-tab-experiments" tabindex="0">
               <ExtensionSettings v-model="config.features" :locale="settingsLocale" group="experiments" />
             </div>
-            <div v-show="settingsSection === 'library'" id="settings-panel-library" role="tabpanel" aria-labelledby="settings-tab-library" tabindex="0" class="space-y-4">
+            <div v-if="settingsSection === 'library'" id="settings-panel-library" role="tabpanel" aria-labelledby="settings-tab-library" tabindex="0" class="space-y-4">
             <section data-testid="settings-section" class="settings-card">
         <div class="settings-section-header mb-3">
           <div class="settings-section-icon bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-300">
@@ -2197,9 +2243,9 @@ function replyFromResult(): void {
         <div v-if="visibleHistory.length === 0" class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-xs text-slate-500 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-slate-400">
           {{ historyLoaded ? settingsText.noRecentTranslations : settingsText.loadingHistory }}
         </div>
-        <div v-else class="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 dark:divide-zinc-800 dark:border-zinc-800">
+        <div v-else class="settings-scrollbar max-h-64 divide-y divide-slate-100 overflow-y-auto overscroll-contain rounded-lg border border-slate-200 dark:divide-zinc-800 dark:border-zinc-800">
           <div
-            v-for="entry in visibleHistory"
+            v-for="entry in renderedHistory"
             :key="entry.id"
             class="group flex items-center gap-3 px-3 py-2.5 transition hover:bg-slate-50 dark:hover:bg-zinc-900"
           >
@@ -2230,6 +2276,7 @@ function replyFromResult(): void {
             </button>
           </div>
         </div>
+        <button v-if="renderedHistory.length < visibleHistory.length" type="button" data-testid="history-load-more" class="settings-tertiary-button mt-3 w-full justify-center" @click="historyVisibleCount += 30">{{ settingsLocale === 'en' ? 'Show more' : '显示更多' }} · {{ renderedHistory.length }} / {{ visibleHistory.length }}</button>
             </section>
             <LearningLibrary v-if="featureFlags.learningCards" :entries="historyEntries" :locale="settingsLocale" @changed="loadHistory" />
             </div>

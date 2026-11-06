@@ -58,6 +58,25 @@ func runtimeProfileModelsPath(t *testing.T, cmd *exec.Cmd) string {
 	return cmd.Dir
 }
 
+func TestOCRRuntimeAssetHashesOriginalAndConfiguredBytesTogether(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "model.onnx")
+	data := []byte("original model weights")
+	require.NoError(t, os.WriteFile(path, data, 0600))
+	for _, suffix := range [][]byte{nil, ocrRuntimeMetadata()} {
+		original, configured, err := hashOCRRuntimeAsset(path, int64(len(data)), suffix)
+		require.NoError(t, err)
+		originalHash := sha256.Sum256(data)
+		configuredHash := sha256.Sum256(append(append([]byte(nil), data...), suffix...))
+		require.Equal(t, hex.EncodeToString(originalHash[:]), original)
+		require.Equal(t, hex.EncodeToString(configuredHash[:]), configured)
+	}
+	_, _, err := hashOCRRuntimeAsset(path, int64(len(data)+1), nil)
+	require.ErrorIs(t, err, errOCRRuntimeCache)
+	unchanged, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, data, unchanged)
+}
+
 func TestOCRRuntimeProfileCopiesOnlyVerifiedModelsAndPreservesSources(t *testing.T) {
 	source, profile, assets := runtimeProfileFixture(t)
 	cache := t.TempDir()

@@ -1,0 +1,610 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-06",
+  "timezone": "Asia/Shanghai",
+  "purpose": "Observed desktop screenshot reentry memory and native-resource counters",
+  "runtimeIdentity": {
+    "startedUtc": "2026-11-06T03:15:52.2726007Z",
+    "targetPid": 24540,
+    "targetStartedUtc": "2026-11-06T00:23:54.035783Z",
+    "executablePath": "F:\\newworkspace\\snapTrans\\build\\bin\\snapTrans-runtime-tested.exe",
+    "executableSHA256": "C757D634135A1FD1B694B4E11CA8A92B552EFEE320CBC1221D1115AA14791EC3",
+    "durationMinutes": 20,
+    "intervalSeconds": 2,
+    "treeRefreshSeconds": 5,
+    "phaseFile": "F:\\newworkspace\\snapTrans\\build\\runtime-tests\\20261106-live\\phases.jsonl",
+    "note": "Read-only counters; no UI actions or forced GC. Ownership uses parent PID plus CIM creation time, retaining verified descendants until exit. Working-set sums can double-count shared pages."
+  },
+  "measurement": {
+    "requestedSeconds": 1200,
+    "measuredClockSeconds": 714.071,
+    "sampleCoveredSeconds": 708.0,
+    "sampleCount": 357,
+    "stopReason": "target-exited",
+    "endedUtc": "2026-11-06T03:27:46.688552Z",
+    "samplingErrorCount": 0,
+    "actualIntervalsSeconds": {
+      "minimum": 0.07099999999996953,
+      "average": 1.9898595505617978,
+      "maximum": 15.487999999999971
+    }
+  },
+  "verifiedActions": {
+    "actualAltWScreenshotOpenOrReentryCount": 3,
+    "readyObservedViaUIA": true,
+    "confirmedScreenshotSelectionOrEditorCloseCycles": 0,
+    "nativeAltF4ExitConfirmed": true,
+    "actualScrollingSessionsCompleted": 0,
+    "actualOcrTranslationsRequested": 0,
+    "actualApiCalls": 0,
+    "escapeAttemptCount": 1,
+    "escapeOutcome": "inconclusive: immediate UIA/list observations cannot prove that the window remained visible"
+  },
+  "captures": [
+    {
+      "cycle": 1,
+      "captureCompletedLocal": "2026-11-06T11:17:16+08:00",
+      "uiReadyLocal": "2026-11-06T11:17:17+08:00",
+      "captureTotalMs": 182,
+      "nativeCaptureMs": 90,
+      "encodeMs": 91,
+      "uiTotalMs": 1270,
+      "frontendReadyMs": 64,
+      "nativeWindowMs": 1020,
+      "pngBytes": 194250
+    },
+    {
+      "cycle": 2,
+      "captureCompletedLocal": "2026-11-06T11:23:38+08:00",
+      "uiReadyLocal": "2026-11-06T11:23:38+08:00",
+      "captureTotalMs": 114,
+      "nativeCaptureMs": 56,
+      "encodeMs": 48,
+      "uiTotalMs": 155,
+      "frontendReadyMs": 30,
+      "nativeWindowMs": 8,
+      "pngBytes": 187087
+    },
+    {
+      "cycle": 3,
+      "captureCompletedLocal": "2026-11-06T11:25:35+08:00",
+      "uiReadyLocal": "2026-11-06T11:25:37+08:00",
+      "captureTotalMs": 1179,
+      "nativeCaptureMs": 320,
+      "encodeMs": 561,
+      "uiTotalMs": 2972,
+      "frontendReadyMs": 686,
+      "nativeWindowMs": 1104,
+      "pngBytes": 187244
+    }
+  ],
+  "overall": {
+    "samples": 357,
+    "firstUtc": "2026-11-06T03:15:56.3598909Z",
+    "lastUtc": "2026-11-06T03:27:44.7493005Z",
+    "metrics": {
+      "mainPrivateBytes": {
+        "minimum": 58568704,
+        "median": 105828352,
+        "maximum": 117035008,
+        "first": 58568704,
+        "last": 109740032
+      },
+      "treePrivateBytes": {
+        "minimum": 266256384,
+        "median": 387858432,
+        "maximum": 408428544,
+        "first": 266256384,
+        "last": 392593408
+      },
+      "mainGdiObjects": {
+        "minimum": 31,
+        "median": 123,
+        "maximum": 123,
+        "first": 31,
+        "last": 123
+      },
+      "treeGdiObjects": {
+        "minimum": 148,
+        "median": 244,
+        "maximum": 244,
+        "first": 148,
+        "last": 244
+      },
+      "mainUserObjects": {
+        "minimum": 36,
+        "median": 83,
+        "maximum": 85,
+        "first": 36,
+        "last": 85
+      },
+      "treeUserObjects": {
+        "minimum": 130,
+        "median": 179,
+        "maximum": 183,
+        "first": 130,
+        "last": 183
+      },
+      "mainHandles": {
+        "minimum": 431,
+        "median": 736,
+        "maximum": 744,
+        "first": 431,
+        "last": 742
+      },
+      "treeHandles": {
+        "minimum": 3516,
+        "median": 3901,
+        "maximum": 3925,
+        "first": 3516,
+        "last": 3909
+      },
+      "processCount": {
+        "minimum": 9,
+        "median": 9,
+        "maximum": 9,
+        "first": 9,
+        "last": 9
+      }
+    }
+  },
+  "stages": [
+    {
+      "name": "baseline-before-first-capture",
+      "startUtc": "2026-11-06T03:15:52Z",
+      "endUtcExclusive": "2026-11-06T03:17:16Z",
+      "summary": {
+        "samples": 42,
+        "firstUtc": "2026-11-06T03:15:56.3598909Z",
+        "lastUtc": "2026-11-06T03:17:14.787063Z",
+        "metrics": {
+          "mainPrivateBytes": {
+            "minimum": 58568704,
+            "median": 58568704,
+            "maximum": 58667008,
+            "first": 58568704,
+            "last": 58667008
+          },
+          "treePrivateBytes": {
+            "minimum": 266256384,
+            "median": 266256384,
+            "maximum": 266387456,
+            "first": 266256384,
+            "last": 266387456
+          },
+          "mainGdiObjects": {
+            "minimum": 31,
+            "median": 31,
+            "maximum": 31,
+            "first": 31,
+            "last": 31
+          },
+          "treeGdiObjects": {
+            "minimum": 148,
+            "median": 148,
+            "maximum": 148,
+            "first": 148,
+            "last": 148
+          },
+          "mainUserObjects": {
+            "minimum": 36,
+            "median": 36,
+            "maximum": 36,
+            "first": 36,
+            "last": 36
+          },
+          "treeUserObjects": {
+            "minimum": 130,
+            "median": 130,
+            "maximum": 130,
+            "first": 130,
+            "last": 130
+          },
+          "mainHandles": {
+            "minimum": 431,
+            "median": 431,
+            "maximum": 431,
+            "first": 431,
+            "last": 431
+          },
+          "treeHandles": {
+            "minimum": 3516,
+            "median": 3516,
+            "maximum": 3516,
+            "first": 3516,
+            "last": 3516
+          },
+          "processCount": {
+            "minimum": 9,
+            "median": 9,
+            "maximum": 9,
+            "first": 9,
+            "last": 9
+          }
+        }
+      }
+    },
+    {
+      "name": "capture-1-open-escape-outcome-inconclusive",
+      "startUtc": "2026-11-06T03:17:16Z",
+      "endUtcExclusive": "2026-11-06T03:23:38Z",
+      "summary": {
+        "samples": 191,
+        "firstUtc": "2026-11-06T03:17:16.7415085Z",
+        "lastUtc": "2026-11-06T03:23:36.6878657Z",
+        "metrics": {
+          "mainPrivateBytes": {
+            "minimum": 75358208,
+            "median": 104488960,
+            "maximum": 106405888,
+            "first": 75358208,
+            "last": 104091648
+          },
+          "treePrivateBytes": {
+            "minimum": 283078656,
+            "median": 386527232,
+            "maximum": 389140480,
+            "first": 283078656,
+            "last": 386097152
+          },
+          "mainGdiObjects": {
+            "minimum": 34,
+            "median": 123,
+            "maximum": 123,
+            "first": 34,
+            "last": 123
+          },
+          "treeGdiObjects": {
+            "minimum": 151,
+            "median": 244,
+            "maximum": 244,
+            "first": 151,
+            "last": 244
+          },
+          "mainUserObjects": {
+            "minimum": 37,
+            "median": 83,
+            "maximum": 83,
+            "first": 37,
+            "last": 83
+          },
+          "treeUserObjects": {
+            "minimum": 131,
+            "median": 179,
+            "maximum": 180,
+            "first": 131,
+            "last": 180
+          },
+          "mainHandles": {
+            "minimum": 433,
+            "median": 734,
+            "maximum": 740,
+            "first": 433,
+            "last": 734
+          },
+          "treeHandles": {
+            "minimum": 3518,
+            "median": 3898,
+            "maximum": 3907,
+            "first": 3518,
+            "last": 3900
+          },
+          "processCount": {
+            "minimum": 9,
+            "median": 9,
+            "maximum": 9,
+            "first": 9,
+            "last": 9
+          }
+        }
+      }
+    },
+    {
+      "name": "capture-2-reentry",
+      "startUtc": "2026-11-06T03:23:38Z",
+      "endUtcExclusive": "2026-11-06T03:25:35Z",
+      "summary": {
+        "samples": 58,
+        "firstUtc": "2026-11-06T03:23:38.7070142Z",
+        "lastUtc": "2026-11-06T03:25:33.8140235Z",
+        "metrics": {
+          "mainPrivateBytes": {
+            "minimum": 104091648,
+            "median": 112046080,
+            "maximum": 112115712,
+            "first": 104091648,
+            "last": 112029696
+          },
+          "treePrivateBytes": {
+            "minimum": 386097152,
+            "median": 388950016,
+            "maximum": 405667840,
+            "first": 386097152,
+            "last": 388837376
+          },
+          "mainGdiObjects": {
+            "minimum": 123,
+            "median": 123,
+            "maximum": 123,
+            "first": 123,
+            "last": 123
+          },
+          "treeGdiObjects": {
+            "minimum": 244,
+            "median": 244,
+            "maximum": 244,
+            "first": 244,
+            "last": 244
+          },
+          "mainUserObjects": {
+            "minimum": 83,
+            "median": 84,
+            "maximum": 84,
+            "first": 83,
+            "last": 84
+          },
+          "treeUserObjects": {
+            "minimum": 180,
+            "median": 182,
+            "maximum": 182,
+            "first": 180,
+            "last": 182
+          },
+          "mainHandles": {
+            "minimum": 734,
+            "median": 740,
+            "maximum": 742,
+            "first": 734,
+            "last": 742
+          },
+          "treeHandles": {
+            "minimum": 3900,
+            "median": 3913,
+            "maximum": 3921,
+            "first": 3900,
+            "last": 3914
+          },
+          "processCount": {
+            "minimum": 9,
+            "median": 9,
+            "maximum": 9,
+            "first": 9,
+            "last": 9
+          }
+        }
+      }
+    },
+    {
+      "name": "capture-3-reentry",
+      "startUtc": "2026-11-06T03:25:35Z",
+      "endUtcExclusive": "2026-11-06T03:27:46Z",
+      "summary": {
+        "samples": 66,
+        "firstUtc": "2026-11-06T03:25:35.0094237Z",
+        "lastUtc": "2026-11-06T03:27:44.7493005Z",
+        "metrics": {
+          "mainPrivateBytes": {
+            "minimum": 109740032,
+            "median": 115593216,
+            "maximum": 117035008,
+            "first": 117035008,
+            "last": 109740032
+          },
+          "treePrivateBytes": {
+            "minimum": 392593408,
+            "median": 398651392,
+            "maximum": 408428544,
+            "first": 393842688,
+            "last": 392593408
+          },
+          "mainGdiObjects": {
+            "minimum": 123,
+            "median": 123,
+            "maximum": 123,
+            "first": 123,
+            "last": 123
+          },
+          "treeGdiObjects": {
+            "minimum": 244,
+            "median": 244,
+            "maximum": 244,
+            "first": 244,
+            "last": 244
+          },
+          "mainUserObjects": {
+            "minimum": 84,
+            "median": 85,
+            "maximum": 85,
+            "first": 84,
+            "last": 85
+          },
+          "treeUserObjects": {
+            "minimum": 182,
+            "median": 183,
+            "maximum": 183,
+            "first": 182,
+            "last": 183
+          },
+          "mainHandles": {
+            "minimum": 741,
+            "median": 742,
+            "maximum": 744,
+            "first": 741,
+            "last": 742
+          },
+          "treeHandles": {
+            "minimum": 3909,
+            "median": 3914,
+            "maximum": 3925,
+            "first": 3913,
+            "last": 3909
+          },
+          "processCount": {
+            "minimum": 9,
+            "median": 9,
+            "maximum": 9,
+            "first": 9,
+            "last": 9
+          }
+        }
+      }
+    },
+    {
+      "name": "last-30-seconds-before-native-exit",
+      "startUtc": "2026-11-06T03:27:16Z",
+      "endUtcExclusive": "2026-11-06T03:27:46Z",
+      "summary": {
+        "samples": 15,
+        "firstUtc": "2026-11-06T03:27:16.7973757Z",
+        "lastUtc": "2026-11-06T03:27:44.7493005Z",
+        "metrics": {
+          "mainPrivateBytes": {
+            "minimum": 109740032,
+            "median": 115748864,
+            "maximum": 115871744,
+            "first": 115642368,
+            "last": 109740032
+          },
+          "treePrivateBytes": {
+            "minimum": 392593408,
+            "median": 398602240,
+            "maximum": 398725120,
+            "first": 398462976,
+            "last": 392593408
+          },
+          "mainGdiObjects": {
+            "minimum": 123,
+            "median": 123,
+            "maximum": 123,
+            "first": 123,
+            "last": 123
+          },
+          "treeGdiObjects": {
+            "minimum": 244,
+            "median": 244,
+            "maximum": 244,
+            "first": 244,
+            "last": 244
+          },
+          "mainUserObjects": {
+            "minimum": 85,
+            "median": 85,
+            "maximum": 85,
+            "first": 85,
+            "last": 85
+          },
+          "treeUserObjects": {
+            "minimum": 183,
+            "median": 183,
+            "maximum": 183,
+            "first": 183,
+            "last": 183
+          },
+          "mainHandles": {
+            "minimum": 742,
+            "median": 742,
+            "maximum": 744,
+            "first": 742,
+            "last": 742
+          },
+          "treeHandles": {
+            "minimum": 3909,
+            "median": 3909,
+            "maximum": 3911,
+            "first": 3909,
+            "last": 3909
+          },
+          "processCount": {
+            "minimum": 9,
+            "median": 9,
+            "maximum": 9,
+            "first": 9,
+            "last": 9
+          }
+        }
+      }
+    }
+  ],
+  "phaseMarkers": [
+    {
+      "cycle": 0,
+      "phase": "idle-baseline",
+      "utc": "2026-11-06T03:16:49.7406787Z"
+    },
+    {
+      "utc": "2026-11-06T03:17:14.9770961Z",
+      "phase": "capture-open-request",
+      "cycle": 1
+    },
+    {
+      "phase": "capture-open-observed",
+      "cycle": 1,
+      "utc": "2026-11-06T03:18:19.5392487Z"
+    },
+    {
+      "cycle": 1,
+      "phase": "capture-close-request",
+      "utc": "2026-11-06T03:19:15.8680979Z"
+    },
+    {
+      "phase": "capture-reenter-request",
+      "cycle": 2,
+      "utc": "2026-11-06T03:23:37.7648737Z"
+    },
+    {
+      "utc": "2026-11-06T03:23:59.1109377Z",
+      "cycle": 2,
+      "phase": "capture-reenter-observe"
+    },
+    {
+      "cycle": 3,
+      "utc": "2026-11-06T03:25:39.6341959Z",
+      "phase": "capture-reenter-request"
+    },
+    {
+      "cycle": 1,
+      "utc": "2026-11-06T03:27:29.2895104Z",
+      "phase": "capture-escape-not-observed-closed"
+    },
+    {
+      "cycle": 3,
+      "utc": "2026-11-06T03:27:33.6254027Z",
+      "phase": "before-diagnostic-restart"
+    }
+  ],
+  "afterExit": {
+    "checkedUtc": "2026-11-06T03:30:42.392464Z",
+    "recordedProcessIdentityCount": 9,
+    "remainingSameIdentityProcesses": [],
+    "allRecordedOwnedProcessesExited": true,
+    "postExitNumericGdiSampleTaken": false,
+    "note": "Sampler ends when root exits; absent processes are exit verification, not a sampled zero GDI/private-memory value."
+  },
+  "limitations": [
+    "Three screenshot opens/reentries, not 30 complete open/close cycles; no scrolling or active OCR/API workload was validated in this segment.",
+    "Target exited before the requested 20 minutes. The sample is approximately 11 minutes 54 seconds, not a completed 20-minute or 30-minute soak.",
+    "Capture-close-request records an attempted Escape with an inconclusive visibility outcome. Immediate window lists can lag, text-only UIA can expose a hidden tree, and a later targeted key call can reactivate the window; ready text in that tree does not prove Escape failed.",
+    "The third request marker was written after the actual capture log; stage boundaries use app-log timestamps, whose precision is one second.",
+    "Concurrent automation/tool operations and harness compilation affected host load; the 2972 ms case is not an isolated performance benchmark or proof of a specific native-stage regression.",
+    "Initial native-capture-40 helper log predates the first valid sampler point and is not treated as a simultaneous active-memory test.",
+    "GDI/handle growth from hidden baseline to a first visible WebView includes first-show initialization. Three reentries cannot establish long-run leak absence.",
+    "Private bytes include Go/native heap retention. Working-set sums can double-count shared pages; no forced GC or working-set trimming was used.",
+    "The later diagnostic run demonstrated successful Escape hiding only after refreshing the window list while the same process remained alive. No focus fix was applied; this clarifies the automation-observation limit and does not establish either an old focus bug or a fix.",
+    "The configured 2-second cadence was not uniform: observed maximum gap was 15.488 seconds during host contention, with catch-up samples as close as 0.071 seconds. Extrema use actual samples; medians are unweighted sample medians."
+  ],
+  "rawSources": [
+    "build/runtime-tests/20261106-live/metadata.json",
+    "build/runtime-tests/20261106-live/memory.jsonl",
+    "build/runtime-tests/20261106-live/phases.jsonl",
+    "build/runtime-tests/20261106-live/summary.json"
+  ],
+  "visibilityObservationClarification": {
+    "source": "Root operator follow-up on the diagnostic-profile run",
+    "diagnosticEscapeHiddenAfterRefreshedList": true,
+    "diagnosticRootProcessRemainedAlive": true,
+    "initialListAndTextOnlyTreeCanBeStaleOrHidden": true,
+    "oldEscapeOutcome": "inconclusive",
+    "productFocusDefectEstablished": false,
+    "focusPatchApplied": false
+  }
+}

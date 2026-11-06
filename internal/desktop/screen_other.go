@@ -7,6 +7,8 @@ import (
 	"errors"
 	"image"
 	"time"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func availableScreenHeight() int {
@@ -20,6 +22,8 @@ type manualScrollTarget struct {
 func findManualScrollTarget(_ image.Rectangle) (manualScrollTarget, error) {
 	return manualScrollTarget{}, errors.New("manual scrolling capture is only available on Windows")
 }
+
+func focusManualScrollTarget(_ manualScrollTarget) {}
 
 func captureManualScrollRegion(_ uintptr, _ image.Rectangle) (image.Image, error) {
 	return nil, errors.New("manual scrolling capture is only available on Windows")
@@ -39,4 +43,12 @@ func moveWindowToDisplay(_ context.Context, _ int, _ int) {}
 
 func waitForWindowHidden() {
 	time.Sleep(16 * time.Millisecond)
+}
+
+func showWindowSynchronously(ctx context.Context, lifetime context.Context) bool {
+	if lifetime.Err() != nil {
+		return false
+	}
+	runtime.WindowShow(ctx)
+	return true
 }

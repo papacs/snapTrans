@@ -101,7 +101,7 @@ func (d *OpenAICompatible) Warm(ctx context.Context) error {
 	request.Header.Set("Authorization", "Bearer "+d.options.APIKey)
 	request.Header.Set("Accept", "application/json")
 
-	response, err := translationHTTPClient().Do(request)
+	response, err := translationHTTPClient(d.options.Model).Do(request)
 	if err != nil {
 		return fmt.Errorf("warm connection: %w", err)
 	}
@@ -152,7 +152,7 @@ func (d *OpenAICompatible) Ping(ctx context.Context, imageInput ...bool) error {
 
 	clientConfig := openai.DefaultConfig(d.options.APIKey)
 	clientConfig.BaseURL = d.options.BaseURL
-	clientConfig.HTTPClient = translationHTTPClient()
+	clientConfig.HTTPClient = translationHTTPClient(d.options.Model)
 	client := openai.NewClientWithConfig(clientConfig)
 
 	response, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
@@ -264,7 +264,7 @@ func (d *OpenAICompatible) stream(ctx context.Context, request openai.ChatComple
 	}
 	cfg := openai.DefaultConfig(d.options.APIKey)
 	cfg.BaseURL = d.options.BaseURL
-	cfg.HTTPClient = translationHTTPClient()
+	cfg.HTTPClient = translationHTTPClient(request.Model)
 	return streamTranslationRequest(ctx, openai.NewClientWithConfig(cfg), request, onToken)
 }
 

@@ -1,0 +1,71 @@
+{
+  "date": "2026-11-06",
+  "platform": "windows/amd64",
+  "build": {
+    "path": "build/bin/snapTrans-runtime-tested.exe",
+    "identity": "20261106T001922Z-4a9b3ff6fc7d6227",
+    "sourceDigest": "4a9b3ff6fc7d6227",
+    "sourceIdentityVerified": true,
+    "bytes": 13063168,
+    "sha256": "c757d634135a1fd1b694b4e11ca8a92b552efee320cbc1221d1115aa14791ec3",
+    "runningProcessId": 24540,
+    "startupLogIdentityVerified": true,
+    "ocrWarmupReady": true,
+    "standardLauncher": "build/bin/snapTrans.exe",
+    "standardLauncherHashVerified": true
+  },
+  "verification": {
+    "goTest": {
+      "command": "go test -json -p 2 ./... -count=1 -timeout 180s",
+      "exitCode": 0,
+      "testedPackages": 13,
+      "topLevelTestsPassed": 387,
+      "testsIncludingSubtestsPassed": 477,
+      "testsSkipped": 22,
+      "failures": 0,
+      "rawOutput": "build/runtime-tests/go-final-2026-11-06.jsonl"
+    },
+    "goVet": {
+      "command": "go vet ./...",
+      "exitCode": 0
+    },
+    "frontend": {
+      "testsPassed": 326,
+      "testFiles": 21,
+      "testRuntime": "Node 24.22.1",
+      "typecheck": "passed",
+      "productionBuild": "passed via Wails build (vue-tsc --noEmit && vite build)"
+    },
+    "wailsBuild": {
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -OutputName snapTrans-runtime-tested.exe",
+      "exitCode": 0
+    },
+    "diffCheck": {
+      "command": "git -c core.safecrlf=false diff --check",
+      "exitCode": 0
+    }
+  },
+  "measurementReports": [
+    "docs/benchmarks/runtime-memory-2026-11-06.json",
+    "docs/benchmarks/runtime-capture-soak-2026-11-06.json",
+    "docs/benchmarks/runtime-api-2026-11-06.json",
+    "docs/benchmarks/runtime-api-memory-2026-11-06.json",
+    "docs/benchmarks/runtime-api-memory-optimized-2026-11-06.json"
+  ],
+  "limitations": [
+    "Native repeated screenshots and real browser scrolling were not executed: automatic approval review rejected Chrome activation because the browser URL could not be determined reliably.",
+    "The 30-minute process memory report measures idle build fa409c0c4faeae09, not active-use memory of this final executable.",
+    "The paired matcher benchmark and scrolling soak use synthetic pixels, excluding native capture and frontend decode.",
+    "The optimized live API cohort contains only two requests and is not a statistically controlled latency promise."
+  ],
+  "nextDesktopFixture": "http://127.0.0.1:63599/",
+  "androidValidation": {
+    "Report": "docs/benchmarks/android-validation-2026-11-06.json",
+    "JvmTestsPassed": 46,
+    "LintErrors": 0,
+    "LintWarnings": 4,
+    "FinalDebugBuild": "passed",
+    "FinalReleaseR8Build": "passed",
+    "DevicePerformanceMeasured": false
+  }
+}

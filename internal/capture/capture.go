@@ -14,8 +14,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/kbinani/screenshot"
 )
 
 // Display describes one captured monitor in logical (96-DPI) coordinates.
@@ -31,6 +29,7 @@ type Display struct {
 }
 
 type Result struct {
+	CaptureID       uint64        `json:"captureId,omitempty"`
 	Image           string        `json:"image"`
 	Frame           image.Image   `json:"-"`
 	ImageBytes      []byte        `json:"-"`
@@ -58,23 +57,6 @@ type physicalMonitor struct {
 const (
 	pngDataURLPrefix = "data:image/png;base64,"
 )
-
-type pngEncoderBufferPool struct {
-	pool sync.Pool
-}
-
-func (p *pngEncoderBufferPool) Get() *png.EncoderBuffer {
-	if buffer := p.pool.Get(); buffer != nil {
-		return buffer.(*png.EncoderBuffer)
-	}
-	return new(png.EncoderBuffer)
-}
-
-func (p *pngEncoderBufferPool) Put(buffer *png.EncoderBuffer) {
-	p.pool.Put(buffer)
-}
-
-var sharedPNGEncoderBuffers pngEncoderBufferPool
 
 var pngProbeWriters = sync.Pool{New: func() any {
 	writer, _ := flate.NewWriter(io.Discard, flate.BestSpeed)
@@ -136,8 +118,11 @@ func captureMonitors(ctx context.Context, monitors []physicalMonitor) (Result, e
 		if err := ctx.Err(); err != nil {
 			return Result{}, err
 		}
-		img, err := screenshot.CaptureRect(monitors[0].Rect)
+		img, err := ScreenRegion(monitors[0].Rect)
 		if err != nil {
+			return Result{}, err
+		}
+		if err := ctx.Err(); err != nil {
 			return Result{}, err
 		}
 		if isBlankCapture(img) {
@@ -150,7 +135,7 @@ func captureMonitors(ctx context.Context, monitors []physicalMonitor) (Result, e
 			if err := ctx.Err(); err != nil {
 				return Result{}, err
 			}
-			img, err := screenshot.CaptureRect(monitor.Rect)
+			img, err := ScreenRegion(monitor.Rect)
 			if err != nil {
 				return Result{}, err
 			}
@@ -167,10 +152,13 @@ func captureMonitors(ctx context.Context, monitors []physicalMonitor) (Result, e
 	}
 
 	displays := LogicalDisplays(monitors)
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
 	captureDuration := time.Since(captureStartedAt)
 	encodeStartedAt := time.Now()
 	compressionLevel := pngCompressionLevel(frame)
-	encoded, err := encodePNGBytesWithLevel(frame, compressionLevel)
+	encoded, err := encodePNGBytesContext(ctx, frame, compressionLevel)
 	if err != nil {
 		return Result{}, err
 	}
@@ -201,28 +189,55 @@ func pngCompressionLevel(frame image.Image) png.CompressionLevel {
 	if int64(bounds.Dx())*int64(bounds.Dy()) < 1_000_000 {
 		return png.NoCompression
 	}
-	// Large, mostly flat desktop pages compress enough to avoid expensive
-	// WebView transfer copies. A tiny distributed probe keeps complex images
-	// on the fast uncompressed path without encoding the whole frame twice.
-	var sample [16 * 16 * 4]byte
-	for y := 0; y < 16; y++ {
-		for x := 0; x < 16; x++ {
-			r, g, b, a := frame.At(bounds.Min.X+(2*x+1)*bounds.Dx()/32, bounds.Min.Y+(2*y+1)*bounds.Dy()/32).RGBA()
-			i := (y*16 + x) * 4
-			sample[i], sample[i+1], sample[i+2], sample[i+3] = byte(r>>8), byte(g>>8), byte(b>>8), byte(a>>8)
+	// Probe small contiguous tiles with PNG's horizontal delta filter. Isolated
+	// pixels discard spatial repetition and wrongly classify text, gradients
+	// and wallpaper as noise, sending multi-megabyte images to the WebView.
+	var sample [8 * 32 * 32 * 4]byte
+	rgba, _ := frame.(*image.RGBA)
+	tileWidth, tileHeight := minInt(32, bounds.Dx()), minInt(32, bounds.Dy())
+	i := 0
+	for tileY := 0; tileY < 2; tileY++ {
+		for tileX := 0; tileX < 4; tileX++ {
+			left := bounds.Min.X + (2*tileX+1)*(bounds.Dx()-tileWidth)/8
+			top := bounds.Min.Y + (2*tileY+1)*(bounds.Dy()-tileHeight)/4
+			for y := 0; y < tileHeight; y++ {
+				var previous [4]byte
+				for x := 0; x < tileWidth; x++ {
+					var pixel [4]byte
+					if rgba != nil {
+						offset := rgba.PixOffset(left+x, top+y)
+						copy(pixel[:], rgba.Pix[offset:offset+4])
+					} else {
+						r, g, b, a := frame.At(left+x, top+y).RGBA()
+						pixel = [4]byte{byte(r >> 8), byte(g >> 8), byte(b >> 8), byte(a >> 8)}
+					}
+					for channel := range pixel {
+						sample[i] = pixel[channel] - previous[channel]
+						i++
+					}
+					previous = pixel
+				}
+			}
 		}
 	}
-	var compressed bytes.Buffer
+	var compressed pngByteCounter
 	probe := pngProbeWriters.Get().(*flate.Writer)
 	probe.Reset(&compressed)
-	_, err := probe.Write(sample[:])
+	_, err := probe.Write(sample[:i])
 	closeErr := probe.Close()
 	probe.Reset(io.Discard)
 	pngProbeWriters.Put(probe)
-	if err == nil && closeErr == nil && compressed.Len()*5 <= len(sample) {
+	if err == nil && closeErr == nil && int(compressed)*100 <= i*45 {
 		return png.BestSpeed
 	}
 	return png.NoCompression
+}
+
+type pngByteCounter int
+
+func (count *pngByteCounter) Write(data []byte) (int, error) {
+	*count += pngByteCounter(len(data))
+	return len(data), nil
 }
 
 func pngCompressionMode(level png.CompressionLevel) string {
@@ -253,6 +268,17 @@ func encodePNGDataURLWithLevel(frame image.Image, level png.CompressionLevel) (s
 }
 
 func encodePNGBytesWithLevel(frame image.Image, level png.CompressionLevel) ([]byte, error) {
+	return encodePNGBytesContext(context.Background(), frame, level)
+}
+
+func encodePNGBytesContext(ctx context.Context, frame image.Image, level png.CompressionLevel) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if rgba, ok := frame.(*image.RGBA); ok && rgba.Opaque() &&
+		(level == png.NoCompression || level == png.BestSpeed) && !rgba.Bounds().Empty() {
+		return encodeScreenshotPNG(ctx, rgba, level)
+	}
 	var buffer bytes.Buffer
 	if level == png.NoCompression {
 		bounds := frame.Bounds()
@@ -263,12 +289,23 @@ func encodePNGBytesWithLevel(frame image.Image, level png.CompressionLevel) ([]b
 	}
 	encoder := png.Encoder{
 		CompressionLevel: level,
-		BufferPool:       &sharedPNGEncoderBuffers,
 	}
-	if err := encoder.Encode(&buffer, frame); err != nil {
+	if err := encoder.Encode(pngContextWriter{ctx: ctx, writer: &buffer}, frame); err != nil {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
+}
+
+type pngContextWriter struct {
+	ctx    context.Context
+	writer io.Writer
+}
+
+func (writer pngContextWriter) Write(data []byte) (int, error) {
+	if err := writer.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return writer.writer.Write(data)
 }
 
 // EncodePNGBytes encodes a frame to PNG bytes using the shared fast encoder

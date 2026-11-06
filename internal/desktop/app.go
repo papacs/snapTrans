@@ -123,6 +123,7 @@ type App struct {
 	frame            image.Image
 	scrollCapture    *capture.ManualScrollCapture
 	scrollOverlay    uintptr
+	scrollShortcuts  []*hotkeys.Registration
 	finishingScroll  *capture.ManualScrollCapture
 	finishingEpoch   uint64
 }
@@ -204,6 +205,8 @@ func (a *App) shutdown(_ context.Context) {
 		restoreManualScrollOverlay(a.scrollOverlay)
 		a.scrollOverlay = 0
 	}
+	unregisterScrollShortcuts(a.scrollShortcuts)
+	a.scrollShortcuts = nil
 	if a.ocrWorker != nil {
 		a.ocrWorker.Close()
 		a.ocrWorker = nil
@@ -422,7 +425,14 @@ func (a *App) BeginScrollingScreenshot(request ScrollCaptureRequest) (capture.Ma
 		return capture.ManualScrollStatus{}, err
 	}
 
+	shortcuts, err := a.registerScrollShortcuts(epoch)
+	if err != nil {
+		session.Cancel()
+		a.finishCapture(epoch)
+		return capture.ManualScrollStatus{}, err
+	}
 	if err := applyManualScrollHole(overlay, rect); err != nil {
+		unregisterScrollShortcuts(shortcuts)
 		session.Cancel()
 		a.finishCapture(epoch)
 		return capture.ManualScrollStatus{}, err
@@ -431,6 +441,7 @@ func (a *App) BeginScrollingScreenshot(request ScrollCaptureRequest) (capture.Ma
 	a.mu.Lock()
 	if a.shuttingDown || a.captureEpoch != epoch {
 		a.mu.Unlock()
+		unregisterScrollShortcuts(shortcuts)
 		session.Cancel()
 		restoreManualScrollOverlay(overlay)
 		a.finishCapture(epoch)
@@ -438,11 +449,18 @@ func (a *App) BeginScrollingScreenshot(request ScrollCaptureRequest) (capture.Ma
 	}
 	a.scrollCapture = session
 	a.scrollOverlay = overlay
+	a.scrollShortcuts = shortcuts
 	a.windowVisible = true
 	a.mu.Unlock()
 	runtime.WindowSetAlwaysOnTop(a.ctx, true)
-	runtime.WindowShow(a.ctx)
-	return session.Status(), nil
+	if !showWindowSynchronously(a.ctx, a.lifetimeContext()) {
+		a.cancelScrollingScreenshot()
+		return capture.ManualScrollStatus{}, context.Canceled
+	}
+	focusManualScrollTarget(target)
+	status := session.Status()
+	status.CaptureID = epoch
+	return status, nil
 }
 
 // StepScrollingScreenshot observes the real window exposed through the overlay
@@ -537,15 +555,19 @@ func (a *App) cancelScrollingScreenshot() {
 
 func (a *App) takeScrollCapture(finishing bool) (*capture.ManualScrollCapture, uintptr, uint64) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	session := a.scrollCapture
 	overlay := a.scrollOverlay
+	shortcuts := a.scrollShortcuts
 	a.scrollCapture = nil
 	a.scrollOverlay = 0
+	a.scrollShortcuts = nil
 	if finishing && session != nil {
 		a.finishingScroll, a.finishingEpoch = session, a.captureEpoch
 	}
-	return session, overlay, a.captureEpoch
+	epoch := a.captureEpoch
+	a.mu.Unlock()
+	unregisterScrollShortcuts(shortcuts)
+	return session, overlay, epoch
 }
 
 func (a *App) finishScrollExport(session *capture.ManualScrollCapture) {
@@ -611,6 +633,11 @@ func (a *App) beginCapture() (wasVisible bool, epoch uint64, started bool) {
 	a.selectedText = nil
 	a.frame = nil
 	a.captureInFlight = true
+	// A new capture invalidates every prior image URL. Do not keep up to eight
+	// full-screen encoder buffers alive after their UI has been superseded.
+	if a.captureAssets != nil {
+		a.captureAssets.Clear()
+	}
 	wasVisible = a.windowVisible
 	a.windowVisible = false
 	a.captureStartedAt = time.Now()
@@ -644,40 +671,102 @@ func (a *App) hideCaptureWindow(epoch uint64, wait bool) bool {
 }
 
 func (a *App) ShowCaptureWindow() error {
+	a.showCaptureWindow(0)
+	return nil
+}
+
+// An image may finish decoding after Escape or another capture. Its old
+// callback must not raise the shared window over the new desktop operation.
+func (a *App) ShowCaptureWindowForCapture(captureID uint64) bool {
+	if captureID == 0 {
+		return false
+	}
+	return a.showCaptureWindow(captureID)
+}
+
+func (a *App) captureWindowCurrentLocked(captureID uint64) bool {
+	return !a.shuttingDown && a.captureEpoch == captureID && a.frame != nil
+}
+
+func (a *App) showCaptureWindow(captureID uint64) bool {
+	// Serialize native preparation with capture/hide/scroll restoration. A
+	// rejected stale callback must not resize the new settings or capture UI.
+	a.scrollMu.Lock()
+	defer a.scrollMu.Unlock()
 	if a.ctx == nil {
-		return nil
+		return false
 	}
 
 	a.mu.Lock()
+	if captureID != 0 && !a.captureWindowCurrentLocked(captureID) {
+		a.mu.Unlock()
+		return false
+	}
 	originX := a.captureOriginX
 	originY := a.captureOriginY
 	startedAt := a.captureStartedAt
 	emittedAt := a.captureEmittedAt
 	a.mu.Unlock()
+	nativeStartedAt := time.Now()
 
 	// Restore before fullscreen saves the native window placement; otherwise
 	// returning to settings could restore the minimized placement.
+	restoreStartedAt := time.Now()
 	if runtime.WindowIsMinimised(a.ctx) {
 		runtime.WindowUnminimise(a.ctx)
 	}
-	if a.shouldPrepareCaptureWindow(originX, originY) {
+	restoreDuration := time.Since(restoreStartedAt)
+	prepareStartedAt := time.Now()
+	prepareNeeded := a.shouldPrepareCaptureWindow(originX, originY)
+	var unfullscreenDuration, moveDuration, fullscreenDuration time.Duration
+	if prepareNeeded {
+		stageStartedAt := time.Now()
 		runtime.WindowUnfullscreen(a.ctx)
+		unfullscreenDuration = time.Since(stageStartedAt)
+		stageStartedAt = time.Now()
 		moveWindowToDisplay(a.ctx, originX, originY)
+		moveDuration = time.Since(stageStartedAt)
+		stageStartedAt = time.Now()
 		runtime.WindowFullscreen(a.ctx)
+		fullscreenDuration = time.Since(stageStartedAt)
 	}
-	runtime.WindowSetAlwaysOnTop(a.ctx, true)
-	runtime.WindowShow(a.ctx)
+	prepareDuration := time.Since(prepareStartedAt)
 	a.mu.Lock()
+	if captureID != 0 && !a.captureWindowCurrentLocked(captureID) {
+		a.mu.Unlock()
+		return false
+	}
+	topmostStartedAt := time.Now()
+	runtime.WindowSetAlwaysOnTop(a.ctx, true)
+	topmostDuration := time.Since(topmostStartedAt)
 	a.windowVisible = true
+	lifetime := a.lifetimeContextLocked()
 	a.mu.Unlock()
+	showStartedAt := time.Now()
+	if !showWindowSynchronously(a.ctx, lifetime) {
+		return false
+	}
+	showDuration := time.Since(showStartedAt)
 	if a.log != nil && !startedAt.IsZero() && !emittedAt.IsZero() {
 		a.log.Infof(
-			"capture ui ready total_ms=%d bridge_decode_ms=%d",
+			"capture ui ready total_ms=%d bridge_decode_ms=%d frontend_ready_ms=%d native_window_ms=%d "+
+				"native_restore_ms=%d native_prepare_needed=%t native_prepare_ms=%d native_unfullscreen_ms=%d "+
+				"native_move_ms=%d native_fullscreen_ms=%d native_topmost_ms=%d native_show_barrier_ms=%d",
 			time.Since(startedAt).Milliseconds(),
 			time.Since(emittedAt).Milliseconds(),
+			nativeStartedAt.Sub(emittedAt).Milliseconds(),
+			time.Since(nativeStartedAt).Milliseconds(),
+			restoreDuration.Milliseconds(),
+			prepareNeeded,
+			prepareDuration.Milliseconds(),
+			unfullscreenDuration.Milliseconds(),
+			moveDuration.Milliseconds(),
+			fullscreenDuration.Milliseconds(),
+			topmostDuration.Milliseconds(),
+			showDuration.Milliseconds(),
 		)
 	}
-	return nil
+	return true
 }
 
 func (a *App) shouldPrepareCaptureWindow(originX int, originY int) bool {
@@ -874,17 +963,27 @@ func (a *App) QuitApp() error {
 }
 
 func (a *App) ShowSettings() error {
+	a.scrollMu.Lock()
+	defer a.scrollMu.Unlock()
 	a.cancelTextAction()
 	a.invalidateCaptureRequest()
 	a.cancelProcessing()
 	// Dispose the scrolling input hole before Vue unmounts the editor. Its
 	// later cancellation must not hide the newly opened settings window.
-	_ = a.CancelScrollingScreenshot()
+	a.cancelScrollingScreenshot()
+	a.mu.Lock()
+	a.windowVisible = false
+	a.mu.Unlock()
 	if a.ctx == nil {
 		return nil
 	}
 
-	runtime.WindowUnminimise(a.ctx)
+	// Resize while hidden so the previous screenshot cannot flash inside the
+	// compact settings window before Vue has committed the settings shell.
+	if runtime.WindowIsMinimised(a.ctx) {
+		runtime.WindowUnminimise(a.ctx)
+	}
+	runtime.WindowHide(a.ctx)
 	runtime.WindowUnfullscreen(a.ctx)
 	a.invalidateCaptureWindowPreparation()
 	runtime.WindowSetAlwaysOnTop(a.ctx, false)
@@ -907,14 +1006,28 @@ func (a *App) ShowSettings() error {
 	return nil
 }
 
+func (a *App) settingsWindowCurrentLocked() bool {
+	return !a.shuttingDown && !a.captureInFlight && a.frame == nil && a.scrollCapture == nil
+}
+
 // ShowSettingsWindow is called by Vue only after the settings shell has been
 // committed to the DOM, so an unrendered transparent WebView is never exposed.
 func (a *App) ShowSettingsWindow() error {
+	a.scrollMu.Lock()
+	defer a.scrollMu.Unlock()
+	a.mu.Lock()
+	current := a.settingsWindowCurrentLocked()
+	a.mu.Unlock()
+	if !current {
+		return nil
+	}
 	if a.ctx == nil {
 		return nil
 	}
 
-	runtime.WindowShow(a.ctx)
+	if !showWindowSynchronously(a.ctx, a.lifetimeContext()) {
+		return context.Canceled
+	}
 	a.mu.Lock()
 	a.windowVisible = true
 	a.mu.Unlock()
@@ -971,6 +1084,7 @@ func (a *App) publishCapture(result capture.Result, mode string, epoch uint64, n
 	result.Frame = nil
 	result.ImageBytes = nil
 	result.Mode = mode
+	result.CaptureID = epoch
 	if a.log != nil {
 		scale := 1.0
 		if len(result.Displays) > 0 {

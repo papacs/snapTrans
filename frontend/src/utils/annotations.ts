@@ -154,6 +154,7 @@ export function createPixelatedCanvas(source: HTMLCanvasElement, blockSize: numb
   smallContext.drawImage(source, 0, 0, small.width, small.height);
   context.imageSmoothingEnabled = false;
   context.drawImage(small, 0, 0, small.width, small.height, 0, 0, source.width, source.height);
+  small.width = small.height = 0;
   return pixelated;
 }
 

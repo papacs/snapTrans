@@ -69,7 +69,7 @@ func (r *RapidOCR) ExtractResult(ctx context.Context, imageDataURL string) (Resu
 	// narrow Windows argv corrupting Unicode temp paths, and never writes the
 	// screenshot to disk. Keep the CLI path for custom executables.
 	if strings.EqualFold(filepath.Base(resolvedExecutable), stockOCRRuntimeProfile.executable.name) {
-		digest, hashErr := hashOCRRuntimeAsset(resolvedExecutable, stockOCRRuntimeProfile.executable.size, nil)
+		digest, _, hashErr := hashOCRRuntimeAsset(resolvedExecutable, stockOCRRuntimeProfile.executable.size, nil)
 		if hashErr == nil && digest == stockOCRRuntimeProfile.executable.digest {
 			worker := NewRapidOCRWorker(resolvedExecutable, r.Timeout)
 			defer worker.Close()

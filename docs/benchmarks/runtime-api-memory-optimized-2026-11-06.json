@@ -1,0 +1,75 @@
+{
+  "profile": "input-ready-and-skill-isolation",
+  "method": "Read-only Windows counters for direct benchmark Codex children; no command lines retained",
+  "snapshots": [
+    {
+      "timeUtc": "2026-11-06T00:09:11.094518Z",
+      "benchmarkPids": [
+        26428
+      ],
+      "helpers": [
+        {
+          "pid": 20864,
+          "workingSetBytes": 127868928,
+          "privateBytes": 33046528,
+          "handles": 370,
+          "threads": 45
+        }
+      ]
+    },
+    {
+      "timeUtc": "2026-11-06T00:09:17.5249929Z",
+      "benchmarkPids": [
+        26428
+      ],
+      "helpers": [
+        {
+          "pid": 13132,
+          "workingSetBytes": 126595072,
+          "privateBytes": 31838208,
+          "handles": 368,
+          "threads": 46
+        }
+      ]
+    },
+    {
+      "timeUtc": "2026-11-06T00:09:23.3705127Z",
+      "benchmarkPids": [
+        26428
+      ],
+      "helpers": []
+    },
+    {
+      "timeUtc": "2026-11-06T00:09:28.9713202Z",
+      "benchmarkPids": [],
+      "helpers": []
+    }
+  ],
+  "knownHelperPids": [
+    20864,
+    13132
+  ],
+  "postCloseIdle": {
+    "observedAtUtc": "2026-11-06T00:11:11.9610876Z",
+    "knownRuntimePids": [
+      9388,
+      12964,
+      13132,
+      16312,
+      20864,
+      28716,
+      29152,
+      29764,
+      30304,
+      30872,
+      31188,
+      32000,
+      32888,
+      33260,
+      33264,
+      33380,
+      35280
+    ],
+    "stillAlive": []
+  }
+}

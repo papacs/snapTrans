@@ -41,6 +41,7 @@ declare global {
           TriggerReply: () => Promise<void>;
           WarmReply: (scene: import("../utils/reply").ReplyScene, inputMode: "ocr" | "image") => Promise<void>;
           ShowCaptureWindow: () => Promise<void>;
+          ShowCaptureWindowForCapture: (captureId: number) => Promise<boolean>;
           BeginScrollingScreenshot: (region: ScrollCaptureRegion) => Promise<ManualScrollStatus>;
           StepScrollingScreenshot: () => Promise<ScrollCaptureStepResult>;
           FinishScrollingScreenshot: () => Promise<CapturePayload>;

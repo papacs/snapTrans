@@ -20,7 +20,20 @@ func Register(shortcut string, callback func()) (*Registration, error) {
 	if err != nil {
 		return nil, err
 	}
+	return register(mods, key, callback)
+}
 
+// RegisterTemporaryKey reserves an unmodified key while a modal native
+// workflow has given keyboard focus to another application.
+func RegisterTemporaryKey(keyName string, callback func()) (*Registration, error) {
+	key, err := parseKey(strings.ToLower(strings.TrimSpace(keyName)))
+	if err != nil {
+		return nil, err
+	}
+	return register(nil, key, callback)
+}
+
+func register(mods []hotkey.Modifier, key hotkey.Key, callback func()) (*Registration, error) {
 	hk := hotkey.New(mods, key)
 	if err := hk.Register(); err != nil {
 		return nil, err

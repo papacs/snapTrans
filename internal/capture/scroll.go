@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"image"
@@ -11,12 +12,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/kbinani/screenshot"
 )
 
 const (
-	defaultScrollFrames = 16
+	defaultScrollFrames = 128
 	defaultScrollPixels = int64(40_000_000)
 	maxCanvasHeight     = 32767
 )
@@ -27,10 +26,11 @@ type ManualScrollOptions struct {
 }
 
 type ManualScrollStatus struct {
-	Frames int    `json:"frames"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
-	Error  string `json:"error,omitempty"`
+	CaptureID uint64 `json:"captureId,omitempty"`
+	Frames    int    `json:"frames"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	Error     string `json:"error,omitempty"`
 }
 
 type ManualScrollSnapshot struct {
@@ -49,6 +49,7 @@ type ManualScrollSnapshot struct {
 type ManualScrollCapture struct {
 	mu           sync.Mutex
 	ctx          context.Context
+	cancel       context.CancelFunc
 	canceled     atomic.Bool
 	rect         image.Rectangle
 	stitcher     *verticalStitcher
@@ -63,7 +64,7 @@ func StartManualScrollCapture(
 	options ManualScrollOptions,
 ) (*ManualScrollCapture, error) {
 	return StartManualScrollCaptureWithSource(ctx, rect, options, func(rect image.Rectangle) (image.Image, error) {
-		return screenshot.CaptureRect(rect)
+		return ScreenRegion(rect)
 	})
 }
 
@@ -114,8 +115,10 @@ func startManualScrollCapture(
 		return nil, err
 	}
 
+	sessionContext, cancel := context.WithCancel(ctx)
 	return &ManualScrollCapture{
-		ctx:          ctx,
+		ctx:          sessionContext,
+		cancel:       cancel,
 		rect:         rect,
 		stitcher:     stitcher,
 		captureFrame: captureFrame,
@@ -143,7 +146,10 @@ func (session *ManualScrollCapture) CaptureNext() (ManualScrollSnapshot, error) 
 	}
 	appended := false
 	if session.stitcher.frameCount() < session.maxFrames {
-		appended = session.stitcher.addManual(frame)
+		appended, err = session.stitcher.addManualContext(session.ctx, frame)
+		if err != nil {
+			return ManualScrollSnapshot{}, err
+		}
 	}
 	if err := session.cancellationError(); err != nil {
 		return ManualScrollSnapshot{}, err
@@ -174,7 +180,7 @@ func (session *ManualScrollCapture) Status() ManualScrollStatus {
 
 func (session *ManualScrollCapture) snapshotLocked(appended bool) (ManualScrollSnapshot, error) {
 	preview := session.stitcher.thumbnail(240, 4096)
-	previewBytes, err := encodePNGBytesWithLevel(preview, png.BestSpeed)
+	previewBytes, err := encodePNGBytesContext(session.ctx, preview, png.BestSpeed)
 	if err != nil {
 		return ManualScrollSnapshot{}, err
 	}
@@ -203,7 +209,7 @@ func (session *ManualScrollCapture) Finish() (Result, error) {
 		return Result{}, err
 	}
 	encodeStartedAt := time.Now()
-	encoded, err := encodePNGBytesWithLevel(frame, png.BestSpeed)
+	encoded, err := encodePNGBytesContext(session.ctx, frame, png.BestSpeed)
 	if err != nil {
 		return Result{}, err
 	}
@@ -227,7 +233,12 @@ func (session *ManualScrollCapture) Finish() (Result, error) {
 }
 
 // Cancellation must not wait behind a native frame capture holding mu.
-func (session *ManualScrollCapture) Cancel() { session.canceled.Store(true) }
+func (session *ManualScrollCapture) Cancel() {
+	session.canceled.Store(true)
+	if session.cancel != nil {
+		session.cancel()
+	}
+}
 
 func (session *ManualScrollCapture) cancellationError() error {
 	if session.canceled.Load() {
@@ -238,7 +249,6 @@ func (session *ManualScrollCapture) cancellationError() error {
 
 type verticalStitcher struct {
 	frames        []*image.RGBA
-	advances      []int
 	totalHeight   int
 	observedFrame *image.RGBA
 	observedTop   int
@@ -268,41 +278,80 @@ func (stitcher *verticalStitcher) frameCount() int {
 }
 
 func (stitcher *verticalStitcher) addManual(next image.Image) bool {
+	appended, _ := stitcher.addManualContext(context.Background(), next)
+	return appended
+}
+
+func (stitcher *verticalStitcher) addManualContext(ctx context.Context, next image.Image) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	observed := stitcher.observedFrame
 	normalized := rgbaImage(next)
 	if observed.Bounds().Dx() != normalized.Bounds().Dx() || observed.Bounds().Dy() != normalized.Bounds().Dy() {
-		return false
+		return false, nil
 	}
-	// A stationary screen, including one with a small fixed controller overlay,
-	// is not a new frame. The row-trimmed comparison ignores that overlay.
-	if sampledDifference(observed, normalized, 0) <= 2.2 ||
-		stationaryFeatureMatchRatio(observed, normalized) >= 0.42 {
-		stitcher.observedFrame = normalized
-		return false
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
+	if bytes.Equal(observed.Pix, normalized.Pix) {
+		return false, nil
+	}
+	coherentAdvance, coherent, err := coherentVerticalAdvance(ctx, observed, normalized)
+	if err != nil {
+		return false, err
+	}
+	if coherent && coherentAdvance == 0 {
+		return false, nil
+	}
+	forwardAdvance, reverseAdvance := maxInt(0, coherentAdvance), maxInt(0, -coherentAdvance)
+	movingDown := coherentAdvance > 0
+	if !coherent {
+		// A stationary screen, including one with a small fixed controller overlay,
+		// is not a new frame. The row-trimmed comparison ignores that overlay.
+		if sampledDifference(observed, normalized, 0) <= 2.2 ||
+			stationaryFeatureMatchRatio(observed, normalized) >= 0.42 {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			stitcher.observedFrame = normalized
+			return false, nil
+		}
 
-	forwardAdvance, forwardScore, forwardFound := verticalAdvance(observed, normalized)
-	reverseAdvance, reverseScore, reverseFound := verticalAdvance(normalized, observed)
-	forwardOK := forwardFound && forwardScore <= 24
-	reverseOK := reverseFound && reverseScore <= 24
-	movingDown := forwardOK
-	if !forwardOK && !reverseOK {
-		return false
+		var forwardScore, reverseScore float64
+		var forwardFound, reverseFound bool
+		forwardAdvance, forwardScore, forwardFound, err = verticalAdvanceContext(ctx, observed, normalized)
+		if err != nil {
+			return false, err
+		}
+		reverseAdvance, reverseScore, reverseFound, err = verticalAdvanceContext(ctx, normalized, observed)
+		if err != nil {
+			return false, err
+		}
+		forwardOK := forwardFound && forwardScore <= 24
+		reverseOK := reverseFound && reverseScore <= 24
+		movingDown = forwardOK
+		if !forwardOK && !reverseOK {
+			return false, nil
+		}
+		// Compare direction with all sampled rows. The trimmed overlap score above
+		// tolerates sticky or animated regions, but it can make repeated table rows
+		// look equally plausible in both directions. Full-row scoring retains the
+		// timestamps and text that distinguish a real upward move.
+		if forwardOK && reverseOK {
+			forwardDirectionScore := directionalDifference(observed, normalized, forwardAdvance)
+			reverseDirectionScore := directionalDifference(normalized, observed, reverseAdvance)
+			movingDown = reverseDirectionScore+2 >= forwardDirectionScore
+		}
 	}
-	// Compare direction with all sampled rows. The trimmed overlap score above
-	// tolerates sticky or animated regions, but it can make repeated table rows
-	// look equally plausible in both directions. Full-row scoring retains the
-	// timestamps and text that distinguish a real upward move.
-	if forwardOK && reverseOK {
-		forwardDirectionScore := directionalDifference(observed, normalized, forwardAdvance)
-		reverseDirectionScore := directionalDifference(normalized, observed, reverseAdvance)
-		movingDown = reverseDirectionScore+2 >= forwardDirectionScore
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
 
 	if !movingDown {
 		stitcher.observedTop = maxInt(0, stitcher.observedTop-reverseAdvance)
 		stitcher.observedFrame = normalized
-		return false
+		return false, nil
 	}
 
 	nextTop := stitcher.observedTop + forwardAdvance
@@ -310,7 +359,7 @@ func (stitcher *verticalStitcher) addManual(next image.Image) bool {
 	stitcher.observedTop = nextTop
 	stitcher.observedFrame = normalized
 	if nextBottom <= stitcher.totalHeight {
-		return false
+		return false, nil
 	}
 
 	extension := nextBottom - stitcher.totalHeight
@@ -318,25 +367,24 @@ func (stitcher *verticalStitcher) addManual(next image.Image) bool {
 	if int64(width)*int64(stitcher.totalHeight+extension) > stitcher.maxPixels ||
 		stitcher.totalHeight+extension > maxCanvasHeight {
 		stitcher.limitReached = true
-		return false
+		return false, nil
 	}
-	stitcher.frames = append(stitcher.frames, normalized)
-	stitcher.advances = append(stitcher.advances, extension)
+	// Keep only new rows. Small touchpad movements otherwise retain an entire
+	// viewport per poll and exhaust both memory and the frame limit quickly.
+	strip := normalized.SubImage(image.Rect(0, normalized.Bounds().Dy()-extension, width, normalized.Bounds().Dy()))
+	stitcher.frames = append(stitcher.frames, rgbaImage(strip))
 	stitcher.totalHeight += extension
-	return true
+	return true, nil
 }
 
 func (stitcher *verticalStitcher) image() *image.RGBA {
 	width := stitcher.frames[0].Bounds().Dx()
 	result := image.NewRGBA(image.Rect(0, 0, width, stitcher.totalHeight))
-	draw.Draw(result, image.Rect(0, 0, width, stitcher.frames[0].Bounds().Dy()), stitcher.frames[0], image.Point{}, draw.Src)
-	y := stitcher.frames[0].Bounds().Dy()
-	for index, advance := range stitcher.advances {
-		frame := stitcher.frames[index+1]
-		sourceY := frame.Bounds().Dy() - advance
-		target := image.Rect(0, y, width, y+advance)
-		draw.Draw(result, target, frame, image.Point{X: 0, Y: sourceY}, draw.Src)
-		y += advance
+	y := 0
+	for _, frame := range stitcher.frames {
+		target := image.Rect(0, y, width, y+frame.Bounds().Dy())
+		draw.Draw(result, target, frame, image.Point{}, draw.Src)
+		y += frame.Bounds().Dy()
 	}
 	return result
 }
@@ -357,53 +405,62 @@ func (stitcher *verticalStitcher) thumbnail(maxWidth int, maxHeight int) *image.
 	thumbnail := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
 	for y := 0; y < targetHeight; y++ {
 		sourceY := minInt(sourceHeight-1, y*sourceHeight/targetHeight)
+		frameY := sourceY
+		frame := stitcher.frames[0]
+		for _, candidate := range stitcher.frames {
+			frame = candidate
+			if frameY < frame.Bounds().Dy() {
+				break
+			}
+			frameY -= frame.Bounds().Dy()
+		}
 		for x := 0; x < targetWidth; x++ {
 			sourceX := minInt(sourceWidth-1, x*sourceWidth/targetWidth)
-			thumbnail.Set(x, y, stitcher.at(sourceX, sourceY))
+			thumbnail.SetRGBA(x, y, frame.RGBAAt(sourceX, frameY))
 		}
 	}
 	return thumbnail
 }
 
-func (stitcher *verticalStitcher) at(x int, y int) color.Color {
-	frameHeight := stitcher.frames[0].Bounds().Dy()
-	if y < frameHeight {
-		return stitcher.frames[0].At(x, y)
-	}
-	offset := frameHeight
-	for index, advance := range stitcher.advances {
-		if y < offset+advance {
-			frame := stitcher.frames[index+1]
-			return frame.At(x, frameHeight-advance+y-offset)
-		}
-		offset += advance
-	}
-	return stitcher.frames[len(stitcher.frames)-1].At(x, frameHeight-1)
+func verticalAdvance(previous image.Image, next image.Image) (int, float64, bool) {
+	advance, score, found, _ := verticalAdvanceContext(context.Background(), previous, next)
+	return advance, score, found
 }
 
-func verticalAdvance(previous image.Image, next image.Image) (int, float64, bool) {
+func verticalAdvanceContext(ctx context.Context, previous image.Image, next image.Image) (int, float64, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, 0, false, err
+	}
 	width := previous.Bounds().Dx()
 	height := previous.Bounds().Dy()
 	if width != next.Bounds().Dx() || height != next.Bounds().Dy() || width < 2 || height < 8 {
-		return 0, 0, false
+		return 0, 0, false, nil
 	}
 
 	minimumOverlap := maxInt(12, height/10)
 	maxAdvance := height - minimumOverlap
 	if maxAdvance < 1 {
-		return 0, 0, false
+		return 0, 0, false, nil
 	}
 
 	bestAdvance := 0
 	bestScore := 1e9
 	for advance := 1; advance <= maxAdvance; advance++ {
+		if advance%16 == 1 {
+			if err := ctx.Err(); err != nil {
+				return 0, 0, false, err
+			}
+		}
 		score := sampledDifference(previous, next, advance)
 		if score < bestScore {
 			bestScore = score
 			bestAdvance = advance
 		}
 	}
-	return bestAdvance, bestScore, bestAdvance > 0
+	if err := ctx.Err(); err != nil {
+		return 0, 0, false, err
+	}
+	return bestAdvance, bestScore, bestAdvance > 0, nil
 }
 
 // stationaryFeatureMatchRatio measures how much non-flat visual content stays
@@ -434,8 +491,8 @@ func stationaryFeatureMatchRatio(previous image.Image, next image.Image) float64
 		var nextPixel color.RGBA
 		hasPreviousPixel := false
 		for x := left; x < right; x += stepX {
-			previousColor := color.RGBAModel.Convert(previous.At(previous.Bounds().Min.X+x, previous.Bounds().Min.Y+y)).(color.RGBA)
-			nextColor := color.RGBAModel.Convert(next.At(next.Bounds().Min.X+x, next.Bounds().Min.Y+y)).(color.RGBA)
+			previousColor := scrollRGBAAt(previous, previous.Bounds().Min.X+x, previous.Bounds().Min.Y+y)
+			nextColor := scrollRGBAAt(next, next.Bounds().Min.X+x, next.Bounds().Min.Y+y)
 			difference += uint64(absByteDifference(previousColor.R, nextColor.R))
 			difference += uint64(absByteDifference(previousColor.G, nextColor.G))
 			difference += uint64(absByteDifference(previousColor.B, nextColor.B))
@@ -480,6 +537,15 @@ func directionalDifference(previous image.Image, next image.Image, advance int) 
 }
 
 func sampledDifferenceKeepingRows(previous image.Image, next image.Image, advance int, keptTenths int) float64 {
+	if previousRGBA, ok := previous.(*image.RGBA); ok {
+		if nextRGBA, ok := next.(*image.RGBA); ok {
+			return sampledRGBADifferenceKeepingRows(previousRGBA, nextRGBA, advance, keptTenths)
+		}
+	}
+	return sampledDifferenceKeepingRowsGeneric(previous, next, advance, keptTenths)
+}
+
+func sampledDifferenceKeepingRowsGeneric(previous image.Image, next image.Image, advance int, keptTenths int) float64 {
 	width := previous.Bounds().Dx()
 	height := previous.Bounds().Dy()
 	if width != next.Bounds().Dx() || height != next.Bounds().Dy() || advance < 0 || advance >= height {
@@ -498,19 +564,42 @@ func sampledDifferenceKeepingRows(previous image.Image, next image.Image, advanc
 	for y := 0; y < bottom; y += stepY {
 		var difference uint64
 		var samples uint64
+		var firstLeft, firstRight color.RGBA
+		var hasFeature bool
 		for x := left; x < right; x += stepX {
-			leftColor := color.RGBAModel.Convert(previous.At(previous.Bounds().Min.X+x, previous.Bounds().Min.Y+y+advance)).(color.RGBA)
-			rightColor := color.RGBAModel.Convert(next.At(next.Bounds().Min.X+x, next.Bounds().Min.Y+y)).(color.RGBA)
+			leftColor := scrollRGBAAt(previous, previous.Bounds().Min.X+x, previous.Bounds().Min.Y+y+advance)
+			rightColor := scrollRGBAAt(next, next.Bounds().Min.X+x, next.Bounds().Min.Y+y)
+			if samples == 0 {
+				firstLeft, firstRight = leftColor, rightColor
+			} else if leftColor != firstLeft || rightColor != firstRight {
+				hasFeature = true
+			}
 			difference += uint64(absByteDifference(leftColor.R, rightColor.R))
 			difference += uint64(absByteDifference(leftColor.G, rightColor.G))
 			difference += uint64(absByteDifference(leftColor.B, rightColor.B))
 			samples += 3
 		}
-		if samples > 0 {
+		if samples > 0 && !hasFeature {
+			// Horizontal bands and gradients still contain vertical features.
+			previousY := minInt(height-1, y+advance+1)
+			nextY := minInt(height-1, y+1)
+			hasFeature = scrollRGBAAt(previous, previous.Bounds().Min.X+left, previous.Bounds().Min.Y+previousY) != firstLeft ||
+				scrollRGBAAt(next, next.Bounds().Min.X+left, next.Bounds().Min.Y+nextY) != firstRight
+		}
+		// Blank page margins are not evidence of overlap. Keeping them in the
+		// best 70% makes sparse text appear stationary at every scroll offset.
+		if samples > 0 && (difference > 0 || hasFeature) {
 			rowScores = append(rowScores, float64(difference)/float64(samples))
 		}
 	}
+	return trimmedScrollRowScore(rowScores, advance, keptTenths)
+}
+
+func trimmedScrollRowScore(rowScores []float64, advance, keptTenths int) float64 {
 	if len(rowScores) == 0 {
+		if advance == 0 {
+			return 0
+		}
 		return 1e9
 	}
 	sort.Float64s(rowScores)
@@ -520,6 +609,13 @@ func sampledDifferenceKeepingRows(previous image.Image, next image.Image, advanc
 		total += score
 	}
 	return total / float64(keptRows)
+}
+
+func scrollRGBAAt(source image.Image, x, y int) color.RGBA {
+	if rgba, ok := source.(*image.RGBA); ok {
+		return rgba.RGBAAt(x, y)
+	}
+	return color.RGBAModel.Convert(source.At(x, y)).(color.RGBA)
 }
 
 func rgbaImage(source image.Image) *image.RGBA {

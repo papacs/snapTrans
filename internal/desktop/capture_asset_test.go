@@ -54,3 +54,17 @@ func TestCaptureAssetsBudgetAndClearKeepVersionsDistinct(t *testing.T) {
 	require.Zero(t, assets.bytes)
 	require.NotEqual(t, second, assets.Store([]byte("new")))
 }
+
+func TestCaptureAssetsBudgetIncludesRetainedBackingCapacity(t *testing.T) {
+	assets := newCaptureAssets()
+	assets.maxBytes = 10
+	first := assets.Store(make([]byte, 1, 8))
+	assets.Store(make([]byte, 1, 8))
+	require.Len(t, assets.images, 1, "small slices may still retain large encoder buffers")
+	require.Equal(t, 8, assets.bytes)
+	response := httptest.NewRecorder()
+	assets.ServeHTTP(response, httptest.NewRequest(http.MethodGet, first, nil))
+	require.Equal(t, http.StatusNotFound, response.Code)
+	assets.Clear()
+	require.Zero(t, assets.bytes)
+}

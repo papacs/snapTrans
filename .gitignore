@@ -13,6 +13,7 @@ frontend/package.json.md5
 build/bin/
 build/ocr-cache/
 build/benchmarks/
+build/runtime-tests/
 RapidOCR-json_v0.2.0/
 build/bin/RapidOCR-json_v0.2.0.7z
 build/*/bin/
@@ -36,3 +37,11 @@ worktrees/
 # Local browser verification artifacts
 .playwright-cli/
 output/playwright/
+
+# Android local and generated files
+android/.gradle/
+android/local.properties
+android/**/build/
+android/captures/
+android/*.jks
+android/*.keystore
